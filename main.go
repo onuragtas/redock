@@ -8,8 +8,6 @@ import (
 	"strings"
 )
 
-
-
 func setupEnv() {
 	c := command.Command{}
 	c.RunWithPipe("nano", dockerEnvironmentManager.EnvDistPath)
@@ -79,9 +77,9 @@ func editVirtualHost() {
 
 	c := command.Command{}
 	if service == "nginx" {
-		c.RunWithPipe("nano", dockerEnvironmentManager.NginxConfPath + "/" + domain)
+		c.RunWithPipe("nano", dockerEnvironmentManager.NginxConfPath+"/"+domain)
 	} else {
-		c.RunWithPipe("nano", dockerEnvironmentManager.HttpdConfPath + "/" + domain)
+		c.RunWithPipe("nano", dockerEnvironmentManager.HttpdConfPath+"/"+domain)
 	}
 }
 
@@ -102,7 +100,16 @@ func installDevelopmentEnvironment() {
 		check(answer)
 	}
 
-	install()
+	var continueAnswer string
+	selectBox := &survey.Select{Message: "Continue? :", Options: []string{"y", "n"}}
+	err := survey.AskOne(selectBox, &continueAnswer)
+	if err != nil {
+		log.Println(err)
+	}
+
+	if continueAnswer == "y" {
+		install()
+	}
 }
 
 func selectProcess() {
