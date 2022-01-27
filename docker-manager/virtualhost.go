@@ -79,7 +79,7 @@ func (t *VirtualHost) createConfig(service, domain, folder, phpVersion string) {
 
 func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion string) {
 	var process string
-	confPath := t.getConfigPath(service)
+	confPath := t.GetConfigPath(service)
 	if t.checkFile(confPath + "/" + domain + ".conf") {
 		selectBox := &survey.Select{Message: "this conf is exists. Continue? :", Options: []string{"y", "n"}}
 		err := survey.AskOne(selectBox, &process)
@@ -112,7 +112,7 @@ func (t *VirtualHost) FindInHosts(domain string) bool {
 	return strings.Contains(string(hosts), domain)
 }
 
-func (t *VirtualHost) getConfigPath(service string) string {
+func (t *VirtualHost) GetConfigPath(service string) string {
 	if service == "nginx" {
 		return t.manager.NginxConfPath
 	} else {
@@ -132,7 +132,7 @@ func (t *VirtualHost) createNginxConfig(domain string, folder string, version st
 	nginxConf = strings.ReplaceAll(nginxConf, "$domain", domain)
 	nginxConf = strings.ReplaceAll(nginxConf, "$folder", folder)
 	nginxConf = strings.ReplaceAll(nginxConf, "$phpversion", version)
-	err := ioutil.WriteFile(t.getConfigPath("nginx")+"/"+domain+".conf", []byte(nginxConf), 0644)
+	err := ioutil.WriteFile(t.GetConfigPath("nginx")+"/"+domain+".conf", []byte(nginxConf), 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -145,7 +145,7 @@ func (t *VirtualHost) createHttpdConfig(domain string, folder string, version st
 	nginxConf = strings.ReplaceAll(nginxConf, "$phpversion", version)
 	nginxConf = strings.ReplaceAll(nginxConf, "$apache2host", t.getApache2Ip())
 
-	err := ioutil.WriteFile(t.getConfigPath("nginx")+"/"+domain+".conf", []byte(nginxConf), 0644)
+	err := ioutil.WriteFile(t.GetConfigPath("nginx")+"/"+domain+".conf", []byte(nginxConf), 0644)
 	if err != nil {
 		log.Println(err)
 	}
@@ -154,7 +154,7 @@ func (t *VirtualHost) createHttpdConfig(domain string, folder string, version st
 	conf = strings.ReplaceAll(conf, "$domain", domain)
 	conf = strings.ReplaceAll(conf, "$folder", folder)
 	conf = strings.ReplaceAll(conf, "$phpversion", version)
-	err = ioutil.WriteFile(t.getConfigPath("httpd")+"/"+domain+".conf", []byte(conf), 0644)
+	err = ioutil.WriteFile(t.GetConfigPath("httpd")+"/"+domain+".conf", []byte(conf), 0644)
 	if err != nil {
 		log.Println(err)
 	}

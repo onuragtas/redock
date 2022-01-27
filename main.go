@@ -56,23 +56,24 @@ func editVirtualHost() {
 	var service string
 	var domain string
 	var domains []string
-	domains = dockerEnvironmentManager.GetDomains()
+
+	selectBox := &survey.Select{Message: "Pick your service", Options: []string{"nginx", "httpd"}}
+	err := survey.AskOne(selectBox, &service)
+	if err != nil {
+		log.Println(err)
+	}
+
+	domains = dockerEnvironmentManager.GetDomains(dockerEnvironmentManager.Virtualhost.GetConfigPath(service))
 	domains = append(domains, "Quit")
 
-	selectBox := &survey.Select{Message: "Pick your domain", Options: domains, PageSize: 50}
-	err := survey.AskOne(selectBox, &domain)
+	selectBox = &survey.Select{Message: "Pick your domain", Options: domains, PageSize: 50}
+	err = survey.AskOne(selectBox, &domain)
 	if err != nil {
 		log.Println(err)
 	}
 
 	if domain == "Quit" {
 		return
-	}
-
-	selectBox = &survey.Select{Message: "Pick your service", Options: []string{"nginx", "httpd"}}
-	err = survey.AskOne(selectBox, &service)
-	if err != nil {
-		log.Println(err)
 	}
 
 	c := command.Command{}

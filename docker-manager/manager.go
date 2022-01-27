@@ -25,7 +25,7 @@ type DockerEnvironmentManager struct {
 	activeServices     map[int]bool
 	command            command.Command
 	AddVirtualHostPath string
-	virtualhost        *VirtualHost
+	Virtualhost        *VirtualHost
 	HttpdConfPath      string
 	NginxConfPath      string
 }
@@ -66,7 +66,7 @@ func Find(obj interface{}, key string) (interface{}, bool) {
 }
 
 func (t *DockerEnvironmentManager) Init() {
-	t.virtualhost = NewVirtualHost(t)
+	t.Virtualhost = NewVirtualHost(t)
 	t.command = command.Command{}
 	t.activeServices = make(map[int]bool)
 	envFile, err := ioutil.ReadFile(t.EnvDistPath)
@@ -153,7 +153,7 @@ func (t *DockerEnvironmentManager) GetService(name string) (*Service, bool) {
 func (t *DockerEnvironmentManager) Up(services []string) {
 	t.createComposeFile(services)
 	//t.startCommand("cp", t.EnvDistPath, t.EnvPath)
-	t.command.RunCommand(t.GetWorkDir(),"sh", t.InstallPath)
+	t.command.RunCommand(t.GetWorkDir(), "sh", t.InstallPath)
 
 }
 
@@ -172,8 +172,6 @@ func (t *DockerEnvironmentManager) createComposeFile(services []string) {
 		log.Println(err)
 	}
 }
-
-
 
 func (t *DockerEnvironmentManager) SetEnv(text string) {
 	err := ioutil.WriteFile(t.EnvPath, []byte(text), 0644)
@@ -198,7 +196,7 @@ func (t *DockerEnvironmentManager) GetActiveServices() map[int]bool {
 }
 
 func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion string) {
-	t.virtualhost.AddVirtualHost(service, domain, folder, phpVersion)
+	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion)
 }
 
 func (t *DockerEnvironmentManager) GetWorkDir() string {
@@ -219,9 +217,9 @@ func (t *DockerEnvironmentManager) restart(service string) {
 	}
 }
 
-func (t *DockerEnvironmentManager) GetDomains() []string {
+func (t *DockerEnvironmentManager) GetDomains(path string) []string {
 	var domains []string
-	files, err := ioutil.ReadDir(t.NginxConfPath)
+	files, err := ioutil.ReadDir(path)
 	if err != nil {
 		log.Fatal(err)
 	}
