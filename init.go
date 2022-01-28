@@ -3,6 +3,7 @@ package main
 import (
 	dockermanager "github.com/onuragtas/docker-env/docker-manager"
 	git "gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"log"
 	"os"
 )
@@ -36,6 +37,20 @@ func init() {
 	if err != nil {
 		log.Print(err)
 	}
+	head, err := r.Head()
+	if err != nil {
+		log.Print(err)
+	}
+
+	commit := plumbing.NewHash(head.Hash().String())
+
+	err = w.Reset(&git.ResetOptions{
+		Mode:   git.HardReset,
+		Commit: commit,
+	})
+	if err != nil {
+		log.Print(err)
+	}
 
 	err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
 	if err != nil {
@@ -62,6 +77,7 @@ func setupProcesses() {
 	processesMap["Edit Compose Yaml"] = editComposeYaml
 	processesMap["Add Virtual Host"] = addVirtualHost
 	processesMap["Edit Virtual Hosts"] = editVirtualHost
+	processesMap["Import Nginx/Apache2 Sites From Other Docker Project"] = importVirtualHosts
 	processesMap["Quit"] = func() {
 		os.Exit(1)
 	}
