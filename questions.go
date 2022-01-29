@@ -48,9 +48,9 @@ func selectProcess() {
 		log.Println(err)
 	}
 
-	for s, f := range processesMap {
-		if s == process {
-			f()
+	for _, f := range processMapList {
+		if f.Name == process {
+			f.Func()
 		}
 	}
 }
