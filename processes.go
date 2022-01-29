@@ -3,9 +3,13 @@ package main
 import (
 	"fmt"
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/kardianos/osext"
 	"github.com/onuragtas/docker-env/command"
+	"github.com/onuragtas/docker-env/selfupdate"
 	"log"
+	"os"
 	"path/filepath"
+	"syscall"
 )
 
 func setupEnv() {
@@ -117,5 +121,24 @@ func importVirtualHosts() {
 
 	if continueAnswer == "y" {
 		importVirtualHost(service, path)
+	}
+}
+
+func selfUpdate() {
+	var updater = &selfupdate.Updater{
+		CurrentVersion: "v1.0.0",
+		BinURL:         "https://github.com/onuragtas/docker-env/releases/download/v1.0.0/docker-env-macos",
+		Dir:            "update/",
+		CmdName:        "/docker-env",
+	}
+
+	if updater != nil {
+		log.Println("update: started, please wait...")
+		updater.Update()
+		path, _ := osext.Executable()
+		log.Println("update: finished")
+		if err := syscall.Exec(path, os.Args, os.Environ()); err != nil {
+			panic(err)
+		}
 	}
 }

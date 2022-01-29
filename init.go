@@ -67,7 +67,7 @@ func init() {
 		HttpdConfPath:      getHomeDir() + "/.docker-environment/httpd/sites-enabled",
 		NginxConfPath:      getHomeDir() + "/.docker-environment/etc/nginx",
 	}
-	dockerEnvironmentManager.Init()
+	go dockerEnvironmentManager.Init()
 }
 
 func setupProcesses() {
@@ -78,6 +78,7 @@ func setupProcesses() {
 	processesMap["Add Virtual Host"] = addVirtualHost
 	processesMap["Edit Virtual Hosts"] = editVirtualHost
 	processesMap["Import Nginx/Apache2 Sites From Other Docker Project"] = importVirtualHosts
+	processesMap["Self-Update"] = selfUpdate
 	processesMap["Quit"] = func() {
 		os.Exit(1)
 	}

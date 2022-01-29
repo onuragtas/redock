@@ -42,7 +42,7 @@ func Checkboxes(label string, opts []string) []string {
 
 func selectProcess() {
 	var process string
-	selectBox := &survey.Select{Message: "Pick your process", Options: processes}
+	selectBox := &survey.Select{Message: "Pick your process", Options: processes, PageSize: 20}
 	err := survey.AskOne(selectBox, &process)
 	if err != nil {
 		log.Println(err)
