@@ -18,6 +18,9 @@ builds:
       - i386
       - arm64
       - x86_64
+    ignore:
+      - goos: darwin
+        goarch: i386
 archives:
   - name_template: "{{.Binary}}"
   - replacements:
