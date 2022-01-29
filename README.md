@@ -1,7 +1,8 @@
 Download
 
 ```
-wget https://github.com/onuragtas/docker-env/releases/download/v1.0.0/docker-env-macos
+wget https://github.com/onuragtas/docker-env/releases/download/v1.0.0/docker-env-macos -O /usr/local/bin/docker-env
+chmod +x /usr/local/bin/docker-env
 ```
 
 Run
