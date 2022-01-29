@@ -13,7 +13,13 @@ builds:
       - linux
       - windows
       - darwin
+    goarch:
+      - amd64
+      - i386
+      - arm64
+      - x86_64
 archives:
+  - name_template: "{{.Binary}}"
   - replacements:
       darwin: Darwin
       linux: Linux
