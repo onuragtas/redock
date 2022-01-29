@@ -14,7 +14,9 @@ builds:
       - windows
       - darwin
 archives:
-  - name_template: "{{.Binary}}_{{.Os}}_{{.Arch}}"
+  - id: docker-env
+  - format: binary
+  name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
   - replacements:
       darwin: Darwin
       linux: Linux
