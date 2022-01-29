@@ -8,7 +8,13 @@ import (
 	"os"
 )
 
-var processesMap map[string]func()
+type Process struct {
+	Name string
+	Func func()
+}
+
+var processMapList []Process
+
 var processes []string
 
 var answers []string
@@ -71,20 +77,18 @@ func init() {
 }
 
 func setupProcesses() {
-	processesMap = make(map[string]func())
-	processesMap["Setup Environment"] = setupEnv
-	processesMap["Install Development Environment"] = installDevelopmentEnvironment
-	processesMap["Edit Compose Yaml"] = editComposeYaml
-	processesMap["Add Virtual Host"] = addVirtualHost
-	processesMap["Edit Virtual Hosts"] = editVirtualHost
-	processesMap["Import Nginx/Apache2 Sites From Other Docker Project"] = importVirtualHosts
-	processesMap["Self-Update"] = selfUpdate
-	processesMap["Quit"] = func() {
+	processMapList = append(processMapList, Process{Name: "Setup Environment", Func: setupEnv})
+	processMapList = append(processMapList, Process{Name: "Install Development Environment", Func: installDevelopmentEnvironment})
+	processMapList = append(processMapList, Process{Name: "Add Virtual Host", Func: addVirtualHost})
+	processMapList = append(processMapList, Process{Name: "Edit Virtual Hosts", Func: editVirtualHost})
+	processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
+	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
+	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {
 		os.Exit(1)
-	}
+	}})
 
-	for process := range processesMap {
-		processes = append(processes, process)
+	for _, process := range processMapList {
+		processes = append(processes, process.Name)
 	}
 }
 
