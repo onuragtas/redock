@@ -1,12 +1,12 @@
 Download
 
 ```
-wget https://github.com/onuragtas/docker-env/releases/download/latest/download/docker-env_Darwin_x86_64 -O /usr/local/bin/docker-env
-chmod +x /usr/local/bin/docker-env
+wget https://github.com/onuragtas/redock/releases/latest/download/redock_Darwin_x86_64 -O /usr/local/bin/redock
+chmod +x /usr/local/bin/redock
 ```
 
 Run
 
 ```
-./docker-env
+redock
 ```
