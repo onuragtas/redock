@@ -66,6 +66,10 @@ func Find(obj interface{}, key string) (interface{}, bool) {
 }
 
 func (t *DockerEnvironmentManager) Init() {
+	t.Services = Services{}
+	t.activeServices = make(map[int]bool)
+	t.ActiveServices = []string{}
+
 	t.Virtualhost = NewVirtualHost(t)
 	t.command = command.Command{}
 	t.activeServices = make(map[int]bool)
