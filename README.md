@@ -8,5 +8,5 @@ chmod +x /usr/local/bin/docker-env
 Run
 
 ```
-./docker-env
+docker-env
 ```
