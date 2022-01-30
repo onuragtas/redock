@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 	"syscall"
 )
 
@@ -125,9 +126,18 @@ func importVirtualHosts() {
 }
 
 func selfUpdate() {
+	arch := make(map[string]string)
+	arch["386"] = "i386"
+	arch["amd64"] = "x86_64"
+
+	goos := make(map[string]string)
+	goos["darwin"] = "Darwin"
+	goos["linux"] = "Linux"
+	goos["windows"] = "Windows"
+
 	var updater = &selfupdate.Updater{
 		CurrentVersion: "v1.0.0",
-		BinURL:         "https://github.com/onuragtas/docker-env/releases/download/v1.0.0/docker-env-macos",
+		BinURL:         "https://github.com/onuragtas/redock/releases/latest/download/redock_" + goos[runtime.GOOS] + "_" + arch[runtime.GOARCH],
 		Dir:            "update/",
 		CmdName:        "/docker-env",
 	}
