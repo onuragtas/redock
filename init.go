@@ -81,6 +81,7 @@ func setupProcesses() {
 	processMapList = append(processMapList, Process{Name: "Install Development Environment", Func: installDevelopmentEnvironment})
 	processMapList = append(processMapList, Process{Name: "Add Virtual Host", Func: addVirtualHost})
 	processMapList = append(processMapList, Process{Name: "Edit Virtual Hosts", Func: editVirtualHost})
+	processMapList = append(processMapList, Process{Name: "Edit Compose Yaml", Func: editComposeYaml})
 	processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
 	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
 	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {

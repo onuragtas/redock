@@ -96,6 +96,7 @@ func installDevelopmentEnvironment() {
 
 	if continueAnswer == "y" {
 		install()
+		go dockerEnvironmentManager.Init()
 	}
 }
 
@@ -144,7 +145,10 @@ func selfUpdate() {
 
 	if updater != nil {
 		log.Println("update: started, please wait...")
-		updater.Update()
+		err := updater.Update()
+		if err != nil {
+			log.Println("update error:", err)
+		}
 		path, _ := osext.Executable()
 		log.Println("update: finished")
 		if err := syscall.Exec(path, os.Args, os.Environ()); err != nil {
