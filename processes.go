@@ -156,3 +156,7 @@ func selfUpdate() {
 		}
 	}
 }
+
+func restartServices() {
+	dockerEnvironmentManager.Restart("httpd")
+}
