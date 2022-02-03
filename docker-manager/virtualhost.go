@@ -103,7 +103,7 @@ func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion string)
 	}
 
 	t.createConfig(service, domain, folder, phpVersion)
-	t.manager.restart(service)
+	t.manager.Restart(service)
 	t.addHosts(domain)
 }
 

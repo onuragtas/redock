@@ -79,6 +79,7 @@ func init() {
 func setupProcesses() {
 	processMapList = append(processMapList, Process{Name: "Setup Environment", Func: setupEnv})
 	processMapList = append(processMapList, Process{Name: "Install Development Environment", Func: installDevelopmentEnvironment})
+	processMapList = append(processMapList, Process{Name: "Restart Nginx/Httpd", Func: restartServices})
 	processMapList = append(processMapList, Process{Name: "Add Virtual Host", Func: addVirtualHost})
 	processMapList = append(processMapList, Process{Name: "Edit Virtual Hosts", Func: editVirtualHost})
 	processMapList = append(processMapList, Process{Name: "Edit Compose Yaml", Func: editComposeYaml})
