@@ -212,7 +212,7 @@ func (t *DockerEnvironmentManager) getHomeDir() string {
 	return dirname
 }
 
-func (t *DockerEnvironmentManager) restart(service string) {
+func (t *DockerEnvironmentManager) Restart(service string) {
 	if service == "nginx" {
 		t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
 	} else {
