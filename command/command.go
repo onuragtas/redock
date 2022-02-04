@@ -7,10 +7,12 @@ import (
 	"log"
 	"os"
 	"os/exec"
+	"time"
 )
 
 type Command struct {
-
+	stdInFunction func()
+	stdInDuration int
 }
 
 func (t *Command) RunCommand(path string, name string, arg ...string) {
@@ -57,6 +59,19 @@ func (t *Command) RunWithPipe(name string, args ...string) {
 	cmd := exec.Command(name, args...)
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
+
+	go func() {
+		if t.stdInFunction != nil {
+			time.Sleep(time.Duration(t.stdInDuration) * time.Second)
+			t.stdInFunction()
+		}
+	}()
+
 	err := cmd.Run()
 	fmt.Println(err)
+}
+
+func (t *Command) AddStdIn(duration int, f func()) {
+	t.stdInFunction = f
+	t.stdInDuration = duration
 }
