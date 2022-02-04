@@ -3,10 +3,12 @@ package docker_manager
 import (
 	"github.com/onuragtas/docker-env/command"
 	"gopkg.in/yaml.v2"
+	"io"
 	"io/ioutil"
 	"log"
 	"os"
 	"sort"
+	"strings"
 )
 
 type DockerEnvironmentManager struct {
@@ -233,4 +235,12 @@ func (t *DockerEnvironmentManager) GetDomains(path string) []string {
 	}
 
 	return domains
+}
+
+func (t *DockerEnvironmentManager) ExecBash(service string, domain string) {
+	c := command.Command{}
+	c.AddStdIn(1, func() {
+		_, _ = io.WriteString(os.Stdin, `export PHP_IDE_CONFIG="serverName=`+strings.ReplaceAll(domain, ".conf", "")+"\"")
+	})
+	c.RunWithPipe("docker", "exec", "-it", service, "bash")
 }

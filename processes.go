@@ -43,11 +43,7 @@ func addVirtualHost() {
 		log.Println(err)
 	}
 
-	selectBox := &survey.Select{Message: "Pick your service", Options: []string{"php56", "php70", "php71", "php72", "php74", "php56_xdebug", "php72_xdebug", "php74_xdebug"}}
-	err = survey.AskOne(selectBox, &phpService)
-	if err != nil {
-		log.Println(err)
-	}
+	phpService = selectPhpServices()
 
 	fmt.Println(domain)
 	dockerEnvironmentManager.AddVirtualHost(service, domain, folder, phpService)
@@ -159,4 +155,20 @@ func selfUpdate() {
 
 func restartServices() {
 	dockerEnvironmentManager.Restart("httpd")
+}
+
+func execBashService() {
+	var domain string
+
+	service := allServices()
+
+	domains := dockerEnvironmentManager.GetDomains(dockerEnvironmentManager.Virtualhost.GetConfigPath("nginx"))
+
+	selectBox := &survey.Select{Message: "Pick your domain", Options: domains, PageSize: 50}
+	err := survey.AskOne(selectBox, &domain)
+	if err != nil {
+		log.Println(err)
+	}
+
+	dockerEnvironmentManager.ExecBash(service, domain)
 }
