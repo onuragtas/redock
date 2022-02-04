@@ -54,3 +54,29 @@ func selectProcess() {
 		}
 	}
 }
+
+func selectPhpServices() string {
+	var phpService string
+	selectBox := &survey.Select{Message: "Pick your service", Options: []string{"php56", "php70", "php71", "php72", "php74", "php56_xdebug", "php72_xdebug", "php74_xdebug"}}
+	err := survey.AskOne(selectBox, &phpService)
+	if err != nil {
+		log.Println(err)
+	}
+	return phpService
+}
+
+func allServices() string {
+	var services []string
+	var service string
+
+	for _, value := range dockerEnvironmentManager.Services {
+		services = append(services, value.ContainerName.(string))
+	}
+
+	selectBox := &survey.Select{Message: "Pick your service", Options: services}
+	err := survey.AskOne(selectBox, &service)
+	if err != nil {
+		log.Println(err)
+	}
+	return service
+}
