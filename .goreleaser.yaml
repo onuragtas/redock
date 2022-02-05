@@ -13,6 +13,10 @@ builds:
       - linux
       - windows
       - darwin
+    ignore:
+      - goos: darwin
+        goarch: 386
+      - goos: windows
 archives:
   - id: docker-env
     format: binary
