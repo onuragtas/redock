@@ -1,11 +1,12 @@
 package main
 
 import (
+	"log"
+	"os"
+
 	dockermanager "github.com/onuragtas/docker-env/docker-manager"
 	git "gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
-	"log"
-	"os"
 )
 
 type Process struct {
@@ -86,6 +87,7 @@ func setupProcesses() {
 	processMapList = append(processMapList, Process{Name: "Edit Compose Yaml", Func: editComposeYaml})
 	processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
 	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
+	processMapList = append(processMapList, Process{Name: "TCP Forward", Func: TcpForward})
 	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {
 		os.Exit(1)
 	}})

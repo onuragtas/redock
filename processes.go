@@ -2,15 +2,16 @@ package main
 
 import (
 	"fmt"
-	"github.com/AlecAivazis/survey/v2"
-	"github.com/kardianos/osext"
-	"github.com/onuragtas/docker-env/command"
-	"github.com/onuragtas/docker-env/selfupdate"
 	"log"
 	"os"
 	"path/filepath"
 	"runtime"
 	"syscall"
+
+	"github.com/AlecAivazis/survey/v2"
+	"github.com/kardianos/osext"
+	"github.com/onuragtas/docker-env/command"
+	"github.com/onuragtas/docker-env/selfupdate"
 )
 
 func setupEnv() {
