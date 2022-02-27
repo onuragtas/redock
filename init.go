@@ -87,7 +87,7 @@ func setupProcesses() {
 	processMapList = append(processMapList, Process{Name: "Edit Compose Yaml", Func: editComposeYaml})
 	processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
 	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
-	processMapList = append(processMapList, Process{Name: "TCP Forward", Func: TcpForward})
+	// processMapList = append(processMapList, Process{Name: "TCP Forward", Func: TcpForward})
 	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {
 		os.Exit(1)
 	}})
