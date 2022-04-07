@@ -131,6 +131,7 @@ func selfUpdate() {
 	arch := make(map[string]string)
 	arch["386"] = "i386"
 	arch["amd64"] = "x86_64"
+	arch["arm64"] = "arm64"
 
 	goos := make(map[string]string)
 	goos["darwin"] = "Darwin"
