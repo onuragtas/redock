@@ -278,8 +278,10 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug_kurumsal", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php74_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 
-	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php56_xdebug")
-	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php72_xdebug")
-	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php72_xdebug_kurumsal")
-	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php74_xdebug")
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "php56_xdebug")
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug")
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug_kurumsal")
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "php74_xdebug")
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
 }
