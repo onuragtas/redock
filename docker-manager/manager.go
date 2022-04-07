@@ -275,5 +275,11 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	conf := fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000) // todo hardcoded read .env
 	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php56_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug_kurumsal", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php74_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+
+	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php56_xdebug")
+	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php72_xdebug")
+	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php72_xdebug_kurumsal")
+	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "php74_xdebug")
 }
