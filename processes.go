@@ -97,6 +97,10 @@ func installDevelopmentEnvironment() {
 	}
 }
 
+func regenerateXDebugConf() {
+	dockerEnvironmentManager.RegenerateXDebugConf()
+}
+
 func importVirtualHosts() {
 	var service string
 	var path string

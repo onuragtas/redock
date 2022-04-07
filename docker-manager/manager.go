@@ -1,11 +1,13 @@
 package docker_manager
 
 import (
+	"fmt"
 	"github.com/onuragtas/docker-env/command"
 	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"log"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -243,4 +245,35 @@ func (t *DockerEnvironmentManager) ExecBash(service string, domain string) {
 		_, _ = io.WriteString(os.Stdin, `export PHP_IDE_CONFIG="serverName=`+strings.ReplaceAll(domain, ".conf", "")+"\"")
 	})
 	c.RunWithPipe("docker", "exec", "-it", service, "bash")
+}
+
+func (t *DockerEnvironmentManager) getLocalIP() string {
+
+	netInterfaceAddresses, err := net.InterfaceAddrs()
+
+	if err != nil {
+		return ""
+	}
+
+	for _, netInterfaceAddress := range netInterfaceAddresses {
+
+		networkIp, ok := netInterfaceAddress.(*net.IPNet)
+
+		if ok && !networkIp.IP.IsLoopback() && networkIp.IP.To4() != nil {
+
+			ip := networkIp.IP.String()
+
+			fmt.Println("Resolved Host IP: " + ip)
+
+			return ip
+		}
+	}
+	return ""
+}
+func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
+	c := command.Command{}
+	conf := fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000) // todo hardcoded read .env
+	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php56_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php74_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 }
