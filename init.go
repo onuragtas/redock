@@ -80,6 +80,7 @@ func init() {
 func setupProcesses() {
 	processMapList = append(processMapList, Process{Name: "Exec Bash Service", Func: execBashService})
 	processMapList = append(processMapList, Process{Name: "Setup Environment", Func: setupEnv})
+	processMapList = append(processMapList, Process{Name: "Regenerate XDebug Configuration", Func: regenerateXDebugConf})
 	processMapList = append(processMapList, Process{Name: "Install Development Environment", Func: installDevelopmentEnvironment})
 	processMapList = append(processMapList, Process{Name: "Restart Nginx/Httpd", Func: restartServices})
 	processMapList = append(processMapList, Process{Name: "Add Virtual Host", Func: addVirtualHost})
