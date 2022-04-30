@@ -11,6 +11,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"sync"
 )
 
 type DockerEnvironmentManager struct {
@@ -271,17 +272,67 @@ func (t *DockerEnvironmentManager) getLocalIP() string {
 	return ""
 }
 func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
+	var wg sync.WaitGroup
+
 	c := command.Command{}
 	conf := fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000) // todo hardcoded read .env
-	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php56_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
-	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
-	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug_kurumsal", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
-	c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php74_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "php56_xdebug")
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug")
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug_kurumsal")
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "php74_xdebug")
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
+	wg.Add(4)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php56_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	}(&wg)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	}(&wg)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug_kurumsal", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	}(&wg)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php74_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
+	}(&wg)
+
+	wg.Wait()
+
+	var wgGroup sync.WaitGroup
+	wgGroup.Add(6)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php56_xdebug")
+	}(&wgGroup)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug")
+	}(&wgGroup)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug_kurumsal")
+	}(&wgGroup)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php74_xdebug")
+	}(&wgGroup)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
+	}(&wgGroup)
+
+	go func(waitGroup *sync.WaitGroup) {
+		defer waitGroup.Done()
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
+	}(&wgGroup)
+
+	wgGroup.Wait()
 }
