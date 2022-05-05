@@ -279,22 +279,22 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 
 	wg.Add(4)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php56_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	}(&wg)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	}(&wg)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php72_xdebug_kurumsal", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	}(&wg)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", "php74_xdebug", "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	}(&wg)
