@@ -304,32 +304,32 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	var wgGroup sync.WaitGroup
 	wgGroup.Add(6)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "restart", "php56_xdebug")
 	}(&wgGroup)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug")
 	}(&wgGroup)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug_kurumsal")
 	}(&wgGroup)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "restart", "php74_xdebug")
 	}(&wgGroup)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
 	}(&wgGroup)
 
-	go func(waitGroup *sync.WaitGroup) {
+	func(waitGroup *sync.WaitGroup) {
 		defer waitGroup.Done()
 		c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
 	}(&wgGroup)
