@@ -2,10 +2,15 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
+	"io/ioutil"
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strings"
+	"sync"
 	"syscall"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -99,6 +104,124 @@ func installDevelopmentEnvironment() {
 
 func regenerateXDebugConf() {
 	dockerEnvironmentManager.RegenerateXDebugConf()
+}
+
+func addXDebug() {
+	filepath.Walk(dockerEnvironmentManager.HttpdConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fcgi://php([a-z0-9-_]+):9000`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if !strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fcgi://php${1}_xdebug:9000"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug added")
+			}
+		}
+		return nil
+	})
+
+	filepath.Walk(dockerEnvironmentManager.NginxConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fastcgi_pass php([a-z0-9-_]+):9000;`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if !strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fastcgi_pass php${1}_xdebug:9000;"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug added")
+			}
+		}
+		return nil
+	})
+
+	restartAll()
+}
+
+func removeXDebug() {
+	filepath.Walk(dockerEnvironmentManager.HttpdConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fcgi://php([a-z0-9-_]+)([-_]+)([a-z]+):9000`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fcgi://php${1}:9000"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug removed")
+			}
+		}
+		return nil
+	})
+
+	filepath.Walk(dockerEnvironmentManager.NginxConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fastcgi_pass php([a-z0-9-_]+)([-_]+)([a-z]+):9000;`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fastcgi_pass php${1}:9000;"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug removed")
+			}
+		}
+		return nil
+	})
+
+	restartAll()
+}
+
+func restartAll() {
+	var wg sync.WaitGroup
+	wg.Add(6)
+	c := command.Command{}
+
+	go func(wg *sync.WaitGroup) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php56_xdebug")
+		wg.Done()
+	}(&wg)
+
+	go func(wg *sync.WaitGroup) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug")
+		wg.Done()
+	}(&wg)
+
+	go func(wg *sync.WaitGroup) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug_kurumsal")
+		wg.Done()
+	}(&wg)
+
+	go func(wg *sync.WaitGroup) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "php74_xdebug")
+		wg.Done()
+	}(&wg)
+
+	go func(wg *sync.WaitGroup) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
+		wg.Done()
+	}(&wg)
+
+	go func(wg *sync.WaitGroup) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
+		wg.Done()
+	}(&wg)
+
+	wg.Wait()
 }
 
 func importVirtualHosts() {
