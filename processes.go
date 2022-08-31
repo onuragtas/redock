@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
-	"sync"
 	"syscall"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -143,7 +142,7 @@ func addXDebug() {
 		return nil
 	})
 
-	restartAll()
+	dockerEnvironmentManager.RestartAll()
 }
 
 func removeXDebug() {
@@ -183,45 +182,7 @@ func removeXDebug() {
 		return nil
 	})
 
-	restartAll()
-}
-
-func restartAll() {
-	var wg sync.WaitGroup
-	wg.Add(6)
-	c := command.Command{}
-
-	go func(wg *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "php56_xdebug")
-		wg.Done()
-	}(&wg)
-
-	go func(wg *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug")
-		wg.Done()
-	}(&wg)
-
-	go func(wg *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "php72_xdebug_kurumsal")
-		wg.Done()
-	}(&wg)
-
-	go func(wg *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "php74_xdebug")
-		wg.Done()
-	}(&wg)
-
-	go func(wg *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
-		wg.Done()
-	}(&wg)
-
-	go func(wg *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
-		wg.Done()
-	}(&wg)
-
-	wg.Wait()
+	dockerEnvironmentManager.RestartAll()
 }
 
 func importVirtualHosts() {
