@@ -9,6 +9,7 @@ import (
 	"log"
 	"net"
 	"os"
+	"runtime"
 	"sort"
 	"strings"
 	"sync"
@@ -162,7 +163,14 @@ func (t *DockerEnvironmentManager) GetService(name string) (*Service, bool) {
 func (t *DockerEnvironmentManager) Up(services []string) {
 	t.createComposeFile(services)
 	//t.startCommand("cp", t.EnvDistPath, t.EnvPath)
-	t.command.RunCommand(t.GetWorkDir(), "sh", t.InstallPath)
+	osName := runtime.GOOS
+	switch osName {
+	case "linux":
+		t.command.RunCommand(t.GetWorkDir(), t.InstallPath)
+		break
+	default:
+		t.command.RunCommand(t.GetWorkDir(), "sh", t.InstallPath)
+	}
 
 }
 
