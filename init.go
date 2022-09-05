@@ -1,12 +1,12 @@
 package main
 
 import (
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"log"
 	"os"
 
 	dockermanager "github.com/onuragtas/docker-env/docker-manager"
-	git "gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
 )
 
 type Process struct {
@@ -27,42 +27,44 @@ var dockerEnvironmentManager dockermanager.DockerEnvironmentManager
 func init() {
 	setupProcesses()
 
-	_, err := git.PlainClone(getHomeDir()+"/.docker-environment", false, &git.CloneOptions{
-		URL:      dockerRepo,
-		Progress: os.Stdout,
-	})
-	if err.Error() != git.ErrRepositoryAlreadyExists.Error() {
-		panic(err)
-	}
+	go func() {
+		_, err := git.PlainClone(getHomeDir()+"/.docker-environment", false, &git.CloneOptions{
+			URL:      dockerRepo,
+			Progress: os.Stdout,
+		})
+		if err.Error() != git.ErrRepositoryAlreadyExists.Error() {
+			panic(err)
+		}
 
-	r, err := git.PlainOpen(getHomeDir() + "/.docker-environment")
-	if err != nil {
-		log.Print(err)
-	}
+		r, err := git.PlainOpen(getHomeDir() + "/.docker-environment")
+		if err != nil {
+			log.Print(err)
+		}
 
-	w, err := r.Worktree()
-	if err != nil {
-		log.Print(err)
-	}
-	head, err := r.Head()
-	if err != nil {
-		log.Print(err)
-	}
+		w, err := r.Worktree()
+		if err != nil {
+			log.Print(err)
+		}
+		head, err := r.Head()
+		if err != nil {
+			log.Print(err)
+		}
 
-	commit := plumbing.NewHash(head.Hash().String())
+		commit := plumbing.NewHash(head.Hash().String())
 
-	err = w.Reset(&git.ResetOptions{
-		Mode:   git.HardReset,
-		Commit: commit,
-	})
-	if err != nil {
-		log.Print(err)
-	}
+		err = w.Reset(&git.ResetOptions{
+			Mode:   git.HardReset,
+			Commit: commit,
+		})
+		if err != nil {
+			log.Print(err)
+		}
 
-	err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
-	if err != nil {
-		log.Print(err)
-	}
+		err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
+		if err != nil {
+			log.Print(err)
+		}
+	}()
 
 	dockerEnvironmentManager = dockermanager.DockerEnvironmentManager{
 		File:               getHomeDir() + "/.docker-environment/docker-compose.yml.{.arch}.dist",
