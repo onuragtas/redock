@@ -27,47 +27,45 @@ var dockerEnvironmentManager dockermanager.DockerEnvironmentManager
 func init() {
 	setupProcesses()
 
-	go func() {
-		_, err := git.PlainClone(getHomeDir()+"/.docker-environment", false, &git.CloneOptions{
-			URL:      dockerRepo,
-			Progress: os.Stdout,
-		})
-		if err.Error() != git.ErrRepositoryAlreadyExists.Error() {
-			panic(err)
-		}
+	_, err := git.PlainClone(getHomeDir()+"/.docker-environment", false, &git.CloneOptions{
+		URL:      dockerRepo,
+		Progress: os.Stdout,
+	})
+	if err.Error() != git.ErrRepositoryAlreadyExists.Error() {
+		panic(err)
+	}
 
-		r, err := git.PlainOpen(getHomeDir() + "/.docker-environment")
-		if err != nil {
-			log.Print(err)
-		}
+	r, err := git.PlainOpen(getHomeDir() + "/.docker-environment")
+	if err != nil {
+		log.Print(err)
+	}
 
-		w, err := r.Worktree()
-		if err != nil {
-			log.Print(err)
-		}
-		head, err := r.Head()
-		if err != nil {
-			log.Print(err)
-		}
+	w, err := r.Worktree()
+	if err != nil {
+		log.Print(err)
+	}
+	head, err := r.Head()
+	if err != nil {
+		log.Print(err)
+	}
 
-		commit := plumbing.NewHash(head.Hash().String())
+	commit := plumbing.NewHash(head.Hash().String())
 
-		err = w.Reset(&git.ResetOptions{
-			Mode:   git.HardReset,
-			Commit: commit,
-		})
-		if err != nil {
-			log.Print(err)
-		}
+	err = w.Reset(&git.ResetOptions{
+		Mode:   git.HardReset,
+		Commit: commit,
+	})
+	if err != nil {
+		log.Print(err)
+	}
 
-		err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
-		if err != nil {
-			log.Print(err)
-		}
-	}()
+	err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
+	if err != nil {
+		log.Print(err)
+	}
 
 	dockerEnvironmentManager = dockermanager.DockerEnvironmentManager{
-		File:               getHomeDir() + "/.docker-environment/docker-compose.yml.dist",
+		File:               getHomeDir() + "/.docker-environment/docker-compose.yml.{.arch}.dist",
 		ComposeFilePath:    getHomeDir() + "/.docker-environment/docker-compose.yml",
 		EnvDistPath:        getHomeDir() + "/.docker-environment/.env.example",
 		EnvPath:            getHomeDir() + "/.docker-environment/.env",

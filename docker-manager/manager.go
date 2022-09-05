@@ -86,7 +86,7 @@ func (t *DockerEnvironmentManager) Init() {
 		t.EnvDistPath = t.EnvPath
 	}
 	composeYamlFile, err := ioutil.ReadFile(t.ComposeFilePath)
-	yamlFile, err := ioutil.ReadFile(t.File)
+	yamlFile, err := ioutil.ReadFile(strings.ReplaceAll(t.File, "{.arch}", runtime.GOARCH))
 	if err != nil {
 		log.Printf("yamlFile.Get err   #%v ", err)
 	}
