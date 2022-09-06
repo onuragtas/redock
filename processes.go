@@ -222,6 +222,8 @@ func selfUpdate() {
 	goos["linux"] = "Linux"
 	goos["windows"] = "Windows"
 
+	log.Println("https://github.com/onuragtas/redock/releases/latest/download/redock_"+goos[runtime.GOOS]+"_"+arch[runtime.GOARCH], "downloading...")
+
 	var updater = &selfupdate.Updater{
 		CurrentVersion: "v1.0.0",
 		BinURL:         "https://github.com/onuragtas/redock/releases/latest/download/redock_" + goos[runtime.GOOS] + "_" + arch[runtime.GOARCH],
