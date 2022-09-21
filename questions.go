@@ -31,7 +31,7 @@ func Checkboxes(label string, opts []string) []string {
 		Default:  dockerEnvironmentManager.ActiveServices,
 		Message:  label,
 		Options:  opts,
-		PageSize: 50,
+		PageSize: 20,
 	}
 	err := survey.AskOne(prompt, &res)
 	if err != nil {
