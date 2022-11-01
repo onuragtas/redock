@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"github.com/onuragtas/docker-env/command"
 	"gopkg.in/yaml.v2"
-	"io"
 	"io/ioutil"
 	"log"
 	"net"
@@ -249,10 +248,11 @@ func (t *DockerEnvironmentManager) GetDomains(path string) []string {
 
 func (t *DockerEnvironmentManager) ExecBash(service string, domain string) {
 	c := command.Command{}
-	c.AddStdIn(1, func() {
-		_, _ = io.WriteString(os.Stdin, `export PHP_IDE_CONFIG="serverName=`+strings.ReplaceAll(domain, ".conf", "")+"\"")
-	})
-	c.RunWithPipe("docker", "exec", "-it", service, "bash")
+	cmd := `PHP_IDE_CONFIG=serverName=` + strings.ReplaceAll(domain, ".conf", "")
+	//c.AddStdIn(1, func() {
+	//	_, _ = io.WriteString(os.Stdin, `export PHP_IDE_CONFIG="serverName=`+strings.ReplaceAll(domain, ".conf", "")+"\"")
+	//})
+	c.RunWithPipe("docker", "exec", "-it", service, "env", cmd, "bash", "-l")
 }
 
 func (t *DockerEnvironmentManager) getLocalIP() string {
