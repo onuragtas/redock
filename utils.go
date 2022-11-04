@@ -14,12 +14,12 @@ func install() {
 
 func check(answer string) {
 	if depends, ok := dockerEnvironmentManager.CheckDepends(answer); ok {
-		for _, dependsValue := range depends.Links {
-			if !strings.Contains(dependsValue, answer) && !inService(dependsValue) {
-				answers = append(answers, dependsValue)
-				check(dependsValue)
-			}
-		}
+		//for _, dependsValue := range depends.Links {
+		//	if !strings.Contains(dependsValue, answer) && !inService(dependsValue) {
+		//		answers = append(answers, dependsValue)
+		//		check(dependsValue)
+		//	}
+		//}
 
 		for _, dependsValue := range depends.DependsOn {
 			if !strings.Contains(dependsValue, answer) && !inService(dependsValue) {
