@@ -11,6 +11,7 @@ import (
 	"runtime"
 	"sort"
 	"strings"
+	"time"
 )
 
 type DockerEnvironmentManager struct {
@@ -77,8 +78,8 @@ func (t *DockerEnvironmentManager) Init() {
 	t.Virtualhost = NewVirtualHost(t)
 	t.command = command.Command{}
 	t.activeServices = make(map[int]bool)
-	envFile, err := ioutil.ReadFile(t.EnvDistPath)
-	_, envFileErr := ioutil.ReadFile(t.EnvPath)
+	_, err := ioutil.ReadFile(t.EnvDistPath)
+	envFile, envFileErr := ioutil.ReadFile(t.EnvPath)
 	t.Env = string(envFile)
 	if envFileErr == nil {
 		t.EnvDistPath = t.EnvPath
@@ -328,4 +329,15 @@ func (t *DockerEnvironmentManager) RestartAll() {
 	//}(&wg)
 
 	//wg.Wait()
+}
+
+func (t *DockerEnvironmentManager) CheckLocalIpAndRegenerate() {
+	for true {
+		localIp := t.getLocalIP()
+		if ip, err := t.Virtualhost.getXDebugIp(); err == nil && ip != localIp {
+			t.RegenerateXDebugConf()
+		}
+		time.Sleep(5 * time.Second)
+	}
+
 }

@@ -185,6 +185,16 @@ func (t *VirtualHost) getApache2Ip() string {
 	return ""
 }
 
+func (t *VirtualHost) getXDebugIp() (string, error) {
+	lines := strings.Split(t.manager.Env, "\n")
+	for _, line := range lines {
+		if strings.Contains(line, "XDEBUG_HOST=") {
+			return strings.ReplaceAll(line, "XDEBUG_HOST=", ""), nil
+		}
+	}
+	return "", errors.New("not found")
+}
+
 func NewVirtualHost(manager *DockerEnvironmentManager) *VirtualHost {
 	return &VirtualHost{manager: manager}
 }
