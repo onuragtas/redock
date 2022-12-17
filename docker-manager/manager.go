@@ -272,8 +272,6 @@ func (t *DockerEnvironmentManager) getLocalIP() string {
 
 			ip := networkIp.IP.String()
 
-			fmt.Println("Resolved Host IP: " + ip)
-
 			return ip
 		}
 	}
