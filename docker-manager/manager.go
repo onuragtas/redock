@@ -282,6 +282,10 @@ func (t *DockerEnvironmentManager) getLocalIP() string {
 func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	c := command.Command{}
 	conf := fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000) // todo hardcoded read .env
+	if ip, err := t.Virtualhost.getXDebugIp(); err == nil {
+		t.Env = strings.ReplaceAll(t.Env, "XDEBUG_HOST="+ip, "XDEBUG_HOST="+t.getLocalIP())
+		os.WriteFile(t.EnvPath, []byte(t.Env), 0644)
+	}
 
 	var phpServices []string
 
