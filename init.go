@@ -77,6 +77,7 @@ func init() {
 		NginxConfPath:      getHomeDir() + "/.docker-environment/etc/nginx",
 	}
 	go dockerEnvironmentManager.Init()
+	go dockerEnvironmentManager.CheckLocalIpAndRegenerate()
 }
 
 func setupProcesses() {
