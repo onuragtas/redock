@@ -279,6 +279,10 @@ func (t *DockerEnvironmentManager) getLocalIP() string {
 
 		networkIp, ok := netInterfaceAddress.(*net.IPNet)
 
+		if t.DevEnv && !strings.Contains(networkIp.IP.String(), "172.28") {
+			continue
+		}
+
 		if ok && !networkIp.IP.IsLoopback() && networkIp.IP.To4() != nil {
 
 			ip := networkIp.IP.String()
