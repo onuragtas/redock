@@ -86,8 +86,8 @@ func init() {
 	}
 
 	if devEnv {
-		//dockerEnvironmentManager.HttpdConfPath = "/usr/local/httpd"
-		//dockerEnvironmentManager.NginxConfPath = "/usr/local/nginx"
+		dockerEnvironmentManager.HttpdConfPath = "/usr/local/httpd"
+		dockerEnvironmentManager.NginxConfPath = "/usr/local/nginx"
 	}
 
 	go dockerEnvironmentManager.Init()
