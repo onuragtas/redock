@@ -49,7 +49,7 @@ func (t *Command) RunCommand(path string, name string, arg ...string) {
 	}()
 
 	if err := cmd.Wait(); err != nil {
-		log.Fatal(err)
+		log.Println(err)
 	}
 
 	fmt.Printf("buffered out %s\n", bout.String())

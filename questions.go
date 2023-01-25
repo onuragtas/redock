@@ -65,6 +65,16 @@ func selectPhpServices() string {
 	return phpService
 }
 
+func selectTypeConf() string {
+	var phpService string
+	selectBox := &survey.Select{Message: "Pick your type", Options: []string{"Default", "Proxy Pass"}}
+	err := survey.AskOne(selectBox, &phpService)
+	if err != nil {
+		log.Println(err)
+	}
+	return phpService
+}
+
 func allServices() string {
 	var services []string
 	var service string
@@ -79,4 +89,14 @@ func allServices() string {
 		log.Println(err)
 	}
 	return service
+}
+
+func ask(message string) string {
+	var response string
+	inputBox := &survey.Input{Message: message}
+	err := survey.AskOne(inputBox, &response)
+	if err != nil {
+		log.Println(err)
+	}
+	return response
 }
