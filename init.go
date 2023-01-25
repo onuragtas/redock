@@ -86,6 +86,8 @@ func init() {
 	}
 
 	if devEnv {
+		byteArray, _ := os.ReadFile("/root/.username")
+		dockerEnvironmentManager.Username = string(byteArray)
 		dockerEnvironmentManager.HttpdConfPath = "/usr/local/httpd"
 		dockerEnvironmentManager.NginxConfPath = "/usr/local/nginx"
 	}

@@ -116,6 +116,10 @@ func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeCo
 		}
 	}
 
+	if t.manager.DevEnv {
+		folder = t.manager.Username + "/" + folder
+	}
+
 	t.createConfig(service, domain, folder, phpVersion, typeConf, proxyPassPort)
 	t.manager.Restart(service)
 	t.addHosts(domain)
@@ -180,7 +184,12 @@ func (t *VirtualHost) createHttpdConfig(domain string, folder string, version st
 }
 
 func (t *VirtualHost) addHosts(domain string) {
-	cmd := exec.Command("sudo", "bash", "-c", `echo "127.0.0.1 `+domain+`" >> /etc/hosts`)
+	var cmd *exec.Cmd
+	if t.manager.DevEnv {
+		cmd = exec.Command("bash", "-c", `echo "127.0.0.1 `+domain+`" >> /etc/hosts`)
+	} else {
+		cmd = exec.Command("sudo", "bash", "-c", `echo "127.0.0.1 `+domain+`" >> /etc/hosts`)
+	}
 	cmd.Stdin = os.Stdin
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
