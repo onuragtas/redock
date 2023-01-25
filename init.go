@@ -5,6 +5,7 @@ import (
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"log"
 	"os"
+	"strings"
 
 	dockermanager "github.com/onuragtas/docker-env/docker-manager"
 )
@@ -87,7 +88,7 @@ func init() {
 
 	if devEnv {
 		byteArray, _ := os.ReadFile("/root/.username")
-		dockerEnvironmentManager.Username = string(byteArray)
+		dockerEnvironmentManager.Username = strings.TrimSpace(string(byteArray))
 		dockerEnvironmentManager.HttpdConfPath = "/usr/local/httpd"
 		dockerEnvironmentManager.NginxConfPath = "/usr/local/nginx"
 	}
