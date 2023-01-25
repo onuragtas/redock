@@ -24,7 +24,14 @@ var dockerRepo = "https://github.com/onuragtas/docker"
 
 var dockerEnvironmentManager dockermanager.DockerEnvironmentManager
 
+var devEnv bool
+
 func init() {
+
+	if len(os.Args) > 1 && os.Args[1] == "--devenv" {
+		devEnv = true
+	}
+
 	setupProcesses()
 
 	go func() {
@@ -32,7 +39,7 @@ func init() {
 			URL:      dockerRepo,
 			Progress: os.Stdout,
 		})
-		if err.Error() != git.ErrRepositoryAlreadyExists.Error() {
+		if err != nil && err.Error() != git.ErrRepositoryAlreadyExists.Error() {
 			panic(err)
 		}
 
@@ -75,23 +82,36 @@ func init() {
 		AddVirtualHostPath: getHomeDir() + "/.docker-environment/add_virtualhost.sh",
 		HttpdConfPath:      getHomeDir() + "/.docker-environment/httpd/sites-enabled",
 		NginxConfPath:      getHomeDir() + "/.docker-environment/etc/nginx",
+		DevEnv:             devEnv,
 	}
+
+	if devEnv {
+		//dockerEnvironmentManager.HttpdConfPath = "/usr/local/httpd"
+		//dockerEnvironmentManager.NginxConfPath = "/usr/local/nginx"
+	}
+
 	go dockerEnvironmentManager.Init()
-	go dockerEnvironmentManager.CheckLocalIpAndRegenerate()
+	if !devEnv {
+		go dockerEnvironmentManager.CheckLocalIpAndRegenerate()
+	}
 }
 
 func setupProcesses() {
-	processMapList = append(processMapList, Process{Name: "Exec Bash Service", Func: execBashService})
-	processMapList = append(processMapList, Process{Name: "Setup Environment", Func: setupEnv})
-	processMapList = append(processMapList, Process{Name: "Regenerate XDebug Configuration", Func: regenerateXDebugConf})
-	processMapList = append(processMapList, Process{Name: "Add XDebug", Func: addXDebug})
-	processMapList = append(processMapList, Process{Name: "Remove XDebug", Func: removeXDebug})
-	processMapList = append(processMapList, Process{Name: "Install Development Environment", Func: installDevelopmentEnvironment})
+	if !devEnv {
+		processMapList = append(processMapList, Process{Name: "Exec Bash Service", Func: execBashService})
+		processMapList = append(processMapList, Process{Name: "Setup Environment", Func: setupEnv})
+		processMapList = append(processMapList, Process{Name: "Regenerate XDebug Configuration", Func: regenerateXDebugConf})
+		processMapList = append(processMapList, Process{Name: "Add XDebug", Func: addXDebug})
+		processMapList = append(processMapList, Process{Name: "Remove XDebug", Func: removeXDebug})
+		processMapList = append(processMapList, Process{Name: "Install Development Environment", Func: installDevelopmentEnvironment})
+	}
 	processMapList = append(processMapList, Process{Name: "Restart Nginx/Httpd", Func: restartServices})
 	processMapList = append(processMapList, Process{Name: "Add Virtual Host", Func: addVirtualHost})
 	processMapList = append(processMapList, Process{Name: "Edit Virtual Hosts", Func: editVirtualHost})
-	processMapList = append(processMapList, Process{Name: "Edit Compose Yaml", Func: editComposeYaml})
-	processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
+	if !devEnv {
+		processMapList = append(processMapList, Process{Name: "Edit Compose Yaml", Func: editComposeYaml})
+		processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
+	}
 	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
 	// processMapList = append(processMapList, Process{Name: "TCP Forward", Func: TcpForward})
 	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {

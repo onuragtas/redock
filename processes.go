@@ -33,6 +33,8 @@ func addVirtualHost() {
 	var domain string
 	var folder string
 	var phpService string
+	var typeConf string
+	var proxyPass string
 
 	service = pickService()
 
@@ -42,16 +44,24 @@ func addVirtualHost() {
 		log.Println(err)
 	}
 
-	inputBox = &survey.Input{Message: "Folder:"}
-	err = survey.AskOne(inputBox, &folder)
-	if err != nil {
-		log.Println(err)
+	typeConf = selectTypeConf()
+
+	if typeConf == "Default" {
+
+		inputBox = &survey.Input{Message: "Folder:"}
+		err = survey.AskOne(inputBox, &folder)
+		if err != nil {
+			log.Println(err)
+		}
+
+		phpService = selectPhpServices()
+
+	} else {
+		proxyPass = ask("Proxy Pass Port:")
 	}
 
-	phpService = selectPhpServices()
-
 	fmt.Println(domain)
-	dockerEnvironmentManager.AddVirtualHost(service, domain, folder, phpService)
+	dockerEnvironmentManager.AddVirtualHost(service, domain, folder, phpService, typeConf, proxyPass)
 }
 
 func editVirtualHost() {
@@ -64,7 +74,7 @@ func editVirtualHost() {
 	domains = dockerEnvironmentManager.GetDomains(dockerEnvironmentManager.Virtualhost.GetConfigPath(service))
 	domains = append(domains, "Quit")
 
-	selectBox := &survey.Select{Message: "Pick your domain", Options: domains, PageSize: 50}
+	selectBox := &survey.Select{Message: "Pick your domain", Options: domains, PageSize: 10}
 	err := survey.AskOne(selectBox, &domain)
 	if err != nil {
 		log.Println(err)

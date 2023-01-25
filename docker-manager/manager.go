@@ -33,6 +33,8 @@ type DockerEnvironmentManager struct {
 	Virtualhost        *VirtualHost
 	HttpdConfPath      string
 	NginxConfPath      string
+	DevEnv             bool
+	Username           string
 }
 
 func Find(obj interface{}, key string) (interface{}, bool) {
@@ -211,8 +213,8 @@ func (t *DockerEnvironmentManager) GetActiveServices() map[int]bool {
 	return t.activeServices
 }
 
-func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion string) {
-	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion)
+func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string) {
+	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort)
 }
 
 func (t *DockerEnvironmentManager) GetWorkDir() string {
@@ -226,10 +228,19 @@ func (t *DockerEnvironmentManager) getHomeDir() string {
 
 func (t *DockerEnvironmentManager) Restart(service string) {
 	if service == "nginx" {
-		t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
+		if t.DevEnv {
+			t.command.RunCommand(t.GetWorkDir(), "docker", "-H", "192.168.36.240:4243", "exec", "-t", "nginx", "sh", "-c", "nginx -s reload")
+		} else {
+			t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
+		}
 	} else {
-		t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
-		t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "httpd")
+		if t.DevEnv {
+			t.command.RunCommand(t.GetWorkDir(), "docker", "-H", "192.168.36.240:4243", "exec", "-t", "nginx", "sh", "-c", "nginx -s reload")
+			t.command.RunCommand(t.GetWorkDir(), "docker", "-H", "192.168.36.240:4243", "exec", "-t", "httpd", "sh", "-c", "apache2ctl restart")
+		} else {
+			t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
+			t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "httpd")
+		}
 	}
 }
 
