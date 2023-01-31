@@ -1,9 +1,6 @@
 package main
 
 import (
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
-	"log"
 	"os"
 	"strings"
 
@@ -35,44 +32,7 @@ func init() {
 
 	setupProcesses()
 
-	go func() {
-		_, err := git.PlainClone(getHomeDir()+"/.docker-environment", false, &git.CloneOptions{
-			URL:      dockerRepo,
-			Progress: os.Stdout,
-		})
-		if err != nil && err.Error() != git.ErrRepositoryAlreadyExists.Error() {
-			panic(err)
-		}
-
-		r, err := git.PlainOpen(getHomeDir() + "/.docker-environment")
-		if err != nil {
-			log.Print(err)
-		}
-
-		w, err := r.Worktree()
-		if err != nil {
-			log.Print(err)
-		}
-		head, err := r.Head()
-		if err != nil {
-			log.Print(err)
-		}
-
-		commit := plumbing.NewHash(head.Hash().String())
-
-		err = w.Reset(&git.ResetOptions{
-			Mode:   git.HardReset,
-			Commit: commit,
-		})
-		if err != nil {
-			log.Print(err)
-		}
-
-		err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
-		if err != nil {
-			log.Print(err)
-		}
-	}()
+	go dockerUpdate()
 
 	dockerEnvironmentManager = dockermanager.DockerEnvironmentManager{
 		File:               getHomeDir() + "/.docker-environment/docker-compose.yml.{.arch}.dist",
@@ -116,6 +76,7 @@ func setupProcesses() {
 		processMapList = append(processMapList, Process{Name: "Import Nginx/Apache2 Sites From Other Docker Project", Func: importVirtualHosts})
 	}
 	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
+	processMapList = append(processMapList, Process{Name: "Update Docker", Func: dockerUpdate})
 	// processMapList = append(processMapList, Process{Name: "TCP Forward", Func: TcpForward})
 	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {
 		os.Exit(1)
