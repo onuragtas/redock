@@ -2,6 +2,9 @@ package main
 
 import (
 	"fmt"
+	"github.com/AlecAivazis/survey/v2"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
 	"io/fs"
 	"io/ioutil"
 	"log"
@@ -12,7 +15,6 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/kardianos/osext"
 	"github.com/onuragtas/docker-env/command"
 	"github.com/onuragtas/docker-env/selfupdate"
@@ -218,6 +220,45 @@ func importVirtualHosts() {
 
 	if continueAnswer == "y" {
 		importVirtualHost(service, path)
+	}
+}
+
+func dockerUpdate() {
+	_, err := git.PlainClone(getHomeDir()+"/.docker-environment", false, &git.CloneOptions{
+		URL:      dockerRepo,
+		Progress: os.Stdout,
+	})
+	if err != nil && err.Error() != git.ErrRepositoryAlreadyExists.Error() {
+		panic(err)
+	}
+
+	r, err := git.PlainOpen(getHomeDir() + "/.docker-environment")
+	if err != nil {
+		log.Print(err)
+	}
+
+	w, err := r.Worktree()
+	if err != nil {
+		log.Print(err)
+	}
+	head, err := r.Head()
+	if err != nil {
+		log.Print(err)
+	}
+
+	commit := plumbing.NewHash(head.Hash().String())
+
+	err = w.Reset(&git.ResetOptions{
+		Mode:   git.HardReset,
+		Commit: commit,
+	})
+	if err != nil {
+		log.Print(err)
+	}
+
+	err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
+	if err != nil {
+		log.Print(err)
 	}
 }
 
