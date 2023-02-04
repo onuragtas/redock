@@ -57,7 +57,7 @@ func selectProcess() {
 
 func selectPhpServices() string {
 	var phpService string
-	selectBox := &survey.Select{Message: "Pick your service", Options: []string{"php56", "php70", "php71", "php72", "php74", "php56_xdebug", "php72_xdebug", "php74_xdebug"}}
+	selectBox := &survey.Select{Message: "Pick your service", Options: []string{"php56", "php70", "php71", "php72", "php74", "php56_xdebug", "php72_xdebug", "php74_xdebug", "php81_xdebug"}}
 	err := survey.AskOne(selectBox, &phpService)
 	if err != nil {
 		log.Println(err)
