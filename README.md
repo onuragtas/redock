@@ -1,18 +1,27 @@
 <details>
 <summary>For Macos</summary>
   
-Download
+<details>
+<summary>Apple Slicon</summary>
+
+```
+wget https://github.com/onuragtas/redock/releases/latest/download/redock_Darwin_arm64 -O /usr/local/bin/redock
+chmod +x /usr/local/bin/redock
+redock
+```
+
+</details>
+
+<details>
+<summary>Amd64</summary>
 
 ```
 wget https://github.com/onuragtas/redock/releases/latest/download/redock_Darwin_x86_64 -O /usr/local/bin/redock
 chmod +x /usr/local/bin/redock
-```
-
-Run
-
-```
 redock
 ```
+
+</details>
 </details>
 
 <details>
