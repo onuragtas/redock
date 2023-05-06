@@ -261,6 +261,15 @@ func dockerUpdate() {
 		log.Print(err)
 	}
 }
+func dockerImageUpdate() {
+	command := command.Command{}
+	for _, service := range dockerEnvironmentManager.ActiveServicesList {
+		if service.Image != "" {
+			log.Println("docker pull", service.Image)
+			command.RunWithPipe("docker", "pull", service.Image)
+		}
+	}
+}
 
 func selfUpdate() {
 	arch := make(map[string]string)

@@ -1,7 +1,7 @@
 package docker_manager
 
 type DockerCompose struct {
-	Version  string `yaml:"version"`
+	Version  string      `yaml:"version"`
 	Services interface{} `yaml:"services"`
 	Networks struct {
 		Net struct {
@@ -26,9 +26,10 @@ type DockerCompose struct {
 type Services []Service
 
 type Service struct {
-	Build interface{}
+	Build         interface{}
 	ContainerName interface{}
-	Links []string
-	DependsOn []string
-	Original  interface{}
+	Links         []string
+	DependsOn     []string
+	Original      interface{}
+	Image         string
 }
