@@ -21,6 +21,7 @@ type DockerEnvironmentManager struct {
 	CopyStruct         map[string]interface{}
 	copyStruct         map[string]interface{}
 	Services           Services
+	ActiveServicesList Services
 	ActiveServices     []string
 	EnvDistPath        string
 	EnvPath            string
@@ -105,6 +106,7 @@ func (t *DockerEnvironmentManager) Init() {
 				Links:         t.findLinks(value),
 				DependsOn:     t.findDependsOn(value),
 				Original:      value,
+				Image:         t.findImage(value),
 			})
 
 			t.activeServices[i] = t.isActive(key.(string))
@@ -114,8 +116,15 @@ func (t *DockerEnvironmentManager) Init() {
 
 	if obj, ok := Find(t.copyStruct, "services"); ok {
 		i := 0
-		for key := range obj.(map[interface{}]interface{}) {
+		for key, value := range obj.(map[interface{}]interface{}) {
 			t.ActiveServices = append(t.ActiveServices, key.(string))
+			t.ActiveServicesList = append(t.ActiveServicesList, Service{
+				ContainerName: key,
+				Links:         t.findLinks(value),
+				DependsOn:     t.findDependsOn(value),
+				Original:      value,
+				Image:         t.findImage(value),
+			})
 			i++
 		}
 	}
@@ -146,6 +155,13 @@ func (t *DockerEnvironmentManager) findDependsOn(value interface{}) []string {
 		}
 	}
 	return dependsOn
+}
+func (t *DockerEnvironmentManager) findImage(value interface{}) string {
+	var image string
+	if obj, ok := value.(map[interface{}]interface{})["image"]; ok {
+		image = obj.(string)
+	}
+	return image
 }
 
 func (t *DockerEnvironmentManager) CheckDepends(label string) (*Service, bool) {
