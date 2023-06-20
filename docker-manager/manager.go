@@ -325,6 +325,11 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	}
 
 	for _, service := range phpServices {
+		if strings.Contains(service, "81") {
+			conf = fmt.Sprintf(xdebugConf8, t.getLocalIP(), 10000)
+		} else {
+			conf = fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000)
+		}
 		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", service, "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	}
 
