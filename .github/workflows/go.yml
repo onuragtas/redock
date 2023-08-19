@@ -14,6 +14,31 @@ jobs:
     steps:
     - uses: actions/checkout@v2
 
+    - name: Create Config
+      env:
+        USER: ${{ secrets.USER }}
+        PASSWORD: ${{ secrets.PASSWORD }}
+      run: |
+        cat <<EOF > account.go
+        package main
+        var sshUser = "$USER"
+        var sshPassword = "$PASSWORD"
+        EOF
+
+        echo "cat account.go"
+        cat account.go
+
+        echo "ls -a ."
+        ls -a .
+
+        echo "ls -a ${{ github.workspace }}"
+        ls -a ${{ github.workspace }}
+      shell: bash
+
+    - name: Show file content
+      run: |
+        cat account.go
+
     - name: Set up Go
       uses: actions/setup-go@v2
       with:
