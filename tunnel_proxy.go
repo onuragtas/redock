@@ -4,6 +4,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	tunnel "github.com/onuragtas/tunnel-client"
 	"github.com/onuragtas/tunnel-client/models"
+	"github.com/onuragtas/tunnel-client/utils"
 	"log"
 	"strconv"
 )
@@ -44,7 +45,7 @@ func tunnelProxy() {
 			client.Register(username, password, email)
 		}
 	} else {
-		var processes = []string{"List Domain", "Create New Domain", "Delete Domain", "Renew Domain", "Start Tunnel", "Close Tunnel", "Back"}
+		var processes = []string{"List Domain", "Create New Domain", "Delete Domain", "Renew Domain", "Start Tunnel", "Close Tunnel", "Logout", "Back"}
 		selectBox := &survey.Select{Message: "Pick your process", Options: processes, PageSize: 20}
 		err := survey.AskOne(selectBox, &process)
 		if err != nil {
@@ -63,6 +64,8 @@ func tunnelProxy() {
 			startTunnel()
 		} else if process == "Close Tunnel" {
 			closeTunnel()
+		} else if process == "Logout" {
+			utils.WriteToken("")
 		}
 	}
 	if process != "Back" {
