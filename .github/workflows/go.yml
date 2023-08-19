@@ -50,7 +50,7 @@ jobs:
     - name: Test
       run: go test -v ./...
 
-    - name: Run GoReleaser
+    - name: Run goreleaser/goreleaser-action@v4
       uses: goreleaser/goreleaser-action@v4
       with:
         distribution: goreleaser
