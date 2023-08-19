@@ -34,6 +34,14 @@ func tunnelProxy() {
 			survey.AskOne(&survey.Input{Message: "Username:"}, &username)
 			survey.AskOne(&survey.Input{Message: "Password:"}, &password)
 			client.Login(username, password)
+		} else if process == "Register" {
+			var username string
+			var email string
+			var password string
+			survey.AskOne(&survey.Input{Message: "Username:"}, &username)
+			survey.AskOne(&survey.Input{Message: "Email:"}, &email)
+			survey.AskOne(&survey.Input{Message: "Password:"}, &password)
+			client.Register(username, password, email)
 		}
 	} else {
 
@@ -58,9 +66,8 @@ func tunnelProxy() {
 		} else if process == "Close Tunnel" {
 			closeTunnel()
 		}
-		tunnelProxy()
 	}
-
+	tunnelProxy()
 }
 
 func closeTunnel() {
