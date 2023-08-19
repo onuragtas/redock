@@ -78,6 +78,7 @@ func setupProcesses() {
 	processMapList = append(processMapList, Process{Name: "Self-Update", Func: selfUpdate})
 	processMapList = append(processMapList, Process{Name: "Update Docker", Func: dockerUpdate})
 	processMapList = append(processMapList, Process{Name: "Update Docker Images", Func: dockerImageUpdate})
+	processMapList = append(processMapList, Process{Name: "Tunnel Proxy", Func: tunnelProxy})
 	// processMapList = append(processMapList, Process{Name: "TCP Forward", Func: TcpForward})
 	processMapList = append(processMapList, Process{Name: "Quit", Func: func() {
 		os.Exit(1)
