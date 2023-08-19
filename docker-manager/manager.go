@@ -229,8 +229,8 @@ func (t *DockerEnvironmentManager) GetActiveServices() map[int]bool {
 	return t.activeServices
 }
 
-func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string) {
-	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort)
+func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) {
+	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort, addHosts)
 }
 
 func (t *DockerEnvironmentManager) GetWorkDir() string {
