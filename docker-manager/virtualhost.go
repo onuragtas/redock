@@ -91,7 +91,7 @@ func (t *VirtualHost) createConfig(service, domain, folder, phpVersion, typeConf
 	}
 }
 
-func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string) {
+func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) {
 	var process string
 	confPath := t.GetConfigPath(service)
 	if t.checkFile(confPath + "/" + domain + ".conf") {
@@ -122,7 +122,9 @@ func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeCo
 
 	t.createConfig(service, domain, folder, phpVersion, typeConf, proxyPassPort)
 	t.manager.Restart(service)
-	t.addHosts(domain)
+	if addHosts {
+		t.addHosts(domain)
+	}
 }
 
 func (t *VirtualHost) FindInHosts(domain string) bool {

@@ -157,7 +157,40 @@ func deleteDomain() {
 func createDomain() {
 	var domain string
 	survey.AskOne(&survey.Input{Message: "Domain Name/Empty Random:"}, &domain)
-	client.CreateDomain(domain)
+	response := client.CreateDomain(domain).(models.Response)
+
+	var addVhost string
+	survey.AskOne(&survey.Select{Message: "Add VHost?", Options: []string{"Y", "N"}}, &addVhost)
+	if addVhost == "Y" {
+
+		var service string
+		var folder string
+		var phpService string
+		var typeConf string
+		var proxyPass string
+
+		service = pickService()
+
+		if domain == "" {
+			domain = response.Data["domain"].(string) + ".resoft.org"
+		} else {
+			domain = domain + ".resoft.org"
+		}
+
+		typeConf = "Default"
+
+		if typeConf == "Default" {
+			inputBox := &survey.Input{Message: "Folder:"}
+			err := survey.AskOne(inputBox, &folder)
+			if err != nil {
+				log.Println(err)
+			}
+
+			phpService = selectPhpServices()
+		}
+
+		dockerEnvironmentManager.AddVirtualHost(service, domain, folder, phpService, typeConf, proxyPass, false)
+	}
 }
 
 func listDomains(multiple bool) []string {
