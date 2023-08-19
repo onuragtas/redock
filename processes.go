@@ -63,7 +63,7 @@ func addVirtualHost() {
 	}
 
 	fmt.Println(domain)
-	dockerEnvironmentManager.AddVirtualHost(service, domain, folder, phpService, typeConf, proxyPass)
+	dockerEnvironmentManager.AddVirtualHost(service, domain, folder, phpService, typeConf, proxyPass, true)
 }
 
 func editVirtualHost() {
