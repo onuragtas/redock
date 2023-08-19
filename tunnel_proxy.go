@@ -18,9 +18,9 @@ func tunnelProxy() {
 			}
 		}()
 	}()
+	var process string
 
 	if !client.CheckUser() {
-		var process string
 		var processes = []string{"Register", "Login"}
 		selectBox := &survey.Select{Message: "Pick your process", Options: processes, PageSize: 20}
 		err := survey.AskOne(selectBox, &process)
@@ -44,9 +44,7 @@ func tunnelProxy() {
 			client.Register(username, password, email)
 		}
 	} else {
-
-		var process string
-		var processes = []string{"List Domain", "Create New Domain", "Delete Domain", "Renew Domain", "Start Tunnel", "Close Tunnel"}
+		var processes = []string{"List Domain", "Create New Domain", "Delete Domain", "Renew Domain", "Start Tunnel", "Close Tunnel", "Back"}
 		selectBox := &survey.Select{Message: "Pick your process", Options: processes, PageSize: 20}
 		err := survey.AskOne(selectBox, &process)
 		if err != nil {
@@ -67,7 +65,9 @@ func tunnelProxy() {
 			closeTunnel()
 		}
 	}
-	tunnelProxy()
+	if process != "Back" {
+		tunnelProxy()
+	}
 }
 
 func closeTunnel() {
