@@ -272,21 +272,12 @@ func dockerImageUpdate() {
 }
 
 func selfUpdate() {
-	arch := make(map[string]string)
-	arch["386"] = "i386"
-	arch["amd64"] = "x86_64"
-	arch["arm64"] = "arm64"
 
-	goos := make(map[string]string)
-	goos["darwin"] = "Darwin"
-	goos["linux"] = "Linux"
-	goos["windows"] = "Windows"
-
-	log.Println("https://github.com/onuragtas/redock/releases/latest/download/redock_"+goos[runtime.GOOS]+"_"+arch[runtime.GOARCH], "downloading...")
+	log.Println("https://github.com/onuragtas/redock/releases/latest/download/redock_"+runtime.GOOS+"_"+runtime.GOARCH, "downloading...")
 
 	var updater = &selfupdate.Updater{
 		CurrentVersion: "v1.0.0",
-		BinURL:         "https://github.com/onuragtas/redock/releases/latest/download/redock_" + goos[runtime.GOOS] + "_" + arch[runtime.GOARCH],
+		BinURL:         "https://github.com/onuragtas/redock/releases/latest/download/redock_" + runtime.GOOS + "_" + runtime.GOARCH,
 		Dir:            "update/",
 		CmdName:        "/docker-env",
 	}
