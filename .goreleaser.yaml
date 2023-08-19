@@ -20,16 +20,7 @@ builds:
 archives:
   - id: docker-env
     format: binary
-    name_template: >-
-      {{- .ProjectName }}_
-      {{- if eq title .Os "Linux" }}linux_
-      {{- else if eq title .Os "Darwin" }}darwin_
-      {{- else if eq title .Os "Windows" }}windows_
-      {{ end }}
-      
-      {{- if eq .Arch "amd64" }}x86_64
-      {{- else if eq .Arch "386" }}i386
-      {{ end -}}
+    name_template: "{{ .ProjectName }}_{{ .Os }}_{{ .Arch }}"
 
 checksum:
   name_template: 'checksums.txt'
