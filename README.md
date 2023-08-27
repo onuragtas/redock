@@ -16,7 +16,7 @@ redock
 <summary>Amd64</summary>
 
 ```
-wget https://github.com/onuragtas/redock/releases/latest/download/redock_Darwin_x86_64 -O /usr/local/bin/redock
+wget https://github.com/onuragtas/redock/releases/latest/download/redock_Darwin_amd64 -O /usr/local/bin/redock
 chmod +x /usr/local/bin/redock
 redock
 ```
@@ -30,7 +30,7 @@ redock
 Download
 
 ```
-wget https://github.com/onuragtas/redock/releases/latest/download/redock_Linux_x86_64 -O /usr/local/bin/redock
+wget https://github.com/onuragtas/redock/releases/latest/download/redock_Linux_amd64 -O /usr/local/bin/redock
 chmod +x /usr/local/bin/redock
 ```
 
