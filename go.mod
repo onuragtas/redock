@@ -14,7 +14,7 @@ require (
 	github.com/mattn/go-colorable v0.1.13 // indirect
 	github.com/mattn/go-isatty v0.0.19 // indirect
 	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
-	github.com/onuragtas/tunnel-client v1.0.35
+	github.com/onuragtas/tunnel-client v1.0.36
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	github.com/sergi/go-diff v1.3.1 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect

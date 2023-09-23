@@ -73,6 +73,8 @@ github.com/onuragtas/tunnel-client v1.0.34 h1:V/VxVlfB0uPWfLiLP2NxIdgXCnQ5gQUxXx
 github.com/onuragtas/tunnel-client v1.0.34/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
 github.com/onuragtas/tunnel-client v1.0.35 h1:mZnc0cwrwnxBlcqeEgP2m6PuDFLGUqAbotnhORJmCRg=
 github.com/onuragtas/tunnel-client v1.0.35/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
+github.com/onuragtas/tunnel-client v1.0.36 h1:rLe6R0Vu9FQK6GvGP/jcl/pUYGLgVuothxDUK3wOQ8c=
+github.com/onuragtas/tunnel-client v1.0.36/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
 github.com/pelletier/go-buffruneio v0.2.0/go.mod h1:JkE26KsDizTr40EUHkXVtNPvgGtbSNq5BcowyYOWdKo=
 github.com/pkg/errors v0.8.1 h1:iURUrRGxPUNPdy5/HRSm+Yj6okJ6UtLINN0Q9M4+h3I=
 github.com/pkg/errors v0.8.1/go.mod h1:bwawxfHBFNV+L2hUp1rHADufV3IMtnDRdf1r5NINEl0=
