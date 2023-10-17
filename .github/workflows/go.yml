@@ -12,7 +12,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
+    - uses: actions/checkout@v4
 
     - name: Create Config
       env:
@@ -40,7 +40,7 @@ jobs:
         cat account.go
 
     - name: Set up Go
-      uses: actions/setup-go@v2
+      uses: actions/setup-go@v4
       with:
         go-version: 1.17
 
@@ -50,8 +50,8 @@ jobs:
     - name: Test
       run: go test -v ./...
 
-    - name: Run goreleaser/goreleaser-action@v4
-      uses: goreleaser/goreleaser-action@v4
+    - name: Run goreleaser/goreleaser-action@v5
+      uses: goreleaser/goreleaser-action@v5
       with:
         distribution: goreleaser
         version: latest
