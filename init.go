@@ -25,7 +25,7 @@ var dockerEnvironmentManager dockermanager.DockerEnvironmentManager
 var devEnv bool
 
 func init() {
-
+	checkSelfUpdate()
 	if len(os.Args) > 1 && os.Args[1] == "--devenv" {
 		devEnv = true
 	}

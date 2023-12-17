@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/onuragtas/command"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"io/fs"
@@ -16,7 +17,6 @@ import (
 	"syscall"
 
 	"github.com/kardianos/osext"
-	"github.com/onuragtas/docker-env/command"
 	"github.com/onuragtas/docker-env/selfupdate"
 )
 
