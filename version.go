@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var version = "v1.0.111"
+var version = "v1.0.112"
 
 func checkSelfUpdate() {
 	var lastRelease selfupdate.LastRelease
@@ -19,6 +19,7 @@ func checkSelfUpdate() {
 	req.Get()
 
 	json.Unmarshal(req.GetBody(), &lastRelease)
+	log.Println("Current version:", version, "Latest version:", lastRelease.Name)
 	if version != lastRelease.Name {
 		if getProcessOwner() != "root" {
 			log.Fatalln("Please run this command as root user.")
