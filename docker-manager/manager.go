@@ -2,7 +2,7 @@ package docker_manager
 
 import (
 	"fmt"
-	"github.com/onuragtas/docker-env/command"
+	"github.com/onuragtas/command"
 	"gopkg.in/yaml.v2"
 	"io/ioutil"
 	"log"
