@@ -1,11 +1,14 @@
 package main
 
 import (
+	"fmt"
 	"github.com/AlecAivazis/survey/v2"
 	tunnel "github.com/onuragtas/tunnel-client"
 	"github.com/onuragtas/tunnel-client/models"
 	"github.com/onuragtas/tunnel-client/utils"
 	"log"
+	"os/exec"
+	"runtime"
 	"strconv"
 )
 
@@ -45,7 +48,7 @@ func tunnelProxy() {
 			client.Register(username, password, email)
 		}
 	} else {
-		var processes = []string{"List Domain", "Create New Domain", "Delete Domain", "Renew Domain", "Start Tunnel", "Close Tunnel", "Logout", "Back"}
+		var processes = []string{"List Domain", "Create New Domain", "Delete Domain", "Renew Domain", "Start Tunnel", "Close Tunnel", "Logout", "Back", "Buy me a coffee"}
 		selectBox := &survey.Select{Message: "Pick your process", Options: processes, PageSize: 20}
 		err := survey.AskOne(selectBox, &process)
 		if err != nil {
@@ -66,6 +69,8 @@ func tunnelProxy() {
 			closeTunnel()
 		} else if process == "Logout" {
 			utils.WriteToken("")
+		} else if process == "Buy me a coffee" {
+			openbrowser("https://www.buymeacoffee.com/onuragtas")
 		}
 	}
 	if process != "Back" {
@@ -240,4 +245,21 @@ func getDomainIdList(selects []string, domainList []models.DomainItem) []string 
 		}
 	}
 	return list
+}
+
+func openbrowser(url string) {
+	var err error
+	switch runtime.GOOS {
+	case "linux":
+		err = exec.Command("xdg-open", url).Start()
+	case "windows":
+		err = exec.Command("rundll32", "url.dll,FileProtocolHandler", url).Start()
+	case "darwin":
+		err = exec.Command("open", url).Start()
+	default:
+		err = fmt.Errorf("unsupported platform")
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
 }
