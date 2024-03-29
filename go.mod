@@ -2,8 +2,6 @@ module github.com/onuragtas/docker-env
 
 go 1.21
 
-toolchain go1.21.6
-
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/kardianos/osext v0.0.0-20190222173326-2bc1f35cddc0
