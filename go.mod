@@ -8,7 +8,7 @@ require (
 	github.com/kr/binarydist v0.1.0
 	github.com/onuragtas/command v1.0.21
 	github.com/onuragtas/go-requests v1.0.6
-	github.com/onuragtas/tunnel-client v1.0.43
+	github.com/onuragtas/tunnel-client v1.0.44
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	gopkg.in/inconshreveable/go-update.v0 v0.0.0-20150814200126-d8b0b1d421aa
 	gopkg.in/src-d/go-git.v4 v4.13.1
