@@ -1,9 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/onuragtas/command"
+	docker_manager "github.com/onuragtas/docker-env/docker-manager"
 	"gopkg.in/src-d/go-git.v4"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"io/fs"
@@ -13,6 +15,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 	"syscall"
 
@@ -314,4 +317,112 @@ func execBashService() {
 	}
 
 	dockerEnvironmentManager.ExecBash(service, domain)
+}
+
+func devEnvCreate() {
+	file, err := os.ReadFile(dockerEnvironmentManager.GetWorkDir() + "/devenv.json")
+	if err != nil {
+		log.Println(err)
+	}
+
+	var devEnvList []docker_manager.DevEnv
+
+	var username string
+	var password string
+	var port int
+
+	survey.AskOne(&survey.Input{Message: "Enter your devenv username:"}, &username)
+	survey.AskOne(&survey.Password{Message: "Enter your devenv password:"}, &password)
+	survey.AskOne(&survey.Input{Message: "Enter your devenv port:"}, &port)
+
+	json.Unmarshal(file, &devEnvList)
+
+	devEnvList = append(devEnvList, docker_manager.DevEnv{
+		Username: username,
+		Password: password,
+		Port:     port,
+	})
+
+	marshal, err := json.Marshal(devEnvList)
+	if err != nil {
+		log.Println(err)
+	}
+
+	os.WriteFile(dockerEnvironmentManager.GetWorkDir()+"/devenv.json", marshal, 0777)
+
+	c := command.Command{}
+	c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "bash", "serviceip.sh", strconv.Itoa(port), username, password)
+}
+
+func devEnvList() {
+	file, err := os.ReadFile(dockerEnvironmentManager.GetWorkDir() + "/devenv.json")
+	if err != nil {
+		log.Println(err)
+	}
+
+	var devEnvList []docker_manager.DevEnv
+	json.Unmarshal(file, &devEnvList)
+
+	var item string
+	var items []string
+	for _, domain := range devEnvList {
+		items = append(items, domain.Username)
+	}
+
+	selectBox := &survey.Select{Message: "Pick your item", Options: items, PageSize: 20}
+	err = survey.AskOne(selectBox, &item)
+	if err != nil {
+		log.Println(err)
+	}
+}
+
+func devEnvRemove() {
+	file, err := os.ReadFile(dockerEnvironmentManager.GetWorkDir() + "/devenv.json")
+	if err != nil {
+		log.Println(err)
+	}
+
+	var devEnvList []docker_manager.DevEnv
+	json.Unmarshal(file, &devEnvList)
+
+	var item string
+	var items []string
+	for _, domain := range devEnvList {
+		items = append(items, domain.Username)
+	}
+
+	selectBox := &survey.Select{Message: "Pick your item", Options: items, PageSize: 20}
+	err = survey.AskOne(selectBox, &item)
+	if err != nil {
+		log.Println(err)
+	}
+
+	for i, listItem := range devEnvList {
+		if listItem.Username == item {
+			devEnvList = append(devEnvList[:i], devEnvList[i+1:]...)
+		}
+	}
+	marshal, err := json.Marshal(devEnvList)
+
+	if err != nil {
+		log.Println(err)
+	}
+
+	os.WriteFile(dockerEnvironmentManager.GetWorkDir()+"/devenv.json", marshal, 0777)
+
+	c := command.Command{}
+	c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "docker", "-rm", item, "-f")
+}
+
+func devEnvRegenerate() {
+	file, err := os.ReadFile(dockerEnvironmentManager.GetWorkDir() + "/devenv.json")
+	if err != nil {
+		log.Println(err)
+	}
+
+	var devEnvList []docker_manager.DevEnv
+	json.Unmarshal(file, &devEnvList)
+
+	c := command.Command{}
+	c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "bash", "restart-docker-image.sh")
 }
