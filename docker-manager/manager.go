@@ -38,6 +38,12 @@ type DockerEnvironmentManager struct {
 	Username           string
 }
 
+type DevEnv struct {
+	Username string `yaml:"username" json:"username"`
+	Password string `yaml:"password" json:"password"`
+	Port     int    `yaml:"port" json:"port"`
+}
+
 func Find(obj interface{}, key string) (interface{}, bool) {
 
 	//if the argument is not a map, ignore it
