@@ -424,5 +424,10 @@ func devEnvRegenerate() {
 	json.Unmarshal(file, &devEnvList)
 
 	c := command.Command{}
-	c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "bash", "restart-docker-image.sh")
+	c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "docker", "pull", "hakanbaysal/devenv:latest")
+
+	for _, env := range devEnvList {
+		c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "docker", "rm", env.Username, "-f")
+		c.RunCommand(dockerEnvironmentManager.GetWorkDir(), "bash", "serviceip.sh", strconv.Itoa(env.Port), env.Username, env.Password)
+	}
 }
