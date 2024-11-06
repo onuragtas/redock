@@ -53,7 +53,7 @@ func init() {
 		dockerEnvironmentManager.NginxConfPath = "/usr/local/nginx"
 	}
 
-	go dockerEnvironmentManager.Init()
+	dockerEnvironmentManager.Init()
 	if !devEnv {
 		go dockerEnvironmentManager.CheckLocalIpAndRegenerate()
 	}
