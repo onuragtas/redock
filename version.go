@@ -11,7 +11,7 @@ import (
 	"strings"
 )
 
-var version = "1.0.122"
+var version = "1.0.123"
 
 func checkSelfUpdate() {
 	var lastRelease selfupdate.LastRelease
