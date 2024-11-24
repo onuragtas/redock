@@ -1,6 +1,6 @@
 <details>
 <summary>For Macos</summary>
-  
+
 <details>
 <summary>Apple Slicon</summary>
 
@@ -26,7 +26,7 @@ redock
 
 <details>
 <summary>For Linux</summary>
-  
+
 Download
 
 ```

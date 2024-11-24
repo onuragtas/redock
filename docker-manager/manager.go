@@ -2,16 +2,22 @@ package docker_manager
 
 import (
 	"fmt"
-	"github.com/onuragtas/command"
-	"gopkg.in/yaml.v2"
+	"io/fs"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
+	"path/filepath"
+	"regexp"
 	"runtime"
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/onuragtas/command"
+	"gopkg.in/src-d/go-git.v4"
+	"gopkg.in/src-d/go-git.v4/plumbing"
+	"gopkg.in/yaml.v2"
 )
 
 type DockerEnvironmentManager struct {
@@ -24,6 +30,7 @@ type DockerEnvironmentManager struct {
 	ActiveServicesList Services
 	ActiveServices     []string
 	EnvDistPath        string
+	EnvDist            string
 	EnvPath            string
 	InstallPath        string
 	limitLog           int
@@ -42,6 +49,25 @@ type DevEnv struct {
 	Username string `yaml:"username" json:"username"`
 	Password string `yaml:"password" json:"password"`
 	Port     int    `yaml:"port" json:"port"`
+}
+
+type Process struct {
+	Name string
+	Func func()
+}
+
+var answers []string
+
+var dockerRepo = "https://github.com/onuragtas/docker"
+
+var dockerEnvironmentManager DockerEnvironmentManager
+
+func (t *DockerEnvironmentManager) GetWorkDir() string {
+	return t.getHomeDir() + "/.docker-environment"
+}
+
+func GetDockerManager() *DockerEnvironmentManager {
+	return &dockerEnvironmentManager
 }
 
 func Find(obj interface{}, key string) (interface{}, bool) {
@@ -79,7 +105,19 @@ func Find(obj interface{}, key string) (interface{}, bool) {
 	return nil, false
 }
 
+func (t *DockerEnvironmentManager) initialize() {
+	t.File = dockerEnvironmentManager.GetWorkDir() + "/docker-compose.yml.{.arch}.dist"
+	t.ComposeFilePath = dockerEnvironmentManager.GetWorkDir() + "/docker-compose.yml"
+	t.EnvDistPath = dockerEnvironmentManager.GetWorkDir() + "/.env.example"
+	t.EnvPath = dockerEnvironmentManager.GetWorkDir() + "/.env"
+	t.InstallPath = dockerEnvironmentManager.GetWorkDir() + "/install.sh"
+	t.AddVirtualHostPath = dockerEnvironmentManager.GetWorkDir() + "/add_virtualhost.sh"
+	t.HttpdConfPath = dockerEnvironmentManager.GetWorkDir() + "/httpd/sites-enabled"
+}
+
 func (t *DockerEnvironmentManager) Init() {
+	t.initialize()
+
 	t.Services = Services{}
 	t.activeServices = make(map[int]bool)
 	t.ActiveServices = []string{}
@@ -87,7 +125,8 @@ func (t *DockerEnvironmentManager) Init() {
 	t.Virtualhost = NewVirtualHost(t)
 	t.command = command.Command{}
 	t.activeServices = make(map[int]bool)
-	_, err := ioutil.ReadFile(t.EnvDistPath)
+	envDist, err := ioutil.ReadFile(t.EnvDistPath)
+	t.EnvDist = string(envDist)
 	envFile, envFileErr := ioutil.ReadFile(t.EnvPath)
 	t.Env = string(envFile)
 	if envFileErr == nil {
@@ -186,6 +225,99 @@ func (t *DockerEnvironmentManager) GetService(name string) (*Service, bool) {
 func (t *DockerEnvironmentManager) Up(services []string) {
 	t.createComposeFile(services)
 	//t.startCommand("cp", t.EnvDistPath, t.EnvPath)
+	t.runInstall()
+
+}
+
+func (t *DockerEnvironmentManager) getDepends(answer string) []string {
+	if depends, ok := dockerEnvironmentManager.CheckDepends(answer); ok {
+		for _, dependsValue := range depends.Links {
+			if !strings.Contains(dependsValue, answer) && !t.inService(dependsValue, answers) {
+				answers = append(answers, dependsValue)
+				t.getDepends(dependsValue)
+			}
+		}
+
+		for _, dependsValue := range depends.DependsOn {
+			if !strings.Contains(dependsValue, answer) && !t.inService(dependsValue, answers) {
+				answers = append(answers, dependsValue)
+				t.getDepends(dependsValue)
+			}
+		}
+	}
+
+	return answers
+}
+
+func (t *DockerEnvironmentManager) inService(service string, answers []string) bool {
+	for _, answer := range answers {
+		if service == answer {
+			return true
+		}
+	}
+
+	return false
+}
+
+func (t *DockerEnvironmentManager) AddService(item string) {
+
+	t.CopyStruct = t.Struct
+	t.CopyStruct["services"] = make(map[interface{}]interface{})
+	services := t.ActiveServices
+	services = append(services, item)
+
+	depends := t.getDepends(item)
+	for _, depend := range depends {
+		if !t.inService(depend, services) {
+			services = append(services, depend)
+		}
+	}
+
+	for _, item := range services {
+		if service, ok := t.GetService(item); ok {
+			t.CopyStruct["services"].(map[interface{}]interface{})[item] = service.Original
+		}
+	}
+
+	yamlData, _ := yaml.Marshal(t.CopyStruct)
+	err := ioutil.WriteFile(t.ComposeFilePath, yamlData, 0644)
+	if err != nil {
+		log.Println(err)
+	}
+
+	t.ActiveServices = services
+
+	t.command.RunCommand(t.GetWorkDir(), "sysctl", "-w", "vm.max_map_count=2048000")
+	t.command.RunCommand(t.GetWorkDir(), "sysctl", "-w", "fs.file-max=65536")
+	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "up", "-d", item)
+	t.Init()
+}
+
+func (t *DockerEnvironmentManager) RemoveService(item string) {
+	t.CopyStruct = t.copyStruct
+	if service, ok := t.GetService(item); ok {
+		delete(t.CopyStruct["services"].(map[interface{}]interface{}), service.ContainerName)
+	}
+
+	yamlData, _ := yaml.Marshal(t.CopyStruct)
+	err := ioutil.WriteFile(t.ComposeFilePath, yamlData, 0644)
+	if err != nil {
+		log.Println(err)
+	}
+
+	t.command.RunCommand(t.GetWorkDir(), "docker", "rm", item, "-f")
+	newList := []string{}
+	for _, v := range t.ActiveServices {
+		if v != item {
+			newList = append(newList, v)
+		}
+	}
+
+	t.ActiveServices = newList
+	t.Init()
+}
+
+func (t *DockerEnvironmentManager) runInstall() {
 	osName := runtime.GOOS
 	switch osName {
 	case "linux":
@@ -194,7 +326,6 @@ func (t *DockerEnvironmentManager) Up(services []string) {
 	default:
 		t.command.RunCommand(t.GetWorkDir(), "sh", t.InstallPath)
 	}
-
 }
 
 func (t *DockerEnvironmentManager) createComposeFile(services []string) {
@@ -237,10 +368,6 @@ func (t *DockerEnvironmentManager) GetActiveServices() map[int]bool {
 
 func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) {
 	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort, addHosts)
-}
-
-func (t *DockerEnvironmentManager) GetWorkDir() string {
-	return t.getHomeDir() + "/.docker-environment"
 }
 
 func (t *DockerEnvironmentManager) getHomeDir() string {
@@ -289,7 +416,7 @@ func (t *DockerEnvironmentManager) ExecBash(service string, domain string) {
 	c.RunWithPipe("docker", "exec", "-it", service, "env", cmd, "bash", "-l")
 }
 
-func (t *DockerEnvironmentManager) getLocalIP() string {
+func (t *DockerEnvironmentManager) GetLocalIP() string {
 
 	netInterfaceAddresses, err := net.InterfaceAddrs()
 
@@ -316,9 +443,9 @@ func (t *DockerEnvironmentManager) getLocalIP() string {
 }
 func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	c := command.Command{}
-	conf := fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000) // todo hardcoded read .env
+	conf := fmt.Sprintf(xdebugConf, t.GetLocalIP(), 10000) // todo hardcoded read .env
 	if ip, err := t.Virtualhost.getXDebugIp(); err == nil {
-		t.Env = strings.ReplaceAll(t.Env, "XDEBUG_HOST="+ip, "XDEBUG_HOST="+t.getLocalIP())
+		t.Env = strings.ReplaceAll(t.Env, "XDEBUG_HOST="+ip, "XDEBUG_HOST="+t.GetLocalIP())
 		os.WriteFile(t.EnvPath, []byte(t.Env), 0644)
 	}
 
@@ -332,9 +459,9 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 
 	for _, service := range phpServices {
 		if strings.Contains(service, "81") {
-			conf = fmt.Sprintf(xdebugConf8, t.getLocalIP(), 10000)
+			conf = fmt.Sprintf(xdebugConf8, t.GetLocalIP(), 10000)
 		} else {
-			conf = fmt.Sprintf(xdebugConf, t.getLocalIP(), 10000)
+			conf = fmt.Sprintf(xdebugConf, t.GetLocalIP(), 10000)
 		}
 		c.RunWithPipe("/usr/local/bin/docker", "exec", "-it", service, "bash", "-c", `echo "`+conf+`" > /usr/local/etc/php/conf.d/xdebug.ini`)
 	}
@@ -377,11 +504,130 @@ func (t *DockerEnvironmentManager) RestartAll() {
 
 func (t *DockerEnvironmentManager) CheckLocalIpAndRegenerate() {
 	for true {
-		localIp := t.getLocalIP()
+		localIp := t.GetLocalIP()
 		if ip, err := t.Virtualhost.getXDebugIp(); err == nil && ip != localIp {
 			t.RegenerateXDebugConf()
 		}
 		time.Sleep(5 * time.Second)
 	}
 
+}
+
+func (t *DockerEnvironmentManager) AddXDebug() {
+	filepath.Walk(dockerEnvironmentManager.HttpdConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fcgi://php([a-z0-9-_]+):9000`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if !strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fcgi://php${1}_xdebug:9000"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug added")
+			}
+		}
+		return nil
+	})
+
+	filepath.Walk(dockerEnvironmentManager.NginxConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fastcgi_pass php([a-z0-9-_]+):9000;`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if !strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fastcgi_pass php${1}_xdebug:9000;"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug added")
+			}
+		}
+		return nil
+	})
+
+	dockerEnvironmentManager.RestartAll()
+}
+
+func (t *DockerEnvironmentManager) RemoveXDebug() {
+	filepath.Walk(dockerEnvironmentManager.HttpdConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fcgi://php([a-z0-9-_]+)([-_]+)([a-z]+):9000`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fcgi://php${1}:9000"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug removed")
+			}
+		}
+		return nil
+	})
+
+	filepath.Walk(dockerEnvironmentManager.NginxConfPath, func(path string, info fs.FileInfo, err error) error {
+		file, err := ioutil.ReadFile(path)
+		if err != nil {
+			return nil
+		}
+
+		var re = regexp.MustCompile(`(?m)fastcgi_pass php([a-z0-9-_]+)([-_]+)([a-z]+):9000;`)
+
+		for _, match := range re.FindAllString(string(file), -1) {
+			if strings.Contains(match, "xdebug") {
+				n := strings.ReplaceAll(string(file), match, re.ReplaceAllString(match, "fastcgi_pass php${1}:9000;"))
+				ioutil.WriteFile(path, []byte(n), 0777)
+				log.Println(path, "xdebug removed")
+			}
+		}
+		return nil
+	})
+
+	dockerEnvironmentManager.RestartAll()
+}
+
+func (t *DockerEnvironmentManager) UpdateDocker() {
+	_, err := git.PlainClone(t.GetWorkDir(), false, &git.CloneOptions{
+		URL:      dockerRepo,
+		Progress: os.Stdout,
+	})
+	if err != nil && err.Error() != git.ErrRepositoryAlreadyExists.Error() {
+		panic(err)
+	}
+
+	r, err := git.PlainOpen(t.GetWorkDir())
+	if err != nil {
+		log.Print(err)
+	}
+
+	w, err := r.Worktree()
+	if err != nil {
+		log.Print(err)
+	}
+	head, err := r.Head()
+	if err != nil {
+		log.Print(err)
+	}
+
+	commit := plumbing.NewHash(head.Hash().String())
+
+	err = w.Reset(&git.ResetOptions{
+		Mode:   git.HardReset,
+		Commit: commit,
+	})
+	if err != nil {
+		log.Print(err)
+	}
+
+	err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
+	if err != nil {
+		log.Print(err)
+	}
 }
