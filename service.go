@@ -28,20 +28,19 @@ func (p *program) run() {
 }
 
 func main() {
-	if getProcessOwner() != "root" {
-		log.Fatalln("Please run this command as root user.")
-	}
-
 	action := flag.String("action", "", "Use this flag to perform an action on the service. [install|start|stop|uninstall]")
 	flag.Parse()
 
 	svcConfig := &service.Config{
-		Name:             "redock",
-		DisplayName:      "Redock",
-		Description:      "Redock Service",
-		UserName:         "root",
-		WorkingDirectory: "/root",
-		EnvVars:          map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
+		Name:        "redock",
+		DisplayName: "Redock",
+		Description: "Redock Service",
+		EnvVars:     map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
+	}
+
+	if getProcessOwner() == "root" {
+		svcConfig.UserName = "root"
+		svcConfig.WorkingDirectory = "/root"
 	}
 
 	prg := &program{}
