@@ -10,7 +10,7 @@ import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.
 import LayoutAuthenticated from "@/layouts/LayoutAuthenticated.vue";
 import ApiService from "@/services/ApiService";
 import { useMainStore } from "@/stores/main";
-import { mdiAccountMultiple, mdiMinus, mdiPencil } from "@mdi/js";
+import { mdiAccountMultiple, mdiMinus, mdiMonitorCellphone, mdiPencil } from "@mdi/js";
 import { DataTable } from "datatables.net-vue3";
 import { ref } from "vue";
 
@@ -75,6 +75,9 @@ export default {
     mdiDelete() {
       return mdiMinus
     },
+    mdiMonitorCellphone() {
+      return mdiMonitorCellphone
+    },
     getPersonalContainers() {
       this.personalContainers = [];
       ApiService.getPersonalContainers().then(value => {
@@ -137,7 +140,8 @@ export default {
       <SectionTitleLineWithButton :icon="mdiAccountMultiple()" title="Personal Containers">
         <BaseButtons>
           <BaseButton type="submit" label="Create" color="info" @click="isAddModalActive = true" />
-          <BaseButton type="submit" label="Reload" :disabled="regenerateBtnActive != true" color="info" @click="regenerate()" />
+          <BaseButton type="submit" label="Reload" :disabled="regenerateBtnActive != true" color="info"
+            @click="regenerate()" />
         </BaseButtons>
       </SectionTitleLineWithButton>
       <CardBox>
@@ -204,7 +208,8 @@ export default {
             </tr>
           </thead>
           <template #column-3="props">
-            <BaseButton class="mr-1" label="Attach" :icon="mdiMonitorCellphone()" color="info" :to="`/exec/${props.rowData[0]}`" />
+            <BaseButton class="mr-1" label="Attach" :icon="mdiMonitorCellphone()" color="info"
+              :to="`/exec/${props.rowData[0]}`" />
             <BaseButton class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark" @click="editModal(props.rowData)"
               rounded-full />
             <BaseButton label="Delete" :icon="mdiDelete()" color="whiteDark" @click="deleteModal(props.rowData)"
