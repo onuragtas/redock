@@ -204,6 +204,7 @@ export default {
             </tr>
           </thead>
           <template #column-3="props">
+            <BaseButton class="mr-1" label="Attach" :icon="mdiMonitorCellphone()" color="info" :to="`/exec/${props.rowData[0]}`" />
             <BaseButton class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark" @click="editModal(props.rowData)"
               rounded-full />
             <BaseButton label="Delete" :icon="mdiDelete()" color="whiteDark" @click="deleteModal(props.rowData)"
