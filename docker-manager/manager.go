@@ -113,6 +113,7 @@ func (t *DockerEnvironmentManager) initialize() {
 	t.InstallPath = dockerEnvironmentManager.GetWorkDir() + "/install.sh"
 	t.AddVirtualHostPath = dockerEnvironmentManager.GetWorkDir() + "/add_virtualhost.sh"
 	t.HttpdConfPath = dockerEnvironmentManager.GetWorkDir() + "/httpd/sites-enabled"
+	t.NginxConfPath = dockerEnvironmentManager.GetWorkDir() + "/etc/nginx"
 }
 
 func (t *DockerEnvironmentManager) Init() {
