@@ -3,7 +3,13 @@
     <SectionMain>
       <SectionTitleLineWithButton :icon="mdiChartTimelineVariant()" :title="containerId" main>
       </SectionTitleLineWithButton>
-      <div ref="terminalContainer"></div>
+      <FormField v-if="containerId != ''" label="" help="">
+        <FormControl v-model="domain" type="input" placeholder="domain" />
+        <BaseButton type="submit" color="info" label="Enable Debug For Domain" @click="enableDebugForDomain" />
+      </FormField>
+      <div class="full-height">
+        <div ref="terminalContainer" style="width: 100%; height: 100%;"></div>
+      </div>
     </SectionMain>
   </LayoutAuthenticated>
 </template>
@@ -13,6 +19,9 @@ import SectionMain from '@/components/SectionMain.vue';
 import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue';
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue';
 import { mdiChartTimelineVariant } from '@mdi/js';
+import FormControl from "@/components/FormControl.vue";
+import BaseButton from "@/components/BaseButton.vue";
+import FormField from "@/components/FormField.vue";
 import { Terminal } from '@xterm/xterm';
 import { AttachAddon } from 'xterm-addon-attach';
 import { FitAddon } from 'xterm-addon-fit';
@@ -23,6 +32,9 @@ export default {
     LayoutAuthenticated,
     SectionTitleLineWithButton,
     SectionMain,
+    FormControl,
+    FormField,
+    BaseButton,
   },
   data() {
     return {
@@ -34,6 +46,7 @@ export default {
       whoami: '',
       cardClass: '',
       containerId: '',
+      domain: '',
       inputBuffer: '',
       isLastCommandFullScreen: false,
       fullScreenCommands: ['nano', 'htop', 'top']
@@ -45,6 +58,7 @@ export default {
     const fitAddon = new FitAddon();
     this.terminal.loadAddon(fitAddon);
     this.terminal.open(this.$refs.terminalContainer);
+
     fitAddon.fit();
 
     this.containerId = this.$route.params.id;
@@ -75,6 +89,12 @@ export default {
     window.removeEventListener('resize', this.resizeTerminal);
   },
   methods: {
+    enableDebugForDomain() {
+      if (this.domain == '') {
+        return;
+      }
+      this.socket.send('export PHP_IDE_CONFIG="serverName=' + this.domain + '"\n');
+    },
     resizeTerminal() {
       const windowSize = { high: this.terminal.rows, width: this.terminal.cols };
       const blob = new Blob([JSON.stringify(windowSize)], { type: 'application/json' });
@@ -89,28 +109,8 @@ export default {
 
 
 <style scoped>
-/* html ve body'ye yüksekliği 100% yapıyoruz */
-html,
-body {
-  margin: 0;
-  padding: 0;
-  height: 500px;
-  width: 100%;
-}
-
-/* Terminali kapsayan div'in genişlik ve yüksekliğini yüzde 100 yapıyoruz */
-div {
-  height: 500px;
-  width: 100%;
-  background-color: #1e1e1e;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Terminalin genişliğini ve yüksekliğini ayarlıyoruz */
-.xterm {
-  height: 500px;
-  width: 100%;
-  flex-grow: 1;
+.full-height {
+  height: 60vh; /* Görünüm yüksekliğini kaplar */
+  width: 100%; /* Görünüm genişliğini kaplar */
 }
 </style>
