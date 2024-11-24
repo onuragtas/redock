@@ -2,13 +2,14 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/onuragtas/docker-env/selfupdate"
-	"github.com/onuragtas/go-requests"
 	"log"
 	"os"
 	"os/exec"
+	"redock/selfupdate"
 	"runtime"
 	"strings"
+
+	"github.com/onuragtas/go-requests"
 )
 
 var version = "1.0.123"

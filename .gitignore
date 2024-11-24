@@ -2,3 +2,7 @@
 dist/
 account.go
 .vscode/
+__debug_bin*
+web/dist
+web/node_modules
+tunnel_proxy/account.go

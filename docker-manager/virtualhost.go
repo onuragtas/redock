@@ -3,12 +3,14 @@ package docker_manager
 import (
 	"errors"
 	"fmt"
-	"github.com/AlecAivazis/survey/v2"
 	"io/ioutil"
 	"log"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
+
+	"github.com/AlecAivazis/survey/v2"
 )
 
 var proxyNginx = `server {
@@ -155,7 +157,7 @@ func (t *VirtualHost) createNginxConfig(domain string, folder string, version st
 	nginxConf = strings.ReplaceAll(nginxConf, "$domain", domain)
 	nginxConf = strings.ReplaceAll(nginxConf, "$folder", folder)
 	nginxConf = strings.ReplaceAll(nginxConf, "$phpversion", version)
-	nginxConf = strings.ReplaceAll(nginxConf, "$ipAddress", t.manager.getLocalIP())
+	nginxConf = strings.ReplaceAll(nginxConf, "$ipAddress", t.manager.GetLocalIP())
 	nginxConf = strings.ReplaceAll(nginxConf, "$proxyPassPort", proxyPassPort)
 	err := ioutil.WriteFile(t.GetConfigPath("nginx")+"/"+domain+".conf", []byte(nginxConf), 0644)
 	if err != nil {
@@ -223,6 +225,35 @@ func (t *VirtualHost) getXDebugIp() (string, error) {
 		}
 	}
 	return "", errors.New("not found")
+}
+
+func (t *VirtualHost) VirtualHosts() []string {
+	rootPath := t.GetConfigPath("nginx")
+
+	var files []string
+	filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	rootPath = t.GetConfigPath("httpd")
+	filepath.WalkDir(rootPath, func(path string, d os.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if info, err := os.Stat(path); err == nil && !info.IsDir() {
+			files = append(files, path)
+		}
+		return nil
+	})
+
+	return files
+
 }
 
 func NewVirtualHost(manager *DockerEnvironmentManager) *VirtualHost {
