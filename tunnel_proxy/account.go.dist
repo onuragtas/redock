@@ -1,0 +1,4 @@
+package tunnel_proxy
+
+var sshUser = "user"
+var sshPassword = "password"

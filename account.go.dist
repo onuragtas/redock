@@ -1,4 +1,0 @@
-package main
-
-var sshUser = "user"
-var sshPassword = "password"

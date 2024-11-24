@@ -26,10 +26,10 @@ type DockerCompose struct {
 type Services []Service
 
 type Service struct {
-	Build         interface{}
-	ContainerName interface{}
-	Links         []string
-	DependsOn     []string
-	Original      interface{}
-	Image         string
+	Build         interface{} `json:"build"`
+	ContainerName interface{} `json:"container_name"`
+	Links         []string    `json:"links"`
+	DependsOn     []string    `json:"depends_on"`
+	Original      interface{} `json:"original,omitempty"`
+	Image         string      `json:"image"`
 }
