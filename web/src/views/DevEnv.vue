@@ -13,6 +13,7 @@ import { useMainStore } from "@/stores/main";
 import { mdiAccountMultiple, mdiMinus, mdiMonitorCellphone, mdiPencil } from "@mdi/js";
 import { DataTable } from "datatables.net-vue3";
 import { ref } from "vue";
+import { useRouter } from 'vue-router';
 
 export default {
   components: {
@@ -29,6 +30,7 @@ export default {
   },
   data() {
     return {
+      router: useRouter(),
       cardClass: '',
       buttonSettingsModel: ref([]),
       mainStore: useMainStore(),
@@ -93,6 +95,9 @@ export default {
         password: data[1],
         port: data[2].toString()
       }
+    },
+    exec(data) {
+      this.router.push('/exec/' + data[0])
     },
     deleteModal(data) {
       this.isDeleteModalActive = true
@@ -208,8 +213,7 @@ export default {
             </tr>
           </thead>
           <template #column-3="props">
-            <BaseButton class="mr-1" label="Attach" :icon="mdiMonitorCellphone()" color="info"
-              :to="`/exec/${props.rowData[0]}`" />
+            <BaseButton class="mr-1" label="Attach" :icon="mdiMonitorCellphone()" color="info" @click="exec(props.rowData)" />
             <BaseButton class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark" @click="editModal(props.rowData)"
               rounded-full />
             <BaseButton label="Delete" :icon="mdiDelete()" color="whiteDark" @click="deleteModal(props.rowData)"
