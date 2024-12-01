@@ -35,6 +35,11 @@ export default [
     label: 'Local Proxy',
   },
   {
+    to: '/php_xdebug_adapter',
+    icon: mdiBookSearch,
+    label: 'PHP XDebug Adapter',
+  },
+  {
     to: '/ssh_client',
     icon: mdiBookSearch,
     label: 'SSH Client',

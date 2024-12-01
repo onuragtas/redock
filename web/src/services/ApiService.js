@@ -266,6 +266,30 @@ class ApiService {
       service: service
     });
   }
+
+  static async getXDebugAdapterSettings() {
+    return await this.get('/api/v1/php_xdebug_adapter/settings');
+  }
+
+  static async addXDebugAdapterSettings(data) {
+    return await this.post('/api/v1/php_xdebug_adapter/add', data);
+  }
+
+  static async removeXDebugAdapterSettings(data) {
+    return await this.post('/api/v1/php_xdebug_adapter/remove', data);
+  }
+
+  static async updateXDebugAdapterSettings(data) {
+    return await this.post('/api/v1/php_xdebug_adapter/update', data);
+  }
+
+  static async stopXDebugAdapter() {
+    return await this.get('/api/v1/php_xdebug_adapter/stop');
+  }
+
+  static async startXDebugAdapter() {
+    return await this.get('/api/v1/php_xdebug_adapter/start');
+  }
 }
 
 export default ApiService;
