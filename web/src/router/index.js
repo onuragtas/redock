@@ -62,6 +62,14 @@ const routes = [
   },
   {
     meta: {
+      title: 'PHP XDebug Adapter',
+    },
+    path: '/php_xdebug_adapter',
+    name: 'php_xdebug_adapter',
+    component: () => import('@/views/PhpXDebugAdapter.vue')
+  },
+  {
+    meta: {
       title: 'Exec',
     },
     path: '/exec/:id?',

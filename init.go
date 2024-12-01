@@ -5,6 +5,7 @@ import (
 	"os"
 	"redock/devenv"
 	localproxy "redock/local_proxy"
+	"redock/php_debug_adapter"
 	"redock/tunnel_proxy"
 	"time"
 
@@ -43,4 +44,5 @@ func initialize() {
 	devenv.Init(dockerEnvironmentManager)
 	tunnel_proxy.Init(dockerEnvironmentManager)
 	localproxy.Init(dockerEnvironmentManager)
+	php_debug_adapter.Init(dockerEnvironmentManager)
 }
