@@ -12,7 +12,6 @@ import (
 	"runtime"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/onuragtas/command"
@@ -474,7 +473,7 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 }
 
 func (t *DockerEnvironmentManager) RestartAll() {
-	var wg sync.WaitGroup
+	//var wg sync.WaitGroup
 	c := command.Command{}
 
 	var phpServices []string
@@ -484,26 +483,26 @@ func (t *DockerEnvironmentManager) RestartAll() {
 			phpServices = append(phpServices, service)
 		}
 	}
-	wg.Add(len(phpServices) + 2)
+	//wg.Add(len(phpServices) + 2)
 
 	for _, service := range phpServices {
-		go func(w *sync.WaitGroup, serviceName string) {
-			c.RunWithPipe("/usr/local/bin/docker", "restart", serviceName)
-			w.Done()
-		}(&wg, service)
+		//	go func(w *sync.WaitGroup, serviceName string) {
+		c.RunWithPipe("/usr/local/bin/docker", "restart", service)
+		//w.Done()
+		//}(&wg, service)
 	}
 
-	go func(w *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
-		w.Done()
-	}(&wg)
+	//go func(w *sync.WaitGroup) {
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
+	//w.Done()
+	//}(&wg)
 
-	go func(w *sync.WaitGroup) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
-		w.Done()
-	}(&wg)
+	//go func(w *sync.WaitGroup) {
+	c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
+	//w.Done()
+	//}(&wg)
 
-	wg.Wait()
+	//wg.Wait()
 }
 
 func (t *DockerEnvironmentManager) CheckLocalIpAndRegenerate() {
