@@ -45,4 +45,5 @@ func initialize() {
 	tunnel_proxy.Init(dockerEnvironmentManager)
 	localproxy.Init(dockerEnvironmentManager)
 	php_debug_adapter.Init(dockerEnvironmentManager)
+	localproxy.GetLocalProxyManager().StartAll()
 }
