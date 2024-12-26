@@ -36,6 +36,9 @@ func main() {
 		DisplayName: "Redock",
 		Description: "Redock Service",
 		EnvVars:     map[string]string{"PATH": "/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"},
+		Option: map[string]interface{}{
+			"OnFailure": "restart",
+		},
 	}
 
 	if getProcessOwner() == "root" {
