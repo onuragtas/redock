@@ -248,6 +248,8 @@ github.com/onuragtas/reverse-proxy v1.0.25 h1:i2njWaw/CeQCKY5QJDcT8sdSs8dpZCM1Fa
 github.com/onuragtas/reverse-proxy v1.0.25/go.mod h1:yGmIRlSv/kPHH4A6cYdkqZp5VryeB7pS9V4W3w22GDs=
 github.com/onuragtas/reverse-proxy v1.0.26 h1:eJrETcfDuYbjEbAKYPu/i8VQ+r3O+WGZMWdakIbcBEI=
 github.com/onuragtas/reverse-proxy v1.0.26/go.mod h1:yGmIRlSv/kPHH4A6cYdkqZp5VryeB7pS9V4W3w22GDs=
+github.com/onuragtas/reverse-proxy v1.0.27 h1:95ThZNgKl4aQtUNYRPbYQm6MFXoyLYJvfjEYdeaRIro=
+github.com/onuragtas/reverse-proxy v1.0.27/go.mod h1:yGmIRlSv/kPHH4A6cYdkqZp5VryeB7pS9V4W3w22GDs=
 github.com/onuragtas/tunnel-client v1.0.48 h1:1QCIZMNEfQxQp9bq8+3OSfH3uF8z1gQcPCPiW/EpoNY=
 github.com/onuragtas/tunnel-client v1.0.48/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
