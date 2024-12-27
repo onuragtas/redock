@@ -13,6 +13,7 @@ import (
 	"redock/app/models"
 	"redock/platform/database"
 	"redock/ssh_server"
+	"runtime/debug"
 	"strings"
 	"time"
 
@@ -58,6 +59,9 @@ var embedDirStatic embed.FS
 // @in header
 // @name Authorization
 func app() {
+
+	defer recoverFunction()
+
 	os.Setenv("STAGE_STATUS", "production")
 	os.Setenv("SERVER_HOST", "0.0.0.0")
 	os.Setenv("SERVER_PORT", "6001")
@@ -212,4 +216,11 @@ func startShellInDocker(containerId string, cli *dockerClient.Client) (types.Hij
 	}
 
 	return execResp, resp.ID, nil
+}
+
+func recoverFunction() {
+	if r := recover(); r != nil {
+		stack := string(debug.Stack())
+		log.Println("[RECOVER][ERROR]", r, stack)
+	}
 }
