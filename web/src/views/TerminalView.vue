@@ -62,7 +62,7 @@ export default {
     fitAddon.fit();
 
     this.containerId = this.$route.params.id;
-    window.location.protocol + '//' + window.location.hostname + ':6001'
+    window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '')
     var url = 'ws' + '://' + window.location.hostname + ':6001/ws';
     if (!(this.containerId == undefined || this.containerId == '')) {
       url += '/' + this.containerId;
