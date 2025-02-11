@@ -7,7 +7,6 @@ toolchain go1.23.3
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.7
 	github.com/docker/docker v23.0.3+incompatible
-	github.com/gliderlabs/ssh v0.2.2
 	github.com/go-playground/validator/v10 v10.22.1
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gofiber/contrib/jwt v1.0.10
@@ -23,7 +22,7 @@ require (
 	github.com/kr/binarydist v0.1.0
 	github.com/onuragtas/command v1.0.21
 	github.com/onuragtas/go-requests v1.0.6
-	github.com/onuragtas/tunnel-client v1.0.48
+	github.com/onuragtas/tunnel-client v1.0.49
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	github.com/stretchr/testify v1.9.0
 	github.com/swaggo/swag v1.16.4
@@ -32,12 +31,6 @@ require (
 	gopkg.in/inconshreveable/go-update.v0 v0.0.0-20150814200126-d8b0b1d421aa
 	gopkg.in/src-d/go-git.v4 v4.13.1
 	gopkg.in/yaml.v2 v2.4.0
-)
-
-require (
-	github.com/anmitsu/go-shlex v0.0.0-20161002113705-648efa622239 // indirect
-	github.com/erikdubbelboer/gspt v0.0.0-20210805194459-ce36a5128377 // indirect
-	gopkg.in/hlandau/svcutils.v1 v1.0.11 // indirect
 )
 
 require (
@@ -98,7 +91,6 @@ require (
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/savsgio/gotils v0.0.0-20240303185622-093b76447511 // indirect
 	github.com/sergi/go-diff v1.3.1 // indirect
-	github.com/sevlyar/go-daemon v0.1.6
 	github.com/src-d/gcfg v1.4.0 // indirect
 	github.com/swaggo/files/v2 v2.0.0 // indirect
 	github.com/valyala/bytebufferpool v1.0.0 // indirect
@@ -111,7 +103,6 @@ require (
 	golang.org/x/time v0.8.0 // indirect
 	golang.org/x/tools v0.21.1-0.20240508182429-e35e4ccd0d2d // indirect
 	gopkg.in/headzoo/surf.v1 v1.0.1 // indirect
-	gopkg.in/hlandau/service.v3 v3.0.0
 	gopkg.in/src-d/go-billy.v4 v4.3.2 // indirect
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
