@@ -11,7 +11,7 @@ require (
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/gofiber/contrib/jwt v1.0.10
 	github.com/gofiber/contrib/websocket v1.3.2
-	github.com/gofiber/fiber/v2 v2.52.5
+	github.com/gofiber/fiber/v2 v2.52.5 
 	github.com/gofiber/swagger v1.1.0
 	github.com/golang-jwt/jwt/v5 v5.2.1
 	github.com/google/uuid v1.6.0
@@ -22,7 +22,7 @@ require (
 	github.com/kr/binarydist v0.1.0
 	github.com/onuragtas/command v1.0.21
 	github.com/onuragtas/go-requests v1.0.6
-	github.com/onuragtas/tunnel-client v1.0.49
+	github.com/onuragtas/tunnel-client v1.0.50
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	github.com/stretchr/testify v1.9.0
 	github.com/swaggo/swag v1.16.4
