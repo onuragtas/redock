@@ -28,6 +28,10 @@ func (p *program) run() {
 }
 
 func main() {
+	if getProcessOwner() != "root" {
+		log.Fatalln("Please run this command as root user.")
+	}
+
 	action := flag.String("action", "", "Use this flag to perform an action on the service. [install|start|stop|uninstall]")
 	flag.Parse()
 
@@ -39,11 +43,8 @@ func main() {
 		Option: map[string]interface{}{
 			"OnFailure": "restart",
 		},
-	}
-
-	if getProcessOwner() == "root" {
-		svcConfig.UserName = "root"
-		svcConfig.WorkingDirectory = "/root"
+		UserName:         "root",
+		WorkingDirectory: "/root",
 	}
 
 	prg := &program{}
