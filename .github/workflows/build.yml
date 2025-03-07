@@ -76,3 +76,16 @@ jobs:
           git push https://x-access-token:${{ secrets.GO_RELEASER_GITHUB_TOKEN }}@github.com/onuragtas/redock.git --tags
         env:
           GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+
+      - name: Create GitHub Release in Public Repo
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: ${{ github.ref_name }}
+          repository: onuragtas/redock
+          files: dist/*
+          name: "Release ${{ github.ref_name }}"
+          body: ""
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
