@@ -58,3 +58,21 @@ jobs:
           args: release --clean
         env:
           GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          
+      - name: Upload Release to Public Repo
+        run: |
+          git clone https://github.com/onuragtas/redock.git public_repo
+          cd public_repo
+          
+          # Git ayarlarını yap
+          git config user.name "onuragtas"
+          git config user.email "agtasonur@gmail.com"
+
+          cp ../dist/* .
+
+          git add .
+          git commit -m "new release: ${{ github.ref_name }}"
+          git tag ${{ github.ref_name }}
+          git push https://x-access-token:${{ secrets.GO_RELEASER_GITHUB_TOKEN }}@github.com/onuragtas/redock.git --tags
+        env:
+          GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
