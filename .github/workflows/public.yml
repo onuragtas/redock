@@ -1,0 +1,43 @@
+name: Copy Release from Private Repo to Public Repo
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  copy-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout public repo
+        uses: actions/checkout@v3
+        with:
+          repository: onuragtas/redock_public
+          token: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+
+      - name: Fetch release assets from private repo
+        run: |
+          RELEASE_TAG=${{ github.event.release.tag_name }}
+          echo "Release Tag: $RELEASE_TAG"
+          mkdir -p release_assets
+          curl -L "https://api.github.com/repos/onuragtas/redock/releases/tags/$RELEASE_TAG" \
+            -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
+            | jq -r '.assets[].browser_download_url' \
+            | xargs -n 1 curl -L -o release_assets/$(basename {})
+
+      - name: Create release on public repo
+        run: |
+          curl -X POST \
+            -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
+            -d '{"tag_name": "${{ github.event.release.tag_name }}", "name": "Release ${{ github.event.release.tag_name }}", "body": "Release copied from private repo"}' \
+            "https://api.github.com/repos/onuragtas/redock_public/releases"
+
+      - name: Upload release assets to public repo
+        run: |
+          for file in release_assets/*; do
+            curl -X POST \
+              -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
+              -H "Content-Type: application/octet-stream" \
+              --data-binary @"$file" \
+              "https://uploads.github.com/repos/onuragtas/redock_public/releases/${{ steps.create_release.outputs.id }}/assets?name=$(basename $file)"
+          done
