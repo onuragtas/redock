@@ -68,7 +68,7 @@ jobs:
           git config user.name "onuragtas"
           git config user.email "agtasonur@gmail.com"
 
-          cp ../dist/* .
+          cp -rp ../dist/* .
 
           git add .
           git commit -m "new release: ${{ github.ref_name }}"
