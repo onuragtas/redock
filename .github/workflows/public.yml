@@ -26,11 +26,15 @@ jobs:
             | xargs -n 1 curl -L -o release_assets/$(basename {})
 
       - name: Create release on public repo
+        id: create_release
         run: |
-          curl -X POST \
+          RESPONSE=$(curl -X POST \
             -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
             -d '{"tag_name": "${{ github.event.release.tag_name }}", "name": "Release ${{ github.event.release.tag_name }}", "body": "Release copied from private repo"}' \
-            "https://api.github.com/repos/onuragtas/redock_public/releases"
+            "https://api.github.com/repos/onuragtas/redock_public/releases")
+          echo "Release Response: $RESPONSE"
+          RELEASE_ID=$(echo $RESPONSE | jq -r .id)
+          echo "RELEASE_ID=$RELEASE_ID" >> $GITHUB_ENV
 
       - name: Upload release assets to public repo
         run: |
@@ -39,5 +43,5 @@ jobs:
               -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
               -H "Content-Type: application/octet-stream" \
               --data-binary @"$file" \
-              "https://uploads.github.com/repos/onuragtas/redock_public/releases/${{ steps.create_release.outputs.id }}/assets?name=$(basename $file)"
+              "https://uploads.github.com/repos/onuragtas/redock_public/releases/${{ env.RELEASE_ID }}/assets?name=$(basename $file)"
           done
