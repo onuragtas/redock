@@ -12,7 +12,7 @@ import (
 	"github.com/onuragtas/go-requests"
 )
 
-var version = "1.0.148"
+var version = "1.0.149"
 
 func checkSelfUpdate() {
 	var lastRelease selfupdate.LastRelease
