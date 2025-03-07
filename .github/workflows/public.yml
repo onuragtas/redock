@@ -25,6 +25,10 @@ jobs:
             | jq -r '.assets[].browser_download_url' \
             | xargs -n 1 curl -L -o release_assets/$(basename {})
 
+      - name: Check if files are downloaded
+        run: |
+          ls release_assets
+          
       - name: Create release on public repo
         id: create_release
         run: |
@@ -39,9 +43,14 @@ jobs:
       - name: Upload release assets to public repo
         run: |
           for file in release_assets/*; do
-            curl -X POST \
-              -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
-              -H "Content-Type: application/octet-stream" \
-              --data-binary @"$file" \
-              "https://uploads.github.com/repos/onuragtas/redock_public/releases/${{ env.RELEASE_ID }}/assets?name=$(basename $file)"
+            if [ -n "$file" ]; then
+              echo "Uploading file: $file"
+              curl -X POST \
+                -H "Authorization: token ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}" \
+                -H "Content-Type: application/octet-stream" \
+                --data-binary @"$file" \
+                "https://uploads.github.com/repos/onuragtas/redock_public/releases/${{ env.RELEASE_ID }}/assets?name=$(basename $file)"
+            else
+              echo "No files to upload, skipping."
+            fi
           done
