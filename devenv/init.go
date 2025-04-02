@@ -110,3 +110,8 @@ func (t *DevEnvManager) Regenerate() {
 		c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "bash", "serviceip.sh", strconv.Itoa(env.Port), env.Username, env.Password)
 	}
 }
+
+func (t *DevEnvManager) Install() {
+	c := command.Command{}
+	c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "bash", "install.sh")
+}

@@ -10,6 +10,8 @@ class ApiService {
    */
   static vueInstance;
 
+  static defaultPort = 6001;
+
   /**
    * @description initialize vue axios
    */
@@ -43,7 +45,7 @@ class ApiService {
    * @returns Promise
    */
   static get(resource, slug = "") {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '') + resource;
+    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
     return ApiService.vueInstance.axios.get(`${resource}${slug ? ('/' + slug) : ''}`);
   }
 
@@ -138,6 +140,10 @@ class ApiService {
 
   static async selfUpdate() {
     return await this.get('/api/v1/docker/self_update');
+  }
+
+  static async install() {
+    return await this.get('/api/v1/docker/install');
   }
 
   static async updateDocker() {
