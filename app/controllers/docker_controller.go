@@ -539,6 +539,27 @@ func RegenerateDevEnv(c *fiber.Ctx) error {
 	})
 }
 
+// RegenerateDevEnv method to create a new user.
+// @Description Create a new user.
+// @Summary create a new user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param email body string true "Email"
+// @Param password body string true "Password"
+// @Param user_role body string true "User role"
+// @Success 200 {object} models.User
+// @Router /v1/docker/install [get]
+func Install(c *fiber.Ctx) error {
+	devenv.GetDevEnvManager().Install()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  fiber.Map{},
+	})
+}
+
 // AddXDebug method to create a new user.
 // @Description Create a new user.
 // @Summary create a new user

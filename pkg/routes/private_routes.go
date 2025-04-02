@@ -32,6 +32,7 @@ func PrivateRoutes(a *fiber.App) {
 	route.Post("/docker/edit_devenv", controllers.EditDevEnv)
 	route.Post("/docker/delete_devenv", controllers.DeleteDevEnv)
 	route.Get("/docker/regenerate_devenv", controllers.RegenerateDevEnv)
+	route.Get("/docker/install", controllers.Install)
 	route.Get("/docker/add_xdebug", controllers.AddXDebug)
 	route.Get("/docker/remove_xdebug", controllers.RemoveXDebug)
 	route.Get("/docker/restart_nginx_httpd", controllers.RestartNginxHttpd)
