@@ -265,7 +265,7 @@ export default {
               <p class="text-sm text-gray-500">
               </p>
               <div>
-                <BaseButton label="Install" :icon="mdiMonitorCellphone()" color="info" class="mr-1" @click="install" />
+                <BaseButton label="Install" :icon="mdiMonitorCellphone()" :disabled="btnState.install == false" color="info" class="mr-1" @click="install" />
                 <BaseButton label="Attach SSH" :icon="mdiMonitorCellphone()" color="info" to="/exec" />
                 <BaseButton label="Self Update" :icon="mdiUpdate()" color="whiteDark" :disabled="btnState.selfUpdate == false" rounded-full @click="selfUpdate" />
                 <BaseButton label="Update Docker" :icon="mdiDownloadNetwork()" color="whiteDark" :disabled="btnState.updateDocker == false" rounded-full @click="updateDocker" />
