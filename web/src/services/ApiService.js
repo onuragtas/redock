@@ -56,7 +56,7 @@ class ApiService {
    * @returns Promise
    */
   static post(resource, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '') + resource;
+    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
     return ApiService.vueInstance.axios.post(`${resource}`, params);
   }
 
@@ -68,7 +68,7 @@ class ApiService {
    * @returns Promise
    */
   static update(resource, slug, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '') + resource;
+    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
     return ApiService.vueInstance.axios.put(`${resource}/${slug}`, params);
   }
 
@@ -79,7 +79,7 @@ class ApiService {
    * @returns Promise
    */
   static put(resource, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '') + resource;
+    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
     return ApiService.vueInstance.axios.put(`${resource}`, params);
   }
 
@@ -90,7 +90,7 @@ class ApiService {
    * @returns Promise
    */
   static patch(resource, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '') + resource;
+    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
     return ApiService.vueInstance.axios.patch(`${resource}`, params);
   }
 
@@ -100,7 +100,7 @@ class ApiService {
    * @returns Promise
    */
   static delete(resource) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '') + resource;
+    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
     return ApiService.vueInstance.axios.delete(resource);
   }
 
@@ -215,6 +215,18 @@ class ApiService {
       username: username,
       password: password
     });
+  }
+
+  static async tunnelRegister(email, username, password) {
+    return await this.post('/api/v1/tunnel/register', {
+      email: email,
+      username: username,
+      password: password,
+    });
+  }
+
+  static async tunnelLogout() {
+    return await this.get('/api/v1/tunnel/logout');
   }
 
   static async tunnelList() {

@@ -33,10 +33,12 @@ export default {
       buttonSettingsModel: ref([]),
       mainStore: useMainStore(),
       login: false,
+      email: '',
       username: '',
       password: '',
       isAddModalActive: false,
       isStartModalActive: false,
+      isRegisterModalActive: false,
       proxies: [],
       datatableOptions: {
         columns: [
@@ -97,6 +99,39 @@ export default {
     loginSubmit() {
       ApiService.tunnelLogin(this.username, this.password).then(value => {
         this.login = value.data.data.login
+        if (this.login) {
+          this.tunnelList()
+        }
+      })
+    },
+
+    registerSubmit() {
+      ApiService.tunnelRegister(this.email, this.username, this.password).then(value => {
+        this.login = value.data.data.login
+      })
+    },
+
+    logoutSubmit() {
+      ApiService.tunnelLogout().then(value => {
+        this.login = null
+        this.username = ''
+        this.password = ''
+        this.proxies = []
+        this.isAddModalActive = false
+        this.isStartModalActive = false
+        this.isDeleteModalActive = false
+        this.startDomain = {}
+        this.start = {
+          localIp: '',
+          destinationIp: '',
+          localPort: ''
+        }
+        this.create = {
+          domain: '',
+          port: 80,
+          keep_alive: 0
+        }
+        this.tunnelList()
       })
     },
     tunnelList()  {
@@ -156,6 +191,8 @@ export default {
     <SectionMain v-if="login">
       <SectionTitleLineWithButton :icon="mdiAccountMultiple()" title="Tunnel Proxy">
         <BaseButtons>
+          <BaseButton v-if="login" type="submit" label="Logout" color="info" @click="logoutSubmit" />
+          <BaseButton v-if="login" type="submit" label="Refresh List" color="info" @click="tunnelList" />
           <BaseButton type="submit" label="Create" color="info" @click="isAddModalActive = true" />
           <!-- <BaseButton type="submit" label="Reload" :disabled="regenerateBtnActive != true" color="info" @click="regenerate()" /> -->
         </BaseButtons>
@@ -210,14 +247,13 @@ export default {
           </thead>
           <template #column-6="props">
             <BaseButton :label="props.rowData.started ? 'Stop': 'Start'" :icon="mdiDelete()" :color="props.rowData.started ? 'danger': 'success'" rounded-full @click="props.rowData.started ? stopModal(props.rowData) : startModal(props.rowData)" />
-            <!-- <BaseButton class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark" rounded-full @click="editModal(props.rowData)" /> -->
             <BaseButton label="Delete" :icon="mdiDelete()" color="whiteDark" rounded-full @click="deleteModal(props.rowData)" />
           </template>
         </DataTable>
       </CardBox>
     </SectionMain>
 
-    <SectionMain v-if="!login">
+    <SectionMain v-if="!login && !isRegisterModalActive">
       <CardBox :class="cardClass" is-form @submit.prevent="loginSubmit">
         <FormField label="Login" help="Please enter your login">
           <FormControl v-model="username" name="login" />
@@ -230,7 +266,31 @@ export default {
         <template #footer>
           <BaseButtons>
             <BaseButton type="submit" color="info" label="Login" />
-            <BaseButton color="info" outline label="Register" />
+            <BaseButton color="info" outline label="Register" @click="isRegisterModalActive = true" />
+          </BaseButtons>
+        </template>
+      </CardBox>
+    </SectionMain>
+    
+    
+    <SectionMain v-if="!login && isRegisterModalActive">
+      <CardBox :class="cardClass" is-form @submit.prevent="registerSubmit">
+        <FormField label="Register" help="Please enter your username">
+          <FormControl v-model="username" name="login"  />
+        </FormField>
+        
+        <FormField label="Email" help="Please enter your email">
+          <FormControl v-model="email" name="email" />
+        </FormField>
+
+        <FormField label="Password" help="Please enter your password">
+          <FormControl v-model="password" type="password" name="password" autocomplete="current-password" />
+        </FormField>
+
+        <template #footer>
+          <BaseButtons>
+            <BaseButton type="submit"  color="info" label="Register" />
+            <BaseButton outline color="info" label="Login" @click="isRegisterModalActive = false" />
           </BaseButtons>
         </template>
       </CardBox>

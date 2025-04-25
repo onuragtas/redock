@@ -32,6 +32,7 @@ import (
 	_ "github.com/joho/godotenv/autoload" // load .env file automatically
 
 	"github.com/docker/docker/api/types"
+	"github.com/docker/docker/api/types/container"
 	dockerClient "github.com/docker/docker/client"
 	"github.com/gofiber/contrib/websocket"
 )
@@ -147,7 +148,7 @@ func createAdmin() {
 func runCommandInDocker(containerId, command string, cli *dockerClient.Client) (string, error) {
 	// Docker exec komutunu başlat
 	ctx := context.Background()
-	resp, err := cli.ContainerExecCreate(ctx, containerId, types.ExecConfig{
+	resp, err := cli.ContainerExecCreate(ctx, containerId, container.ExecOptions{
 		Cmd:          strings.Split(command, " "), // Komut ve parametreleri ayır
 		AttachStdout: true,
 		AttachStderr: true,
@@ -158,7 +159,7 @@ func runCommandInDocker(containerId, command string, cli *dockerClient.Client) (
 	}
 
 	// Komutu çalıştır
-	execResp, err := cli.ContainerExecAttach(ctx, resp.ID, types.ExecStartCheck{})
+	execResp, err := cli.ContainerExecAttach(ctx, resp.ID, container.ExecAttachOptions{})
 	if err != nil {
 		return "", fmt.Errorf("Failed to attach to exec instance: %v", err)
 	}
@@ -188,7 +189,7 @@ func startShellInDocker(containerId string, cli *dockerClient.Client) (types.Hij
 	ctx := context.Background()
 
 	// TTY ile shell başlat (nano gibi uygulamalar için gerekli)
-	resp, err := cli.ContainerExecCreate(ctx, containerId, types.ExecConfig{
+	resp, err := cli.ContainerExecCreate(ctx, containerId, container.ExecOptions{
 		Cmd:          []string{"sh"}, // Shell başlat
 		Env:          []string{"TERM=xterm"},
 		AttachStdin:  true,
@@ -201,13 +202,13 @@ func startShellInDocker(containerId string, cli *dockerClient.Client) (types.Hij
 	}
 
 	// Exec'e bağlan
-	execResp, err := cli.ContainerExecAttach(ctx, resp.ID, types.ExecStartCheck{Tty: true})
+	execResp, err := cli.ContainerExecAttach(ctx, resp.ID, container.ExecAttachOptions{Tty: true})
 	if err != nil {
 		return types.HijackedResponse{}, "", fmt.Errorf("Failed to attach to exec instance: %v", err)
 	}
 
 	// Terminal boyutunu ayarla (nano için uygun)
-	err = cli.ContainerExecResize(ctx, resp.ID, types.ResizeOptions{
+	err = cli.ContainerExecResize(ctx, resp.ID, container.ResizeOptions{
 		Height: 24,
 		Width:  80,
 	})
