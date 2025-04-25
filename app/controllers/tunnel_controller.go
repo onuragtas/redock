@@ -66,8 +66,69 @@ func TunnelLogin(c *fiber.Ctx) error {
 		"error": false,
 		"msg":   nil,
 		"data": fiber.Map{
-			"login": check,
+			"login": check.Success,
 		},
+	})
+}
+
+// TunnelLogin method to create a new user.
+// @Description Create a new user.
+// @Summary create a new user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param email body string true "Email"
+// @Param password body string true "Password"
+// @Param user_role body string true "User role"
+// @Success 200 {object} models.User
+// @Router /v1/docker/env [get]
+func TunnelRegister(c *fiber.Ctx) error {
+
+	type Model struct {
+		Email    string `json:"email"`
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+
+	model := &Model{}
+	// Checking received data from JSON body.
+	if err := c.BodyParser(model); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	check := tunnel_proxy.GetTunnelProxy().Register(model.Username, model.Password, model.Email)
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"login": check.Success,
+		},
+	})
+}
+
+// TunnelLogin method to create a new user.
+// @Description Create a new user.
+// @Summary create a new user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param email body string true "Email"
+// @Param password body string true "Password"
+// @Param user_role body string true "User role"
+// @Success 200 {object} models.User
+// @Router /v1/docker/env [get]
+func TunnelLogout(c *fiber.Ctx) error {
+	tunnel_proxy.GetTunnelProxy().Logout()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  fiber.Map{},
 	})
 }
 

@@ -26,8 +26,16 @@ func (t *TunnelProxy) CheckUser() bool {
 	return t.client.CheckUser()
 }
 
-func (t *TunnelProxy) Login(username, password string) bool {
+func (t *TunnelProxy) Login(username, password string) models.Login {
 	return t.client.Login(username, password)
+}
+
+func (t *TunnelProxy) Logout() bool {
+	return t.client.Logout()
+}
+
+func (t *TunnelProxy) Register(username, password, email string) models.Register {
+	return t.client.Register(username, password, email)
 }
 
 func (t *TunnelProxy) ListDomain() models.Domain {
