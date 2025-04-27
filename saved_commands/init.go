@@ -61,6 +61,12 @@ func (t *Manager) Add(model *Model) bool {
 
 	json.Unmarshal(file, &list)
 
+	for _, item := range list {
+		if item.Command == model.Command {
+			return false
+		}
+	}
+
 	list = append(list, *model)
 
 	marshal, err := json.Marshal(list)
