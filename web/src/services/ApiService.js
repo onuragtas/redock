@@ -308,6 +308,18 @@ class ApiService {
   static async startXDebugAdapter() {
     return await this.get('/api/v1/php_xdebug_adapter/start');
   }
+
+  static async getAllSavedCommands() {
+    return await this.get('/api/v1/saved_commands/list');
+  }
+
+  static async addSavedCommand(data) {
+    return await this.post('/api/v1/saved_commands/add', data);
+  }
+
+  static async deleteSavedCommand(data) {
+    return await this.post('/api/v1/saved_commands/remove', data);
+  }
 }
 
 export default ApiService;
