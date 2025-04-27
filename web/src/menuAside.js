@@ -20,6 +20,11 @@ export default [
     label: 'Virtual Hosts',
   },
   {
+    to: '/saved_commands',
+    icon: mdiBookSearch,
+    label: 'Saved Commands',
+  },
+  {
     to: '/devenv',
     icon: mdiBookSearch,
     label: 'Personal Containers',

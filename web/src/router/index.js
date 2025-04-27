@@ -30,6 +30,14 @@ const routes = [
   },
   {
     meta: {
+      title: 'Saved Commands',
+    },
+    path: '/saved_commands',
+    name: 'saved_commands',
+    component: () => import('@/views/SavedCommands.vue')
+  },
+  {
+    meta: {
       title: 'Logs',
     },
     path: '/logs',
