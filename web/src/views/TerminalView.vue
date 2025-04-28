@@ -5,7 +5,7 @@
       </SectionTitleLineWithButton>
 
       <!-- Saved Commands List -->
-      <div v-if="savedCommands.length > 0" class="saved-commands">
+      <div v-if="savedCommands != null && savedCommands.length > 0" class="saved-commands">
         <h3>Saved Commands</h3>
         <div class="scrollable-list">
           <ul>
