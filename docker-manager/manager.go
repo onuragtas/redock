@@ -459,7 +459,7 @@ func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
 	}
 
 	for _, service := range phpServices {
-		if strings.Contains(service, "81") {
+		if strings.Contains(service, "81") || strings.Contains(service, "84") {
 			conf = fmt.Sprintf(xdebugConf8, t.GetLocalIP(), 10000)
 		} else {
 			conf = fmt.Sprintf(xdebugConf, t.GetLocalIP(), 10000)
