@@ -24,7 +24,6 @@
 ---
 
 ## Download and Run
-
 ### For macOS
 
 <details>
