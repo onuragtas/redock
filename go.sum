@@ -314,6 +314,8 @@ github.com/onuragtas/tunnel-client v1.0.52 h1:LgAKYy/aYC3CERI6aJG9YkgVO0+dEQdUJK
 github.com/onuragtas/tunnel-client v1.0.52/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
 github.com/onuragtas/tunnel-client v1.0.53 h1:vWSkBiaP1fZ/M/VqjWd9k07qFr0UBg7yJKrt3Rj4mKk=
 github.com/onuragtas/tunnel-client v1.0.53/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
+github.com/onuragtas/tunnel-client v1.0.54 h1:pXqunpRTX7QAwH/NUKyDvKZgbroz5xo1RXS2AvI9oAA=
+github.com/onuragtas/tunnel-client v1.0.54/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.0 h1:8SG7/vwALn54lVB/0yZ/MMwhFrPYtpEHQb2IpWsCzug=

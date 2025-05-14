@@ -22,7 +22,7 @@ require (
 	github.com/kr/binarydist v0.1.0
 	github.com/onuragtas/command v1.0.21
 	github.com/onuragtas/go-requests v1.0.6
-	github.com/onuragtas/tunnel-client v1.0.53
+	github.com/onuragtas/tunnel-client v1.0.54
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	github.com/stretchr/testify v1.10.0
 	github.com/swaggo/swag v1.16.4
