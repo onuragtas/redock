@@ -3,14 +3,6 @@ import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
   {
-    meta: {
-      title: 'Welcome'
-    },
-    path: '/',
-    name: 'welcome',
-    component: () => import('@/views/LandingView.vue')
-  },
-  {
     // Document title tag
     // We combine it with defaultDocumentTitle set in `src/main.js` on router.afterEach hook
     meta: {
@@ -144,7 +136,7 @@ const routes = [
     meta: {
       title: 'Login'
     },
-    path: '/login',
+    path: '/',
     name: 'login',
     component: () => import('@/views/LoginView.vue')
   },
@@ -162,7 +154,7 @@ const router = createRouter({
   history: createWebHashHistory(),
   routes,
   scrollBehavior(to, from, savedPosition) {
-    return savedPosition || { top: 0 }
+    return savedPosition || {top: 0}
   }
 })
 
