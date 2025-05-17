@@ -63,11 +63,9 @@ func TunnelLogin(c *fiber.Ctx) error {
 	check := tunnel_proxy.GetTunnelProxy().Login(model.Username, model.Password)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
+		"error": !check.Success,
 		"msg":   nil,
-		"data": fiber.Map{
-			"login": check.Success,
-		},
+		"data":  check.Data,
 	})
 }
 
@@ -103,11 +101,9 @@ func TunnelRegister(c *fiber.Ctx) error {
 	check := tunnel_proxy.GetTunnelProxy().Register(model.Username, model.Password, model.Email)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
+		"error": check.Success,
 		"msg":   nil,
-		"data": fiber.Map{
-			"login": check.Success,
-		},
+		"data":  check.Data,
 	})
 }
 
@@ -315,5 +311,27 @@ func TunnelStop(c *fiber.Ctx) error {
 		"error": false,
 		"msg":   nil,
 		"data":  fiber.Map{},
+	})
+}
+
+// TunnelLogin method to create a new user.
+// @Description Create a new user.
+// @Summary create a new user
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param email body string true "Email"
+// @Param password body string true "Password"
+// @Param user_role body string true "User role"
+// @Success 200 {object} models.User
+// @Router /v1/docker/env [get]
+func TunnelUserInfo(c *fiber.Ctx) error {
+
+	check := tunnel_proxy.GetTunnelProxy().UserInfo()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": !check.Success,
+		"msg":   nil,
+		"data":  check.Data.User,
 	})
 }
