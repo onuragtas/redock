@@ -66,3 +66,7 @@ func (t *TunnelProxy) StopTunnel(domain string) {
 func (t *TunnelProxy) GetStartedList() tunnel.StartedTunnels {
 	return t.client.GetStartedTunnels()
 }
+
+func (t *TunnelProxy) UserInfo() models.UserInfo {
+	return t.client.UserInfo()
+}

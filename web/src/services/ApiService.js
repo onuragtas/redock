@@ -5,103 +5,82 @@ import VueAxios from "vue-axios";
  * @description service to call HTTP request via Axios
  */
 class ApiService {
-  /**
-   * @description property to share vue instance
-   */
   static vueInstance;
-
   static defaultPort = 6001;
 
-  /**
-   * @description initialize vue axios
-   */
   static init(app) {
     ApiService.vueInstance = app;
     ApiService.vueInstance.use(VueAxios, axios);
+    ApiService.setupInterceptors();
   }
 
-  /**
-   * @description set the default HTTP request headers
-   */
   static setHeader() {
-    ApiService.vueInstance.axios.defaults.headers.common["Accept"] =
-      "application/json";
+    ApiService.vueInstance.axios.defaults.headers.common["Accept"] = "application/json";
   }
 
-  /**
-   * @description send the GET HTTP request
-   * @param resource: string
-   * @param params: Object
-   * @returns Promise
-   */
-  static query(resource, params) {
-    return ApiService.vueInstance.axios.get(resource, params);
+  static setupInterceptors() {
+    ApiService.vueInstance.axios.interceptors.request.use(async (config) => {
+      if (config.skipPrecheck) return config;
+      try {
+        const resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''));
+        const response = await ApiService.vueInstance.axios.get(resource + '/api/v1/tunnel/user_info', { skipPrecheck: true });
+        if (response.data.data.id > 0) {
+          return config;
+        } else {
+          window.location.href = '/';
+        }
+      } catch (e) {
+        window.location.href = '/';
+      }
+    });
   }
 
-  /**
-   * @description send the GET HTTP request
-   * @param resource: string
-   * @param slug: string
-   * @returns Promise
-   */
-  static get(resource, slug = "") {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.get(`${resource}${slug ? ('/' + slug) : ''}`);
+  static mergeOptions(options, skipPrecheck = false) {
+    let merged = { ...options };
+    if (skipPrecheck) merged.skipPrecheck = true;
+    return merged;
   }
 
-  /**
-   * @description set the POST HTTP request
-   * @param resource: string
-   * @param params: Object
-   * @returns Promise
-   */
-  static post(resource, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.post(`${resource}`, params);
+  static get(resource, { slug = "", params = {}, options = {}, skipPrecheck = false } = {}) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
+    if (slug) url += '/' + slug;
+    return ApiService.vueInstance.axios.get(url, { ...ApiService.mergeOptions(options, skipPrecheck), params });
   }
 
-  /**
-   * @description send the UPDATE HTTP request
-   * @param resource: string
-   * @param slug: string
-   * @param params: Object
-   * @returns Promise
-   */
-  static update(resource, slug, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.put(`${resource}/${slug}`, params);
+  static post(resource, data = {}, { options = {}, skipPrecheck = false } = {}) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
+    return ApiService.vueInstance.axios.post(url, data, ApiService.mergeOptions(options, skipPrecheck));
   }
 
-  /**
-   * @description Send the PUT HTTP request
-   * @param resource: string
-   * @param params: Object
-   * @returns Promise
-   */
-  static put(resource, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.put(`${resource}`, params);
+  static put(resource, data = {}, { options = {}, skipPrecheck = false } = {}) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
+    return ApiService.vueInstance.axios.put(url, data, ApiService.mergeOptions(options, skipPrecheck));
   }
 
-  /**
-   * @description Send the PATCH HTTP request
-   * @param resource: string
-   * @param params: Object
-   * @returns Promise
-   */
-  static patch(resource, params) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.patch(`${resource}`, params);
+  static patch(resource, data = {}, { options = {}, skipPrecheck = false } = {}) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
+    return ApiService.vueInstance.axios.patch(url, data, ApiService.mergeOptions(options, skipPrecheck));
   }
 
-  /**
-   * @description Send the DELETE HTTP request
-   * @param resource: string
-   * @returns Promise
-   */
-  static delete(resource) {
-    resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port != '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.delete(resource);
+  static delete(resource, { options = {}, skipPrecheck = false } = {}) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
+    return ApiService.vueInstance.axios.delete(url, ApiService.mergeOptions(options, skipPrecheck));
+  }
+
+  static async userInfo() {
+    return await this.get('/api/v1/tunnel/user_info', { skipPrecheck: true });
+  }
+
+  static async getAllSavedCommands() {
+    return await this.get('/api/v1/saved_commands/list');
+  }
+
+  static async addSavedCommand(data) {
+    return await this.post('/api/v1/saved_commands/add', data);
+  }
+
+  static async deleteSavedCommand(data) {
+    return await this.post('/api/v1/saved_commands/remove', data);
   }
 
   static async login(login, pass) {
@@ -214,7 +193,7 @@ class ApiService {
     return await this.post('/api/v1/tunnel/login', {
       username: username,
       password: password
-    });
+    }, { skipPrecheck: true } );
   }
 
   static async tunnelRegister(email, username, password) {
@@ -222,7 +201,7 @@ class ApiService {
       email: email,
       username: username,
       password: password,
-    });
+    }, { skipPrecheck: true });
   }
 
   static async tunnelLogout() {
@@ -307,18 +286,6 @@ class ApiService {
 
   static async startXDebugAdapter() {
     return await this.get('/api/v1/php_xdebug_adapter/start');
-  }
-
-  static async getAllSavedCommands() {
-    return await this.get('/api/v1/saved_commands/list');
-  }
-
-  static async addSavedCommand(data) {
-    return await this.post('/api/v1/saved_commands/add', data);
-  }
-
-  static async deleteSavedCommand(data) {
-    return await this.post('/api/v1/saved_commands/remove', data);
   }
 }
 

@@ -13,6 +13,9 @@ import DataTables from 'datatables.net'
 import DataTablesVue from 'datatables.net-vue3'
 import DataTable from 'datatables.net-vue3'
 import DataTablesLib from 'datatables.net';
+import Toast from "vue-toastification";
+import "vue-toastification/dist/index.css";
+
 
 DataTable.use(DataTablesLib);
 DataTables.use(DataTablesVue);
@@ -25,6 +28,7 @@ const pinia = createPinia()
 const app = createApp(App)
 ApiService.init(app);
 app.use(router).use(pinia).mount('#app')
+app.use(Toast, {});
 
 // Init main store
 const mainStore = useMainStore(pinia)

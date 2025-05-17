@@ -1,16 +1,17 @@
 <script setup>
-import { mdiForwardburger, mdiBackburger, mdiMenu } from '@mdi/js'
-import { ref } from 'vue'
-import { useRouter } from 'vue-router'
-import menuAside from '@/menuAside.js'
-import menuNavBar from '@/menuNavBar.js'
-import { useDarkModeStore } from '@/stores/darkMode.js'
+import AsideMenu from '@/components/AsideMenu.vue'
 import BaseIcon from '@/components/BaseIcon.vue'
+import FooterBar from '@/components/FooterBar.vue'
 import FormControl from '@/components/FormControl.vue'
 import NavBar from '@/components/NavBar.vue'
 import NavBarItemPlain from '@/components/NavBarItemPlain.vue'
-import AsideMenu from '@/components/AsideMenu.vue'
-import FooterBar from '@/components/FooterBar.vue'
+import menuAside from '@/menuAside.js'
+import menuNavBar from '@/menuNavBar.js'
+import ApiService from '@/services/ApiService'
+import { useDarkModeStore } from '@/stores/darkMode.js'
+import { mdiBackburger, mdiForwardburger, mdiMenu } from '@mdi/js'
+import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 
 const layoutAsidePadding = 'xl:pl-60'
 
@@ -32,7 +33,9 @@ const menuClick = (event, item) => {
   }
 
   if (item.isLogout) {
-    //
+    ApiService.tunnelLogout().then(() => {
+      router.push({ name: 'login' })
+    })
   }
 }
 </script>
