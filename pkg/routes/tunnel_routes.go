@@ -20,4 +20,5 @@ func TunnelRoutes(a *fiber.App) {
 	route.Post("/tunnel/add", controllers.TunnelAdd)
 	route.Post("/tunnel/start", controllers.TunnelStart)
 	route.Post("/tunnel/stop", controllers.TunnelStop)
+	route.Get("/tunnel/user_info", controllers.TunnelUserInfo)
 }
