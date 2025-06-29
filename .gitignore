@@ -7,3 +7,4 @@ web/dist
 web/node_modules
 tunnel_proxy/account.go
 redock
+app_version.go
