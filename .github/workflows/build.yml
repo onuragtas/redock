@@ -47,6 +47,18 @@ jobs:
           cat tunnel_proxy/account.go
         shell: bash
 
+
+      - name: Create version
+        run: |
+          cat <<EOF > app_version.go
+          package main
+          var version = "${{ github.ref_name }}"
+          EOF
+
+          echo "cat app_version.go"
+          cat app_version.go
+        shell: bash
+
       - name: Build
         run: go build -v ./...
 

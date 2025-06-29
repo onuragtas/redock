@@ -193,7 +193,7 @@ class ApiService {
     return await this.post('/api/v1/tunnel/login', {
       username: username,
       password: password
-    }, { skipPrecheck: true } );
+    }, { skipPrecheck: true });
   }
 
   static async tunnelRegister(email, username, password) {
@@ -257,7 +257,7 @@ class ApiService {
       service: service
     });
   }
-  
+
   static async removeService(service) {
     return await this.post('/api/v1/docker/remove_service', {
       service: service
@@ -287,6 +287,32 @@ class ApiService {
   static async startXDebugAdapter() {
     return await this.get('/api/v1/php_xdebug_adapter/start');
   }
+
+  // Deployment API methods
+  static async deploymentList() {
+    return await this.get('/api/v1/deployment/list');
+  }
+
+  static async deploymentAdd(data) {
+    return await this.post('/api/v1/deployment/add', data);
+  }
+
+  static async deploymentUpdate(data) {
+    return await this.post('/api/v1/deployment/update', data);
+  }
+
+  static async deploymentDelete(data) {
+    return await this.post('/api/v1/deployment/delete', data);
+  }
+
+  static async deploymentSetCredentials(data) {
+    return await this.post('/api/v1/deployment/set_credentials', data);
+  }
+
+  static async deploymentGetSettings() {
+    return await this.get('/api/v1/deployment/settings');
+  }
+
 }
 
 export default ApiService;

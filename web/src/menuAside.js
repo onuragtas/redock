@@ -45,9 +45,9 @@ export default [
     label: 'PHP XDebug Adapter',
   },
   {
-    to: '/ssh_client',
+    to: '/deployment',
     icon: mdiBookSearch,
-    label: 'SSH Client',
+    label: 'Deployment',
   },
   {
     to: '/logs',
