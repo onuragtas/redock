@@ -3,6 +3,7 @@ package main
 import (
 	"log"
 	"os"
+	"redock/deployment"
 	"redock/devenv"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
@@ -47,5 +48,7 @@ func initialize() {
 	localproxy.Init(dockerEnvironmentManager)
 	php_debug_adapter.Init(dockerEnvironmentManager)
 	saved_commands.Init(dockerEnvironmentManager)
+	deployment.Init(dockerEnvironmentManager)
+	go deployment.GetDeployment().Run()
 	localproxy.GetLocalProxyManager().StartAll()
 }

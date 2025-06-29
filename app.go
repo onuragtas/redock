@@ -104,8 +104,9 @@ func app() {
 	routes.TunnelRoutes(app)           // Register a tunnel routes for app.
 	routes.LocalProxyRoutes(app)       // Register a local proxy routes for app.
 	routes.PHPXDebugAdapterRoutes(app) // Register a local proxy routes for app.
-	routes.SavedCommandRoutes(app) // Register a local proxy routes for app.
+	routes.SavedCommandRoutes(app)     // Register a local proxy routes for app.
 	routes.WebSocketRoutes(app)        // Register a websocket routes for app.
+	routes.DeploymentRoutes(app)       // Register a deployment routes for app.
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("SERVER_HOST") + ":" + os.Getenv("SERVER_PORT"))
