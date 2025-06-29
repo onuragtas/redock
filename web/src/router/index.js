@@ -94,11 +94,11 @@ const routes = [
   },
   {
     meta: {
-      title: 'Tables'
+      title: 'Deployment'
     },
-    path: '/tables',
-    name: 'tables',
-    component: () => import('@/views/TablesView.vue')
+    path: '/deployment',
+    name: 'Deployment',
+    component: () => import('@/views/Deployment.vue')
   },
   {
     meta: {

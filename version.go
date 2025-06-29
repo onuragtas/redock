@@ -12,8 +12,6 @@ import (
 	"github.com/onuragtas/go-requests"
 )
 
-var version = "1.0.169"
-
 func checkSelfUpdate() {
 	var lastRelease selfupdate.LastRelease
 	req := requests.Request{BaseUrl: "https://api.github.com/repos/onuragtas/redock/releases/latest"}
