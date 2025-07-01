@@ -302,6 +302,8 @@ github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e h1:fD57ERR4JtEqsWb
 github.com/niemeyer/pretty v0.0.0-20200227124842-a10e7caefd8e/go.mod h1:zD1mROLANZcx1PVRCS0qkT7pwLkGfwJo4zjcN/Tysno=
 github.com/onuragtas/command v1.0.21 h1:IzmoVv7CCkxj9M5beKePUGyeJzvzVwIA7kiYUfMZ3VU=
 github.com/onuragtas/command v1.0.21/go.mod h1:1pkeu2FKesWxCvJhsztdD7CttlxL2G/l5Lm1v7gU+qU=
+github.com/onuragtas/command v1.0.22 h1:JlBXJEF8w2jTf+yUg9Uv1C6kDRKagpdCJM6xrsfedas=
+github.com/onuragtas/command v1.0.22/go.mod h1:1pkeu2FKesWxCvJhsztdD7CttlxL2G/l5Lm1v7gU+qU=
 github.com/onuragtas/go-requests v1.0.6 h1:z1DCeM/Sgqriixes1UDEjKIYRXMWRI6dA4scXkVlt/8=
 github.com/onuragtas/go-requests v1.0.6/go.mod h1:dFnH4WUuxyXbeCPCVpBgElUigldmjieqwx6duUDDfTs=
 github.com/onuragtas/reverse-proxy v1.0.27 h1:95ThZNgKl4aQtUNYRPbYQm6MFXoyLYJvfjEYdeaRIro=
