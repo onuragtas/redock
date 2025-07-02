@@ -63,9 +63,8 @@ func app() {
 
 	defer recoverFunction()
 
-	os.Setenv("STAGE_STATUS", "production")
-	os.Setenv("SERVER_HOST", "0.0.0.0")
-	os.Setenv("SERVER_PORT", "6001")
+	os.Setenv("REDOCK_HOST", "0.0.0.0")
+	os.Setenv("REDOCK_PORT", "6001")
 	os.Setenv("SERVER_READ_TIMEOUT", "60")
 	// Define Fiber config.
 	config := configs.FiberConfig()
@@ -109,12 +108,8 @@ func app() {
 	routes.DeploymentRoutes(app)       // Register a deployment routes for app.
 
 	// Start server (with or without graceful shutdown).
-	log.Println("Server is running on http://" + os.Getenv("SERVER_HOST") + ":" + os.Getenv("SERVER_PORT"))
-	if os.Getenv("STAGE_STATUS") == "dev" {
-		utils.StartServer(app)
-	} else {
-		utils.StartServerWithGracefulShutdown(app)
-	}
+	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))
+	utils.StartServerWithGracefulShutdown(app)
 }
 
 func createAdmin() {
