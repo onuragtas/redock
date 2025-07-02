@@ -44,8 +44,8 @@ func ConnectionURLBuilder(n string) (string, error) {
 		// URL for Fiber connection.
 		url = fmt.Sprintf(
 			"%s:%s",
-			os.Getenv("SERVER_HOST"),
-			os.Getenv("SERVER_PORT"),
+			os.Getenv("REDOCK_HOST"),
+			os.Getenv("REDOCK_PORT"),
 		)
 	default:
 		// Return error message.
