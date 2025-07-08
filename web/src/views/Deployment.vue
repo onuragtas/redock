@@ -40,7 +40,7 @@ export default {
       list: [],
       datatableOptions: {
         columns: [
-            { title: "Url", data: "url" },
+            // { title: "Url", data: "url" },
               { title: "Path", data: "path" },
               { title: "Branch", data: "branch" },
               // { title: "Check", data: "check" },
@@ -173,9 +173,6 @@ export default {
       <CardBox>
         <CardBoxModal v-model="isAddModalActive" title="Deployment" hide-buttons>
           <CardBox :class="cardClass" is-form @submit.prevent="addSubmit">
-            <FormField label="Name" help="">
-              <FormControl v-model="create.name" type="input" placeholder="Name" />
-            </FormField>
             <FormField label="Path" help="">
               <FormControl v-model="create.path" type="input" placeholder="/var/www/html/PROJECT" />
             </FormField>
@@ -205,9 +202,6 @@ export default {
 
         <CardBoxModal v-model="isEditModalActive" title="Edit Deployment" hide-buttons>
           <CardBox :class="cardClass" is-form @submit.prevent="editSubmit">
-            <FormField label="Name" help="">
-              <FormControl v-model="edit.name" type="input" placeholder="Name" />
-            </FormField>
             <FormField label="Path" help="">
               <FormControl v-model="edit.path" type="input" placeholder="/var/www/html/PROJECT" />
             </FormField>
