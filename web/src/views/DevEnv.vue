@@ -53,6 +53,7 @@ export default {
         username: '',
         password: '',
         port: 0,
+        redockPort: 0,
       },
     }
   },
@@ -84,16 +85,18 @@ export default {
       this.personalContainers = [];
       ApiService.getPersonalContainers().then(value => {
         for (let i = 0; i < value.data.data.length; i++) {
-          this.personalContainers.push([value.data.data[i].username, value.data.data[i].password, value.data.data[i].port])
+          this.personalContainers.push([value.data.data[i].username, value.data.data[i].password, value.data.data[i].port, value.data.data[i].redockPort]);
         }
       })
     },
     editModal(data) {
       this.isEditModalActive = true
+      console.log(data)
       this.modalPath = {
         username: data[0],
         password: data[1],
-        port: data[2].toString()
+        port: data[2].toString(),
+        redockPort: data[3] ? data[3].toString() : ''
       }
     },
     exec(data) {
@@ -104,7 +107,8 @@ export default {
       this.modalPath = {
         username: data[0],
         password: data[1],
-        port: data[2].toString()
+        port: data[2].toString(),
+        redockPort: data[3] ? data[3].toString() : ''
       }
     },
     editSubmit() {
@@ -162,6 +166,9 @@ export default {
             <FormField label="Port" help="">
               <FormControl v-model="create.port" type="input" placeholder="Port" />
             </FormField>
+            <FormField label="Redock Port" help="">
+              <FormControl v-model="create.redockPort" type="input" placeholder="Redock Port" />
+            </FormField>
             <template #footer>
               <BaseButtons>
                 <BaseButton type="submit" color="info" label="Save" />
@@ -181,6 +188,9 @@ export default {
             </FormField>
             <FormField label="Port" help="">
               <FormControl v-model="modalPath.port" type="input" placeholder="Port" />
+            </FormField>
+            <FormField label="Redock Port" help="">
+              <FormControl v-model="modalPath.redockPort" type="input" placeholder="Redock Port" />
             </FormField>
             <template #footer>
               <BaseButtons>
@@ -203,16 +213,16 @@ export default {
           </CardBox>
         </CardBoxModal>
 
-
         <DataTable :options="datatableOptions" :data="personalContainers">
           <thead>
             <tr>
               <th>Username</th>
               <th>Password</th>
               <th>Port</th>
+              <th>Redock Port</th>
             </tr>
           </thead>
-          <template #column-3="props">
+          <template #column-4="props">
             <BaseButton class="mr-1" label="Attach" :icon="mdiMonitorCellphone()" color="info" @click="exec(props.rowData)" />
             <BaseButton class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark" @click="editModal(props.rowData)"
               rounded-full />

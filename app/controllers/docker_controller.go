@@ -444,7 +444,14 @@ func CreateDevEnv(c *fiber.Ctx) error {
 		})
 	}
 
-	devenv.GetDevEnvManager().AddDevEnv(model)
+	result := devenv.GetDevEnvManager().AddDevEnv(model)
+
+	if !result {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "User already exists or port/redockPort is already in use",
+		})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -476,8 +483,14 @@ func EditDevEnv(c *fiber.Ctx) error {
 		})
 	}
 
-	devenv.GetDevEnvManager().DeleteDevEnv(model.Username)
-	devenv.GetDevEnvManager().AddDevEnv(model)
+	result := devenv.GetDevEnvManager().EditDevEnv(model)
+
+	if !result {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "User not found or port/redockPort is already in use",
+		})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
