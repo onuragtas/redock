@@ -42,14 +42,14 @@
 </template>
 
 <script>
+import BaseButton from "@/components/BaseButton.vue";
+import FormControl from "@/components/FormControl.vue";
+import FormField from "@/components/FormField.vue";
 import SectionMain from '@/components/SectionMain.vue';
 import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue';
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue';
-import { mdiChartTimelineVariant } from '@mdi/js';
-import FormControl from "@/components/FormControl.vue";
-import BaseButton from "@/components/BaseButton.vue";
-import FormField from "@/components/FormField.vue";
 import ApiService from "@/services/ApiService";
+import { mdiChartTimelineVariant } from '@mdi/js';
 import { Terminal } from '@xterm/xterm';
 import { AttachAddon } from 'xterm-addon-attach';
 import { FitAddon } from 'xterm-addon-fit';
@@ -93,8 +93,10 @@ export default {
     fitAddon.fit();
 
     this.containerId = this.$route.params.id;
-    window.location.protocol + '//' + window.location.hostname + (window.location.port !== '' ? ':' + window.location.port : '')
-    var url = 'ws' + '://' + window.location.hostname + ':6001/ws';
+
+    let url = window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''));
+
+    url = 'ws' + '://' + url + '/ws';
     if (!(this.containerId == undefined || this.containerId == '')) {
       url += '/' + this.containerId;
     }
