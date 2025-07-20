@@ -1,10 +1,9 @@
 package tunnel_proxy
 
 import (
-	docker_manager "redock/docker-manager"
-
 	tunnel "github.com/onuragtas/tunnel-client"
 	"github.com/onuragtas/tunnel-client/models"
+	docker_manager "redock/docker-manager"
 )
 
 type TunnelProxy struct {
@@ -58,7 +57,7 @@ func (t *TunnelProxy) StopTunnel(domain string) {
 	tunnels := t.client.GetStartedTunnels()
 	for _, v := range tunnels.Data {
 		if v.Domain.Domain == domain {
-			v.CloseSignal <- 1
+			t.client.CloseTunnel([]string{v.Domain.Domain})
 		}
 	}
 }
