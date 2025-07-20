@@ -255,8 +255,8 @@ github.com/onuragtas/go-requests v1.0.6 h1:z1DCeM/Sgqriixes1UDEjKIYRXMWRI6dA4scX
 github.com/onuragtas/go-requests v1.0.6/go.mod h1:dFnH4WUuxyXbeCPCVpBgElUigldmjieqwx6duUDDfTs=
 github.com/onuragtas/reverse-proxy v1.0.28 h1:ZRg4/jVUljCtCjnEdJ0spVdwr2rKvPXEj9tmIsS8+bE=
 github.com/onuragtas/reverse-proxy v1.0.28/go.mod h1:yGmIRlSv/kPHH4A6cYdkqZp5VryeB7pS9V4W3w22GDs=
-github.com/onuragtas/tunnel-client v1.0.55 h1:Kgs7SjwLBDA4dzFiGT4YXyJw1iea+qYkxlzbYX8+U54=
-github.com/onuragtas/tunnel-client v1.0.55/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
+github.com/onuragtas/tunnel-client v1.0.57 h1:jWtEu/1H184hf71F0k4i+GRnGAI4onwwYTJziymSEgU=
+github.com/onuragtas/tunnel-client v1.0.57/go.mod h1:4/3Bs6vLD16gizWecB75/fBUzdksY3VEVqwxlCZq560=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=
