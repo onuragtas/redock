@@ -46,9 +46,10 @@ type DockerEnvironmentManager struct {
 }
 
 type DevEnv struct {
-	Username string `yaml:"username" json:"username"`
-	Password string `yaml:"password" json:"password"`
-	Port     int    `yaml:"port" json:"port"`
+	Username   string `yaml:"username" json:"username"`
+	Password   string `yaml:"password" json:"password"`
+	Port       int    `yaml:"port" json:"port"`
+	RedockPort int    `yaml:"redockPort" json:"redockPort"`
 }
 
 type Process struct {
