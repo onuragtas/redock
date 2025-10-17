@@ -5,23 +5,27 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
   mdiAlert, mdiCalendar,
-  mdiCheckCircle,
   mdiChevronLeft,
   mdiChevronRight,
-  mdiCloseCircle,
   mdiCloudUpload,
   mdiCog,
   mdiDelete,
   mdiGit,
   mdiHistory,
+  mdiMagnify,
   mdiPencil,
   mdiPlus,
   mdiRefresh,
-  mdiServer
+  mdiServer,
+  mdiViewGridOutline,
+  mdiViewList
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 // Reactive state
@@ -32,10 +36,6 @@ const isEditModalActive = ref(false)
 const isSettingsModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const selectedDeployment = ref(null)
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(10)
 
 // Form data
 const credentials = ref({
@@ -55,6 +55,33 @@ const create = ref({
 
 const edit = ref({})
 
+// Shared pagination & filter
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(
+  deployments,
+  (deployment, query) => {
+    const q = query.toLowerCase()
+    return [
+      deployment.name,
+      deployment.path,
+      deployment.url,
+      deployment.branch,
+      deployment.script
+    ].some(field => field?.toString().toLowerCase().includes(q))
+  },
+  6
+)
+
 // Computed
 const deploymentStats = computed(() => {
   const total = deployments.value.length
@@ -68,21 +95,21 @@ const deploymentStats = computed(() => {
   return { total, recent }
 })
 
-const paginatedDeployments = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return deployments.value.slice(start, end)
-})
+const GRID_MIN_ITEMS = 2
 
-const totalPages = computed(() => {
-  return Math.ceil(deployments.value.length / itemsPerPage.value)
-})
+const {
+  isGridLayout,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
 
-const paginationInfo = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, deployments.value.length)
-  return `${start}-${end} of ${deployments.value.length}`
-})
+const deploymentLayoutClass = computed(() => (
+  isGridLayout.value
+    ? "grid gap-8 grid-cols-1 lg:grid-cols-2 2xl:grid-cols-3 auto-rows-fr"
+    : "space-y-5"
+))
+
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
 const getList = async () => {
@@ -99,7 +126,7 @@ const getList = async () => {
 
 const deleteConfirm = (deployment) => {
   selectedDeployment.value = deployment
-  modalDeleteActive.value = true
+  isDeleteModalActive.value = true
 }
 
 const confirmDelete = async () => {
@@ -205,24 +232,6 @@ const getStatusBadgeClass = (deployment) => {
   }
 }
 
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   getList()
@@ -305,14 +314,33 @@ onMounted(() => {
 
         <!-- Deployments List -->
         <CardBox>
-          <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-            <div class="flex items-center justify-between">
-              <div class="flex items-center space-x-3">
-                <BaseIcon :path="mdiServer" size="24" class="text-slate-600 dark:text-slate-400" />
-                <h3 class="text-lg font-semibold text-slate-900 dark:text-white">Deployment List</h3>
+          <SectionTitleLineWithButton :icon="mdiServer" title="Deployment List" main>
+            <div class="flex flex-col gap-3 md:flex-row md:items-center">
+              <div class="w-full md:w-64">
+                <FormControl
+                  v-model="searchQuery"
+                  :icon="mdiMagnify"
+                  placeholder="Search deployments"
+                />
               </div>
+              <BaseButton
+                :icon="layoutToggleIcon"
+                :label="layoutToggleLabel"
+                color="lightDark"
+                outline
+                @click="toggleLayout"
+                class="shrink-0"
+              />
+              <BaseButton
+                :icon="mdiRefresh"
+                color="info"
+                rounded-full
+                @click="getList"
+                :disabled="loading"
+                class="shadow-sm hover:shadow-md"
+              />
             </div>
-          </div>
+          </SectionTitleLineWithButton>
 
           <div v-if="loading" class="text-center py-8">
             <div class="inline-flex items-center space-x-2 text-slate-600 dark:text-slate-400">
@@ -321,11 +349,16 @@ onMounted(() => {
             </div>
           </div>
 
-          <div v-else-if="deployments.length === 0" class="text-center py-12">
+          <div v-else-if="filteredItems.length === 0" class="text-center py-12">
             <BaseIcon :path="mdiServer" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-            <h3 class="text-lg font-medium text-slate-900 dark:text-white mb-2">No deployments found</h3>
-            <p class="text-slate-600 dark:text-slate-400 mb-6">Get started by creating your first deployment</p>
+            <h3 class="text-lg font-medium text-slate-900 dark:text-white mb-2">
+              {{ searchQuery ? 'No deployments match your search' : 'No deployments found' }}
+            </h3>
+            <p class="text-slate-600 dark:text-slate-400 mb-6">
+              {{ searchQuery ? 'Try adjusting your filters' : 'Get started by creating your first deployment' }}
+            </p>
             <BaseButton
+              v-if="!searchQuery"
               :icon="mdiPlus"
               label="Create Deployment"
               color="success"
@@ -333,108 +366,117 @@ onMounted(() => {
             />
           </div>
 
-          <div v-else class="space-y-4">
-            <div 
-              v-for="deployment in paginatedDeployments" 
-              :key="deployment.path"
-              class="bg-white dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700 p-6 hover:shadow-lg transition-all duration-200"
-            >
-              <div class="flex items-start justify-between">
-                <div class="flex-1">
-                  <div class="flex items-center space-x-3 mb-3">
-                    <div class="w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center">
-                      <BaseIcon :path="mdiGit" size="20" class="text-white" />
+          <div v-else>
+            <div :class="deploymentLayoutClass">
+              <div
+                v-for="deployment in paginatedItems"
+                :key="deployment.path"
+                class="bg-white dark:bg-slate-800 rounded-2xl border border-slate-200/60 dark:border-slate-700/60 p-6 sm:p-7 hover:shadow-lg transition-all duration-200 flex flex-col h-full shadow-sm/5"
+              >
+                <div class="flex flex-col gap-6 h-full">
+                  <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+                    <div class="flex items-start gap-4 flex-1">
+                      <div class="flex-shrink-0">
+                        <div class="w-11 h-11 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl flex items-center justify-center shadow-inner">
+                          <BaseIcon :path="mdiGit" size="22" class="text-white" />
+                        </div>
+                      </div>
+                      <div class="space-y-3 flex-1 min-w-0">
+                        <h4 class="text-lg font-semibold text-slate-900 dark:text-white truncate">{{ deployment.path }}</h4>
+                        <div class="flex flex-wrap items-center gap-3">
+                          <span
+                            v-if="deployment.name"
+                            class="text-xs font-medium text-slate-500 dark:text-slate-400 uppercase tracking-wide"
+                          >
+                            {{ deployment.name }}
+                          </span>
+                        </div>
+                      </div>
                     </div>
-                    <div>
-                      <h4 class="text-lg font-semibold text-slate-900 dark:text-white">{{ deployment.path }}</h4>
-                      <span 
-                        :class="['inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', getStatusBadgeClass(deployment)]"
-                      >
-                        <BaseIcon 
-                          :path="deployment.last_deployed ? mdiCheckCircle : mdiCloseCircle" 
-                          size="12" 
-                          class="mr-1" 
-                        />
-                        {{ deployment.last_deployed ? 'Deployed' : 'Not Deployed' }}
+                    <div class="flex items-start justify-start sm:justify-end gap-2">
+                      <BaseButton
+                        :icon="mdiPencil"
+                        color="info"
+                        size="small"
+                        title="Edit deployment"
+                        @click="editModal(deployment)"
+                      />
+                      <BaseButton
+                        :icon="mdiDelete"
+                        color="danger"
+                        size="small"
+                        title="Delete deployment"
+                        @click="deleteConfirm(deployment)"
+                      />
+                    </div>
+                  </div>
+
+                  <div class="grid grid-cols-1 md:grid-cols-2 2xl:grid-cols-3 gap-6 text-sm text-slate-500 dark:text-slate-400">
+                    <div class="flex flex-col gap-2">
+                      <div class="flex items-center gap-2 font-medium uppercase tracking-wide text-xs text-slate-400 dark:text-slate-500">
+                        <BaseIcon :path="mdiGit" size="16" class="text-slate-400" />
+                        <span>Branch</span>
+                      </div>
+                      <span class="font-semibold text-slate-900 dark:text-white break-all">
+                        {{ deployment.branch || '-' }}
+                      </span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <div class="flex items-center gap-2 font-medium uppercase tracking-wide text-xs text-slate-400 dark:text-slate-500">
+                        <BaseIcon :path="mdiCalendar" size="16" class="text-slate-400" />
+                        <span>Last Deployed</span>
+                      </div>
+                      <span class="font-semibold text-slate-900 dark:text-white">
+                        {{ formatDate(deployment.last_deployed) }}
+                      </span>
+                    </div>
+                    <div class="flex flex-col gap-2">
+                      <div class="flex items-center gap-2 font-medium uppercase tracking-wide text-xs text-slate-400 dark:text-slate-500">
+                        <BaseIcon :path="mdiHistory" size="16" class="text-slate-400" />
+                        <span>Last Checked</span>
+                      </div>
+                      <span class="font-semibold text-slate-900 dark:text-white">
+                        {{ formatDate(deployment.last_checked) }}
                       </span>
                     </div>
                   </div>
-                  
-                  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
-                    <div class="flex items-center space-x-2">
-                      <BaseIcon :path="mdiGit" size="16" class="text-slate-400" />
-                      <span class="text-slate-600 dark:text-slate-400">Branch:</span>
-                      <span class="font-medium text-slate-900 dark:text-white">{{ deployment.branch || '-' }}</span>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                      <BaseIcon :path="mdiCalendar" size="16" class="text-slate-400" />
-                      <span class="text-slate-600 dark:text-slate-400">Last Deployed:</span>
-                      <span class="font-medium text-slate-900 dark:text-white">{{ formatDate(deployment.last_deployed) }}</span>
-                    </div>
-                    <div class="flex items-center space-x-2">
-                      <BaseIcon :path="mdiHistory" size="16" class="text-slate-400" />
-                      <span class="text-slate-600 dark:text-slate-400">Last Checked:</span>
-                      <span class="font-medium text-slate-900 dark:text-white">{{ formatDate(deployment.last_checked) }}</span>
-                    </div>
-                  </div>
-                </div>
-                
-                <div class="flex space-x-2 ml-6">
-                  <BaseButton
-                    :icon="mdiPencil"
-                    label="Edit"
-                    color="info"
-                    size="small"
-                    @click="editModal(deployment)"
-                  />
-                  <BaseButton
-                    :icon="mdiDelete"
-                    label="Delete"
-                    color="danger"
-                    size="small"
-                    @click="deleteDeployment(deployment)"
-                  />
                 </div>
               </div>
             </div>
 
             <!-- Pagination -->
-            <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+            <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
               <div class="text-sm text-slate-700 dark:text-slate-300">
                 Showing {{ paginationInfo }}
               </div>
-              
-              <div class="flex items-center space-x-2">
+
+              <div class="flex items-center gap-2">
                 <BaseButton
                   :icon="mdiChevronLeft"
                   color="lightDark"
-                  size="small"
-                  @click="prevPage"
                   :disabled="currentPage === 1"
+                  small
+                  @click="prevPage"
                 />
-                
-                <div class="flex space-x-1">
-                  <button
-                    v-for="page in Math.min(totalPages, 5)"
+
+                <div class="flex flex-wrap gap-1">
+                  <BaseButton
+                    v-for="page in pages"
                     :key="page"
+                    :label="page"
+                    color="lightDark"
+                    small
+                    :active="currentPage === page"
                     @click="goToPage(page)"
-                    :class="[
-                      'px-3 py-2 text-sm font-medium rounded-lg transition-colors',
-                      currentPage === page
-                        ? 'bg-blue-600 text-white'
-                        : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                    ]"
-                  >
-                    {{ page }}
-                  </button>
+                  />
                 </div>
-                
+
                 <BaseButton
                   :icon="mdiChevronRight"
                   color="lightDark"
-                  size="small"
-                  @click="nextPage"
                   :disabled="currentPage === totalPages"
+                  small
+                  @click="nextPage"
                 />
               </div>
             </div>

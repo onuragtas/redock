@@ -5,6 +5,9 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -19,10 +22,13 @@ import {
     mdiFileCode,
     mdiFileDocument,
     mdiFolder,
+    mdiMagnify,
     mdiPencil,
     mdiPlus,
     mdiRefresh,
     mdiServer,
+    mdiViewGridOutline,
+    mdiViewList,
     mdiWeb
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
@@ -36,10 +42,6 @@ const isEditModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const modalPath = ref('')
 const virtualhostContent = ref('')
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(6)
 
 // Form data
 const createVirtualHost = ref({
@@ -64,21 +66,36 @@ const vhostStats = computed(() => {
   return { total, nginx, apache }
 })
 
-const paginatedVirtualHosts = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return virtualHosts.value.slice(start, end)
-})
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(
+  virtualHosts,
+  (vhost, query) => {
+    const target = Array.isArray(vhost) ? vhost[0] : vhost
+    return target?.toLowerCase().includes(query.toLowerCase())
+  },
+  6
+)
 
-const totalPages = computed(() => {
-  return Math.ceil(virtualHosts.value.length / itemsPerPage.value)
-})
+const GRID_MIN_ITEMS = 2
 
-const paginationInfo = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, virtualHosts.value.length)
-  return `${start}-${end} of ${virtualHosts.value.length}`
-})
+const {
+  isGridLayout,
+  layoutClass,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
+
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
 const getAllVHosts = async () => {
@@ -204,24 +221,6 @@ const extractDomain = (path) => {
   return filename.replace('.conf', '').replace('sites-available/', '')
 }
 
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   getAllVHosts()
@@ -297,27 +296,46 @@ onMounted(() => {
 
       <!-- Virtual Hosts List -->
       <CardBox>
-        <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold flex items-center">
-                <BaseIcon :path="mdiFileDocument" size="24" class="mr-3 text-green-600 dark:text-green-400" />
-                Virtual Host Configurations
-              </h2>
-              <p class="text-slate-600 dark:text-slate-400 mt-1">Manage web server virtual hosts</p>
+        <SectionTitleLineWithButton :icon="mdiFileDocument" title="Virtual Host Configurations" main>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <div class="w-full md:w-64">
+              <FormControl
+                v-model="searchQuery"
+                :icon="mdiMagnify"
+                placeholder="Search virtual hosts"
+              />
             </div>
+            <BaseButton
+              :icon="layoutToggleIcon"
+              :label="layoutToggleLabel"
+              color="lightDark"
+              outline
+              @click="toggleLayout"
+              class="shrink-0"
+            />
+            <BaseButton
+              :icon="mdiRefresh"
+              color="info"
+              rounded-full
+              @click="getAllVHosts"
+              :disabled="loading"
+              class="shadow-sm hover:shadow-md"
+            />
           </div>
-        </div>
+        </SectionTitleLineWithButton>
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
           <p class="text-slate-500 dark:text-slate-400 mt-4">Loading virtual hosts...</p>
         </div>
 
-        <div v-else-if="virtualHosts.length === 0" class="text-center py-12">
+        <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500 dark:text-slate-400 mb-4">No virtual hosts configured</p>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">
+            {{ searchQuery ? 'No virtual hosts match your search.' : 'No virtual hosts configured.' }}
+          </p>
           <BaseButton
+            v-if="!searchQuery"
             label="Create Your First VHost"
             :icon="mdiPlus"
             color="info"
@@ -325,13 +343,13 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else class="space-y-4">
+  <div v-else :class="layoutClass">
           <div 
-            v-for="vhost in paginatedVirtualHosts" 
+            v-for="vhost in paginatedItems" 
             :key="vhost[0]"
-            class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+            class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors flex flex-col h-full"
           >
-            <div class="flex items-center space-x-6">
+            <div class="flex items-start gap-4 flex-1">
               <div class="flex-shrink-0">
                 <div class="w-12 h-12 bg-gradient-to-br from-green-500 to-teal-600 rounded-xl flex items-center justify-center">
                   <BaseIcon 
@@ -342,12 +360,12 @@ onMounted(() => {
                 </div>
               </div>
               
-              <div class="flex-1">
+              <div class="space-y-2 flex-1">
                 <h3 class="font-semibold text-lg flex items-center">
                   <BaseIcon :path="mdiDomain" size="20" class="mr-2 text-blue-500" />
                   {{ extractDomain(vhost[0]) }}
                 </h3>
-                <div class="flex items-center space-x-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <div class="flex flex-col gap-2 text-sm text-slate-500 dark:text-slate-400">
                   <div class="flex items-center">
                     <BaseIcon :path="mdiFolder" size="16" class="mr-1" />
                     {{ vhost[0] }}
@@ -363,11 +381,11 @@ onMounted(() => {
               </div>
             </div>
             
-            <div class="flex items-center space-x-2 ml-6">
+            <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
               <BaseButton 
                 :icon="mdiPencil" 
                 color="info"
-                size="small"
+                small
                 @click="editVirtualHost(vhost)"
                 title="Edit Configuration"
               />
@@ -375,7 +393,7 @@ onMounted(() => {
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
-                size="small"
+                small
                 @click="deleteVirtualHost(vhost)"
                 title="Delete VHost"
               />
@@ -384,40 +402,36 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+        <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
           <div class="text-sm text-slate-700 dark:text-slate-300">
             Showing {{ paginationInfo }}
           </div>
           
-          <div class="flex items-center space-x-2">
+          <div class="flex items-center gap-2">
             <BaseButton
               :icon="mdiChevronLeft"
               color="lightDark"
-              size="small"
+              small
               @click="prevPage"
               :disabled="currentPage === 1"
             />
             
-            <div class="flex space-x-1">
-              <button
-                v-for="page in Math.min(totalPages, 5)"
+            <div class="flex flex-wrap gap-1">
+              <BaseButton
+                v-for="page in pages"
                 :key="page"
+                :label="page"
+                color="lightDark"
+                small
+                :active="currentPage === page"
                 @click="goToPage(page)"
-                :class="[
-                  'px-3 py-2 text-sm font-medium rounded-lg transition-colors',
-                  currentPage === page
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                ]"
-              >
-                {{ page }}
-              </button>
+              />
             </div>
             
             <BaseButton
               :icon="mdiChevronRight"
               color="lightDark"
-              size="small"
+              small
               @click="nextPage"
               :disabled="currentPage === totalPages"
             />

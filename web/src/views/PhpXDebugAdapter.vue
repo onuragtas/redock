@@ -5,6 +5,9 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -17,12 +20,15 @@ import {
   mdiFileCode,
   mdiFolder,
   mdiLink,
+  mdiMagnify,
   mdiMap,
   mdiNetwork,
   mdiPlay,
   mdiPlus,
   mdiRefresh,
   mdiStop,
+  mdiViewGridOutline,
+  mdiViewList,
   mdiWeb
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
@@ -36,10 +42,6 @@ const loading = ref(false)
 const isAddModalActive = ref(false)
 const isConfigurationModalActive = ref(false)
 const isRunning = ref(false)
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(5)
 
 // Form data
 const create = ref({
@@ -56,24 +58,42 @@ const debugStats = computed(() => {
   return { total, configured: hasConfiguration }
 })
 
-const paginatedMappings = computed(() => {
-  const mappings = settings.value.mappings || []
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return mappings.slice(start, end)
-})
+const mappingsRef = computed(() => settings.value.mappings || [])
 
-const totalPages = computed(() => {
-  const mappings = settings.value.mappings || []
-  return Math.ceil(mappings.length / itemsPerPage.value)
-})
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(
+  mappingsRef,
+  (mapping, query) => {
+    const q = query.toLowerCase()
+    return (
+      mapping.name?.toLowerCase().includes(q) ||
+      mapping.path?.toLowerCase().includes(q) ||
+      mapping.url?.toLowerCase().includes(q)
+    )
+  },
+  5
+)
 
-const paginationInfo = computed(() => {
-  const mappings = settings.value.mappings || []
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, mappings.length)
-  return `${start}-${end} of ${mappings.length} mappings`
-})
+const GRID_MIN_ITEMS = 2
+
+const {
+  isGridLayout,
+  layoutClass,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
+
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
 const getList = async () => {
@@ -178,25 +198,6 @@ const getStatusColor = () => {
 const extractProjectName = (path) => {
   const parts = path.split('/')
   return parts[parts.length - 1] || 'Unknown'
-}
-
-// Pagination methods
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
 }
 
 // Lifecycle
@@ -308,27 +309,38 @@ onMounted(() => {
 
       <!-- Debug Mappings -->
       <CardBox>
-        <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold flex items-center">
-                <BaseIcon :path="mdiMap" size="24" class="mr-3 text-purple-600 dark:text-purple-400" />
-                Debug Path Mappings
-              </h2>
-              <p class="text-slate-600 dark:text-slate-400 mt-1">Configure project paths for debugging</p>
+        <SectionTitleLineWithButton :icon="mdiMap" title="Debug Path Mappings" main>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <div class="w-full md:w-64">
+              <FormControl
+                v-model="searchQuery"
+                :icon="mdiMagnify"
+                placeholder="Search mappings"
+              />
             </div>
+            <BaseButton
+              :icon="layoutToggleIcon"
+              :label="layoutToggleLabel"
+              color="lightDark"
+              outline
+              @click="toggleLayout"
+              class="shrink-0"
+            />
           </div>
-        </div>
+        </SectionTitleLineWithButton>
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
           <p class="text-slate-500 dark:text-slate-400 mt-4">Loading debug mappings...</p>
         </div>
 
-        <div v-else-if="!settings.mappings || settings.mappings.length === 0" class="text-center py-12">
+        <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiFileCode" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500 dark:text-slate-400 mb-4">No debug mappings configured</p>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">
+            {{ searchQuery ? 'No mappings match your search.' : 'No debug mappings configured.' }}
+          </p>
           <BaseButton
+            v-if="!searchQuery"
             label="Create Your First Mapping"
             :icon="mdiPlus"
             color="info"
@@ -336,35 +348,35 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else class="space-y-4">
+  <div v-else :class="layoutClass">
           <div 
-            v-for="mapping in paginatedMappings" 
+            v-for="mapping in paginatedItems" 
             :key="mapping.name"
-            class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+            class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors flex flex-col h-full"
           >
-            <div class="flex items-center space-x-6">
+            <div class="flex items-start gap-4 flex-1">
               <div class="flex-shrink-0">
                 <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-pink-600 rounded-xl flex items-center justify-center">
                   <BaseIcon :path="mdiFileCode" size="24" class="text-white" />
                 </div>
               </div>
               
-              <div class="flex-1">
+              <div class="space-y-3 flex-1">
                 <h3 class="font-semibold text-lg">{{ mapping.name }}</h3>
-                <div class="flex flex-col space-y-1 mt-1 text-sm text-slate-500 dark:text-slate-400">
+                <div class="space-y-2 text-sm text-slate-500 dark:text-slate-400">
                   <div class="flex items-center">
                     <BaseIcon :path="mdiFolder" size="16" class="mr-2" />
-                    <span class="font-mono">{{ mapping.path }}</span>
+                    <span class="font-mono break-words">{{ mapping.path }}</span>
                   </div>
                   <div class="flex items-center">
                     <BaseIcon :path="mdiLink" size="16" class="mr-2" />
-                    <span class="font-mono">{{ mapping.url }}</span>
+                    <span class="font-mono break-words">{{ mapping.url }}</span>
                   </div>
                 </div>
               </div>
             </div>
             
-            <div class="flex items-center space-x-2 ml-6">
+            <div class="mt-6 flex items-center justify-end gap-2">
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
@@ -377,40 +389,34 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 px-6 pb-4">
+        <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 px-6 pb-4">
           <div class="text-sm text-slate-500 dark:text-slate-400">
-            {{ paginationInfo }}
+            Showing {{ paginationInfo }}
           </div>
-          <div class="flex space-x-2">
+          <div class="flex items-center gap-2">
             <BaseButton
               :icon="mdiChevronLeft"
-              label="Previous"
+              color="lightDark"
+              small
               :disabled="currentPage === 1"
-              color="light"
-              size="small"
               @click="prevPage"
             />
-            <div class="flex space-x-1">
-              <button
-                v-for="page in totalPages"
+            <div class="flex flex-wrap gap-1">
+              <BaseButton
+                v-for="page in pages"
                 :key="page"
+                :label="page"
+                color="lightDark"
+                small
+                :active="page === currentPage"
                 @click="goToPage(page)"
-                :class="[
-                  'px-3 py-2 text-sm rounded-lg transition-colors',
-                  page === currentPage
-                    ? 'bg-purple-600 text-white shadow-md'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-slate-700'
-                ]"
-              >
-                {{ page }}
-              </button>
+              />
             </div>
             <BaseButton
               :icon="mdiChevronRight"
-              label="Next"
+              color="lightDark"
+              small
               :disabled="currentPage === totalPages"
-              color="light"
-              size="small"
               @click="nextPage"
             />
           </div>

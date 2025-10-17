@@ -5,6 +5,9 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -21,12 +24,15 @@ import {
   mdiLan,
   mdiLock,
   mdiLogin, mdiLogout,
+  mdiMagnify,
   mdiPlay,
   mdiPlus,
   mdiRefresh,
   mdiServer,
   mdiStop,
-  mdiTunnel
+  mdiTunnel,
+  mdiViewGridOutline,
+  mdiViewList
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 
@@ -41,10 +47,6 @@ const loading = ref(false)
 const addLoading = ref(false)
 const selectedTunnel = ref(null)
 const startDomain = ref({})
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(8)
 
 // Form data
 const credentials = ref({
@@ -71,21 +73,18 @@ const tunnelStats = computed(() => {
   return { total, active, inactive: total - active }
 })
 
-const paginatedTunnels = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return proxies.value.slice(start, end)
-})
-
-const totalPages = computed(() => {
-  return Math.ceil(proxies.value.length / itemsPerPage.value)
-})
-
-const paginationInfo = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, proxies.value.length)
-  return `${start}-${end} of ${proxies.value.length} tunnels`
-})
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(proxies, undefined, 8)
 
 // Methods
 const checkLogin = async () => {
@@ -256,25 +255,18 @@ const formatDate = (dateString) => {
   })
 }
 
+const GRID_MIN_ITEMS = 2
+
+const {
+  isGridLayout,
+  layoutClass,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
+
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
+
 // Pagination methods
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   checkLogin()
@@ -358,27 +350,46 @@ onMounted(() => {
 
       <!-- Tunnel List -->
       <CardBox>
-        <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold flex items-center">
-                <BaseIcon :path="mdiConnection" size="24" class="mr-3 text-purple-600 dark:text-purple-400" />
-                Active Tunnel Domains
-              </h2>
-              <p class="text-slate-600 dark:text-slate-400 mt-1">Manage secure tunnel connections</p>
+        <SectionTitleLineWithButton :icon="mdiConnection" title="Active Tunnel Domains" main>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <div class="w-full md:w-64">
+              <FormControl
+                v-model="searchQuery"
+                :icon="mdiMagnify"
+                placeholder="Search tunnels"
+              />
             </div>
+            <BaseButton
+              :icon="layoutToggleIcon"
+              :label="layoutToggleLabel"
+              color="lightDark"
+              outline
+              @click="toggleLayout"
+              class="shrink-0"
+            />
+            <BaseButton
+              :icon="mdiRefresh"
+              color="info"
+              rounded-full
+              @click="tunnelList"
+              :disabled="loading"
+              class="shadow-sm hover:shadow-md"
+            />
           </div>
-        </div>
+        </SectionTitleLineWithButton>
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
           <p class="text-slate-500 dark:text-slate-400 mt-4">Loading tunnels...</p>
         </div>
 
-        <div v-else-if="proxies.length === 0" class="text-center py-12">
+        <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiTunnel" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500 dark:text-slate-400 mb-4">No tunnel domains configured</p>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">
+            {{ searchQuery ? 'No tunnels match your search.' : 'No tunnel domains configured.' }}
+          </p>
           <BaseButton
+            v-if="!searchQuery"
             label="Create Your First Tunnel"
             :icon="mdiPlus"
             color="info"
@@ -386,43 +397,43 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else class="space-y-4">
+  <div v-else :class="layoutClass">
           <div 
-            v-for="tunnel in paginatedTunnels" 
+            v-for="tunnel in paginatedItems" 
             :key="tunnel.id"
-            class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+            class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors flex flex-col h-full"
           >
-            <div class="flex items-center space-x-6">
-              <div class="flex-shrink-0">
-                <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                  <BaseIcon :path="mdiTunnel" size="24" class="text-white" />
+            <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+              <div class="flex items-start gap-4 flex-1">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                    <BaseIcon :path="mdiTunnel" size="24" class="text-white" />
+                  </div>
+                </div>
+                <div class="space-y-2 flex-1">
+                  <h3 class="font-semibold text-lg flex items-center">
+                    <BaseIcon :path="mdiEarth" size="20" class="mr-2 text-blue-500" />
+                    {{ tunnel.domain }}
+                  </h3>
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+                    <div class="flex items-center">
+                      <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
+                      Port: {{ tunnel.port }}
+                    </div>
+                    <div class="flex items-center">
+                      <BaseIcon 
+                        :path="tunnel.keep_alive ? mdiCheckCircle : mdiCloseCircle" 
+                        size="16" 
+                        class="mr-1"
+                        :class="tunnel.keep_alive ? 'text-green-500' : 'text-red-500'"
+                      />
+                      Keep Alive: {{ tunnel.keep_alive ? 'Yes' : 'No' }}
+                    </div>
+                    <div>Updated: {{ formatDate(tunnel.UpdatedAt) }}</div>
+                  </div>
                 </div>
               </div>
-              
-              <div class="flex-1">
-                <h3 class="font-semibold text-lg flex items-center">
-                  <BaseIcon :path="mdiEarth" size="20" class="mr-2 text-blue-500" />
-                  {{ tunnel.domain }}
-                </h3>
-                <div class="flex items-center space-x-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  <div class="flex items-center">
-                    <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
-                    Port: {{ tunnel.port }}
-                  </div>
-                  <div class="flex items-center">
-                    <BaseIcon 
-                      :path="tunnel.keep_alive ? mdiCheckCircle : mdiCloseCircle" 
-                      size="16" 
-                      class="mr-1"
-                      :class="tunnel.keep_alive ? 'text-green-500' : 'text-red-500'"
-                    />
-                    Keep Alive: {{ tunnel.keep_alive ? 'Yes' : 'No' }}
-                  </div>
-                  <div>Updated: {{ formatDate(tunnel.UpdatedAt) }}</div>
-                </div>
-              </div>
-              
-              <div class="flex-shrink-0">
+              <div class="flex items-start lg:flex-none justify-start lg:justify-end">
                 <span 
                   :class="[
                     'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium',
@@ -433,20 +444,18 @@ onMounted(() => {
                 </span>
               </div>
             </div>
-            
-            <div class="flex items-center space-x-2 ml-6">
+            <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
               <BaseButton 
                 :icon="tunnel.started ? mdiStop : mdiPlay" 
                 :color="tunnel.started ? 'danger' : 'success'"
-                size="small"
+                small
                 @click="tunnel.started ? stopModal(tunnel) : startModal(tunnel)"
                 :title="tunnel.started ? 'Stop Tunnel' : 'Start Tunnel'"
               />
-              
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
-                size="small"
+                small
                 @click="deleteModal(tunnel)"
                 title="Delete"
               />
@@ -455,40 +464,34 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 px-6 pb-4">
+        <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 px-6 pb-4">
           <div class="text-sm text-slate-500 dark:text-slate-400">
-            {{ paginationInfo }}
+            Showing {{ paginationInfo }}
           </div>
-          <div class="flex space-x-2">
+          <div class="flex items-center gap-2">
             <BaseButton
               :icon="mdiChevronLeft"
-              label="Previous"
+              color="lightDark"
+              small
               :disabled="currentPage === 1"
-              color="light"
-              size="small"
               @click="prevPage"
             />
-            <div class="flex space-x-1">
-              <button
-                v-for="page in totalPages"
+            <div class="flex flex-wrap gap-1">
+              <BaseButton
+                v-for="page in pages"
                 :key="page"
+                :label="page"
+                color="lightDark"
+                small
+                :active="page === currentPage"
                 @click="goToPage(page)"
-                :class="[
-                  'px-3 py-2 text-sm rounded-lg transition-colors',
-                  page === currentPage
-                    ? 'bg-purple-600 text-white shadow-md'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-purple-600 hover:bg-purple-50 dark:hover:bg-slate-700'
-                ]"
-              >
-                {{ page }}
-              </button>
+              />
             </div>
             <BaseButton
               :icon="mdiChevronRight"
-              label="Next"
+              color="lightDark"
+              small
               :disabled="currentPage === totalPages"
-              color="light"
-              size="small"
               @click="nextPage"
             />
           </div>
