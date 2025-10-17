@@ -1,7 +1,7 @@
 <script setup>
-import { computed, useSlots } from 'vue'
 import CardBoxComponentBody from '@/components/CardBoxComponentBody.vue'
 import CardBoxComponentFooter from '@/components/CardBoxComponentFooter.vue'
+import { computed, useSlots } from 'vue'
 
 const props = defineProps({
   rounded: {
@@ -31,6 +31,10 @@ const componentClass = computed(() => {
     props.flex,
     props.isModal ? 'dark:bg-slate-900' : 'dark:bg-slate-900/70'
   ]
+
+  if (props.isModal) {
+    base.push('flex-col max-h-full')
+  }
 
   if (props.isHoverable) {
     base.push('hover:shadow-lg transition-shadow duration-500')

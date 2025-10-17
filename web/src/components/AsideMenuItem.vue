@@ -2,7 +2,7 @@
 import { getButtonColor } from '@/colors.js'
 import AsideMenuList from '@/components/AsideMenuList.vue'
 import BaseIcon from '@/components/BaseIcon.vue'
-import { mdiMinus, mdiPlus } from '@mdi/js'
+import { mdiChevronDown, mdiChevronRight } from '@mdi/js'
 import { computed, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 
@@ -17,21 +17,22 @@ const props = defineProps({
 const emit = defineEmits(['menu-click'])
 
 const hasColor = computed(() => props.item && props.item.color)
-
-const asideMenuItemActiveStyle = computed(() =>
-  hasColor.value ? '' : 'aside-menu-item-active font-bold'
-)
-
 const isDropdownActive = ref(false)
+const hasDropdown = computed(() => !!props.item.menu)
 
 const componentClass = computed(() => [
-  props.isDropdownList ? 'py-3 px-6 text-sm' : 'py-3',
-  hasColor.value
-    ? getButtonColor(props.item.color, false, true)
-    : `aside-menu-item dark:text-slate-300 dark:hover:text-white`
+  'group flex items-center px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-200',
+  props.isDropdownList 
+    ? 'ml-4 text-gray-400 hover:text-white hover:bg-gray-800/50' 
+    : hasColor.value && props.item.color === 'danger'
+      ? 'text-red-400 hover:text-white hover:bg-red-600/20 border border-red-600/20'
+      : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
 ])
 
-const hasDropdown = computed(() => !!props.item.menu)
+const iconClass = computed(() => [
+  'flex-shrink-0 mr-3',
+  props.isDropdownList ? 'w-4 h-4' : 'w-5 h-5'
+])
 
 const menuClick = (event) => {
   emit('menu-click', event, props.item)
@@ -43,46 +44,80 @@ const menuClick = (event) => {
 </script>
 
 <template>
-  <li>
+  <li class="mb-1">
     <component
       :is="item.to ? RouterLink : 'a'"
       v-slot="vSlot"
       :to="item.to ?? null"
       :href="item.href ?? null"
       :target="item.target ?? null"
-      class="flex cursor-pointer"
-      :class="componentClass"
+      :class="[
+        componentClass,
+        vSlot?.isExactActive 
+          ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg' 
+          : ''
+      ]"
       @click="menuClick"
     >
       <BaseIcon
         v-if="item.icon"
         :path="item.icon"
-        class="flex-none"
-        :class="[vSlot && vSlot.isExactActive ? asideMenuItemActiveStyle : '']"
-        w="w-16"
-        :size="18"
-      />
-      <span
-        class="grow text-ellipsis line-clamp-1"
         :class="[
-          { '': !hasDropdown },
-          vSlot && vSlot.isExactActive ? asideMenuItemActiveStyle : ''
+          iconClass,
+          vSlot?.isExactActive ? 'text-white' : ''
         ]"
-        >{{ item.label }}</span
-      >
+      />
+      
+      <span class="flex-1 truncate">{{ item.label }}</span>
+      
       <BaseIcon
         v-if="hasDropdown"
-        :path="isDropdownActive ? mdiMinus : mdiPlus"
-        class="flex-none"
-        :class="[vSlot && vSlot.isExactActive ? asideMenuItemActiveStyle : '']"
-        w="w-12"
+        :path="isDropdownActive ? mdiChevronDown : mdiChevronRight"
+        class="w-4 h-4 ml-2 transition-transform duration-200"
+        :class="{ 'transform rotate-90': isDropdownActive }"
       />
     </component>
-    <AsideMenuList
-      v-if="hasDropdown"
-      :menu="item.menu"
-      :class="['aside-menu-dropdown', isDropdownActive ? 'block dark:bg-slate-800/50' : 'hidden']"
-      is-dropdown-list
-    />
+
+    <!-- Dropdown Menu -->
+    <transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="transform scale-95 opacity-0"
+      enter-to-class="transform scale-100 opacity-100"
+      leave-active-class="transition duration-75 ease-in"
+      leave-from-class="transform scale-100 opacity-100"
+      leave-to-class="transform scale-95 opacity-0"
+    >
+      <div v-show="isDropdownActive && hasDropdown" class="mt-1 ml-2 border-l border-gray-700/50 pl-2">
+        <AsideMenuList
+          :menu="item.menu"
+          is-dropdown-list
+          @menu-click="emit('menu-click', $event)"
+        />
+      </div>
+    </transition>
   </li>
 </template>
+
+<style scoped>
+/* Active link glow effect */
+.router-link-exact-active {
+  position: relative;
+}
+
+.router-link-exact-active::before {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  background: linear-gradient(45deg, #3b82f6, #8b5cf6);
+  border-radius: 12px;
+  z-index: -1;
+  filter: blur(4px);
+  opacity: 0.6;
+}
+
+/* Hover animation */
+.group:hover .flex-shrink-0 {
+  transform: scale(1.1);
+  transition: transform 0.2s ease;
+}
+</style>

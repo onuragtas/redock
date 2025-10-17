@@ -1,15 +1,19 @@
 
-# Redock Service
+# Redock DevStation
 
-`Redock` is a service application designed to be lightweight and easily managed. It uses the [kardianos/service](https://github.com/kardianos/service) package to simplify service management on various platforms.
+`Redock DevStation` is your all-in-one local development environment manager. It's a lightweight service application that brings together container management, development tools, and productivity features in a single, easy-to-use platform.
 
 ---
 
 ## Features
-- Install, start, stop, and uninstall the service via command-line flags.
-- Supports macOS, Linux, and Windows platforms.
-- Provides pre-built binaries for Apple Silicon and AMD64 architectures.
-- Environment variable configuration for better compatibility.
+- **Container Management**: Docker container lifecycle management with easy-to-use interface
+- **Development Environment**: Setup and manage multiple development environments
+- **Terminal Integration**: Built-in terminal with multi-tab support and saved commands
+- **Local Proxy & Tunneling**: HTTP proxy and SSH tunneling capabilities
+- **PHP XDebug Integration**: Seamless debugging setup for PHP development
+- **Cross-Platform**: Supports macOS, Linux, and Windows platforms
+- **Service Management**: Install, start, stop, and uninstall via command-line flags
+- **Modern Web UI**: Beautiful, responsive interface built with Vue.js
 
 ---
 

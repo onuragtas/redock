@@ -20,6 +20,14 @@ const props = defineProps({
     type: String,
     default: 'Done'
   },
+  buttonDisabled: {
+    type: Boolean,
+    default: false
+  },
+  cancelDisabled: {
+    type: Boolean,
+    default: false
+  },
   hasCancel: Boolean,
   hideButtons: {
     type: Boolean,
@@ -39,13 +47,15 @@ const value = computed({
 })
 
 const confirmCancel = (mode) => {
-  value.value = false
   emit(mode)
 }
 
 const confirm = () => confirmCancel('confirm')
 
-const cancel = () => confirmCancel('cancel')
+const cancel = () => {
+  value.value = false;
+  confirmCancel('cancel')
+}
 
 window.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' && value.value) {
@@ -58,12 +68,12 @@ window.addEventListener('keydown', (e) => {
   <OverlayLayer v-show="value" @overlay-click="cancel">
     <CardBox
       v-show="value"
-      class="shadow-lg max-h-modal w-11/12 md:w-3/5 lg:w-2/5 z-50"
+      class="shadow-lg max-h-[90vh] w-11/12 md:w-3/5 lg:w-2/5 z-50 flex flex-col"
       is-modal
     >
       <CardBoxComponentTitle :title="title">
         <BaseButton
-          v-if="hasCancel"
+          v-if="hasCancel && !cancelDisabled"
           :icon="mdiClose"
           color="whiteDark"
           small
@@ -72,14 +82,14 @@ window.addEventListener('keydown', (e) => {
         />
       </CardBoxComponentTitle>
 
-      <div class="space-y-3">
+      <div class="space-y-3 overflow-y-auto flex-1 min-h-0">
         <slot />
       </div>
 
       <template v-if="!hideButtons" #footer>
         <BaseButtons>
-          <BaseButton :label="buttonLabel" :color="button" @click="confirm" />
-          <BaseButton v-if="hasCancel" label="Cancel" :color="button" outline @click="cancel" />
+          <BaseButton :label="buttonLabel" :color="button" :disabled="buttonDisabled" @click="confirm" />
+          <BaseButton v-if="hasCancel" label="Cancel" :color="button" outline :disabled="cancelDisabled" @click="cancel" />
         </BaseButtons>
       </template>
     </CardBox>

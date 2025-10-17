@@ -20,7 +20,7 @@ const overlayClick = (event) => {
 <template>
   <div
     :class="[type, zIndex]"
-    class="items-center flex-col justify-center overflow-hidden fixed inset-0"
+    class="items-center flex-col justify-center overflow-y-auto fixed inset-0 p-4"
   >
     <transition
       enter-active-class="transition duration-150 ease-in"
