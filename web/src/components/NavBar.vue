@@ -3,7 +3,7 @@ import BaseIcon from '@/components/BaseIcon.vue'
 import NavBarItemPlain from '@/components/NavBarItemPlain.vue'
 import NavBarMenuList from '@/components/NavBarMenuList.vue'
 import { containerMaxW } from '@/config.js'
-import { mdiClose, mdiDotsVertical, mdiBell, mdiAccount } from '@mdi/js'
+import { mdiAccount, mdiBell, mdiClose, mdiDotsVertical } from '@mdi/js'
 import { ref } from 'vue'
 
 const props = defineProps({
