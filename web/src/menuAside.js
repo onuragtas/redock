@@ -1,17 +1,17 @@
 import {
-  mdiBookSearch,
-  mdiMonitor
+    mdiBookSearch,
+    mdiMonitorDashboard
 } from '@mdi/js'
 
 export default [
   {
     to: '/dashboard',
-    icon: mdiMonitor,
+    icon: mdiMonitorDashboard,
     label: 'Dashboard'
   },
   {
     to: '/setup_environment',
-    icon: mdiMonitor,
+    icon: mdiMonitorDashboard,
     label: 'Setup Environment',
   },
   {

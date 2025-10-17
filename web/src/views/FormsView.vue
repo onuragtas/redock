@@ -1,19 +1,19 @@
 <script setup>
-import { reactive, ref } from 'vue'
-import { mdiBallotOutline, mdiAccount, mdiMail, mdiGithub } from '@mdi/js'
-import SectionMain from '@/components/SectionMain.vue'
-import CardBox from '@/components/CardBox.vue'
-import FormCheckRadioGroup from '@/components/FormCheckRadioGroup.vue'
-import FormFilePicker from '@/components/FormFilePicker.vue'
-import FormField from '@/components/FormField.vue'
-import FormControl from '@/components/FormControl.vue'
-import BaseDivider from '@/components/BaseDivider.vue'
 import BaseButton from '@/components/BaseButton.vue'
 import BaseButtons from '@/components/BaseButtons.vue'
+import BaseDivider from '@/components/BaseDivider.vue'
+import CardBox from '@/components/CardBox.vue'
+import FormCheckRadioGroup from '@/components/FormCheckRadioGroup.vue'
+import FormControl from '@/components/FormControl.vue'
+import FormField from '@/components/FormField.vue'
+import FormFilePicker from '@/components/FormFilePicker.vue'
+import SectionMain from '@/components/SectionMain.vue'
 import SectionTitle from '@/components/SectionTitle.vue'
-import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
-import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue'
+import { mdiAccount, mdiBallotOutline, mdiGithub, mdiMail } from '@mdi/js'
+import { reactive, ref } from 'vue'
+
 import NotificationBarInCard from '@/components/NotificationBarInCard.vue'
+import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue'
 
 const selectOptions = [
   { id: 1, label: 'Business development' },
@@ -55,8 +55,7 @@ const formStatusSubmit = () => {
 </script>
 
 <template>
-  <LayoutAuthenticated>
-    <SectionMain>
+  <SectionMain>
       <SectionTitleLineWithButton :icon="mdiBallotOutline" title="Forms example" main>
         <BaseButton
           href="https://github.com/justboil/admin-one-vue-tailwind"
@@ -165,6 +164,5 @@ const formStatusSubmit = () => {
           <BaseButton label="Trigger" type="submit" color="info" />
         </template>
       </CardBox>
-    </SectionMain>
-  </LayoutAuthenticated>
+  </SectionMain>
 </template>

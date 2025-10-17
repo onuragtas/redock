@@ -1,32 +1,32 @@
 <script setup>
-import { ref, computed } from 'vue'
-import { useDarkModeStore } from '@/stores/darkMode.js'
-import {
-  mdiContrastCircle,
-  mdiInformation,
-  mdiCheckCircle,
-  mdiAlert,
-  mdiAlertCircle,
-  mdiOpenInNew,
-  mdiClose,
-  mdiReload,
-  mdiTrendingUp
-} from '@mdi/js'
-import SectionMain from '@/components/SectionMain.vue'
-import CardBox from '@/components/CardBox.vue'
-import BaseButtons from '@/components/BaseButtons.vue'
 import BaseButton from '@/components/BaseButton.vue'
-import NotificationBar from '@/components/NotificationBar.vue'
+import BaseButtons from '@/components/BaseButtons.vue'
 import BaseDivider from '@/components/BaseDivider.vue'
-import CardBoxModal from '@/components/CardBoxModal.vue'
-import SectionTitle from '@/components/SectionTitle.vue'
-import FormField from '@/components/FormField.vue'
-import FormCheckRadioGroup from '@/components/FormCheckRadioGroup.vue'
-import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
-import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue'
+import CardBox from '@/components/CardBox.vue'
 import CardBoxComponentEmpty from '@/components/CardBoxComponentEmpty.vue'
 import CardBoxComponentTitle from '@/components/CardBoxComponentTitle.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
+import FormCheckRadioGroup from '@/components/FormCheckRadioGroup.vue'
+import FormField from '@/components/FormField.vue'
+import NotificationBar from '@/components/NotificationBar.vue'
 import PillTag from '@/components/PillTag.vue'
+import SectionMain from '@/components/SectionMain.vue'
+import SectionTitle from '@/components/SectionTitle.vue'
+import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue'
+import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
+import { useDarkModeStore } from '@/stores/darkMode.js'
+import {
+    mdiAlert,
+    mdiAlertCircle,
+    mdiCheckCircle,
+    mdiClose,
+    mdiContrastCircle,
+    mdiInformation,
+    mdiOpenInNew,
+    mdiRefresh,
+    mdiTrendingUp
+} from '@mdi/js'
+import { computed, ref } from 'vue'
 
 const modalOneActive = ref(false)
 
@@ -469,7 +469,7 @@ const darkModeStore = useDarkModeStore()
       <div class="grid grid-cols-1 gap-6 mb-6 lg:grid-cols-2">
         <CardBox>
           <CardBoxComponentTitle title="With title & icon">
-            <BaseButton :icon="mdiReload" color="whiteDark" rounded-full />
+            <BaseButton :icon="mdiRefresh" color="whiteDark" rounded-full />
           </CardBoxComponentTitle>
           <div class="space-y-3">
             <p>Card with title, icon & footer</p>
