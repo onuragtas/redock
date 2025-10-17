@@ -5,7 +5,7 @@ defineProps({
 </script>
 
 <template>
-  <div class="flex-1" :class="{ 'p-6': !noPadding }">
+  <div class="flex-1 overflow-y-auto" :class="{ 'p-6': !noPadding }">
     <slot />
   </div>
 </template>

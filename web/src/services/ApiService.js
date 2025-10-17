@@ -21,16 +21,22 @@ class ApiService {
   static setupInterceptors() {
     ApiService.vueInstance.axios.interceptors.request.use(async (config) => {
       if (config.skipPrecheck) return config;
+      
+      // Login sayfasındaysa authentication kontrolü yapma
+      if (window.location.hash.includes('/login') || window.location.pathname.includes('/login')) {
+        return config;
+      }
+      
       try {
         const resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''));
         const response = await ApiService.vueInstance.axios.get(resource + '/api/v1/tunnel/user_info', { skipPrecheck: true });
         if (response.data.data.id > 0) {
           return config;
         } else {
-          window.location.href = '/';
+          window.location.hash = '#/login';
         }
       } catch (e) {
-        window.location.href = '/';
+        window.location.hash = '#/login';
       }
     });
   }
