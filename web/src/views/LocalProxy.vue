@@ -5,6 +5,9 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -14,6 +17,7 @@ import {
   mdiDelete,
   mdiEarth,
   mdiEthernet,
+  mdiMagnify,
   mdiNetwork,
   mdiPencil,
   mdiPlay,
@@ -21,7 +25,9 @@ import {
   mdiRefresh,
   mdiServer,
   mdiStop,
-  mdiTimer
+  mdiTimer,
+  mdiViewGridOutline,
+  mdiViewList
 } from '@mdi/js';
 import { computed, onMounted, ref } from "vue";
 
@@ -31,10 +37,6 @@ const isAddModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const loading = ref(false)
 const selectedProxy = ref(null)
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(6)
 
 // Form data
 const create = ref({
@@ -53,21 +55,42 @@ const proxyStats = computed(() => {
   return { total, active, inactive: total - active }
 })
 
-const paginatedProxies = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return list.value.slice(start, end)
-})
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(
+  list,
+  (proxy, query) => {
+    const q = query.toLowerCase()
+    return (
+      proxy.name?.toLowerCase().includes(q) ||
+      proxy.host?.toLowerCase().includes(q) ||
+      proxy.remote_port?.toString().includes(q) ||
+      proxy.local_port?.toString().includes(q) ||
+      proxy.status?.toLowerCase().includes(q)
+    )
+  },
+  6
+)
 
-const totalPages = computed(() => {
-  return Math.ceil(list.value.length / itemsPerPage.value)
-})
+const GRID_MIN_ITEMS = 2
 
-const paginationInfo = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, list.value.length)
-  return `${start}-${end} of ${list.value.length}`
-})
+const {
+  isGridLayout,
+  layoutClass,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
+
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
 const getList = async () => {
@@ -185,24 +208,6 @@ const getStatusColor = (status) => {
   }
 }
 
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   getList()
@@ -276,15 +281,23 @@ onMounted(() => {
 
       <!-- Proxy List -->
       <CardBox>
-        <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold flex items-center">
-                <BaseIcon :path="mdiConnection" size="24" class="mr-3 text-blue-600 dark:text-blue-400" />
-                Active Proxy Connections
-              </h2>
-              <p class="text-slate-600 dark:text-slate-400 mt-1">Manage network proxy configurations</p>
+        <SectionTitleLineWithButton :icon="mdiConnection" title="Active Proxy Connections" main>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <div class="w-full md:w-64">
+              <FormControl
+                v-model="searchQuery"
+                :icon="mdiMagnify"
+                placeholder="Search proxies"
+              />
             </div>
+            <BaseButton
+              :icon="layoutToggleIcon"
+              :label="layoutToggleLabel"
+              color="lightDark"
+              outline
+              @click="toggleLayout"
+              class="shrink-0"
+            />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
@@ -294,17 +307,20 @@ onMounted(() => {
               class="shadow-sm hover:shadow-md"
             />
           </div>
-        </div>
+        </SectionTitleLineWithButton>
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
           <p class="text-slate-500 dark:text-slate-400 mt-4">Loading proxies...</p>
         </div>
 
-        <div v-else-if="list.length === 0" class="text-center py-12">
+        <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiNetwork" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500 dark:text-slate-400 mb-4">No proxy configurations found</p>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">
+            {{ searchQuery ? 'No proxies match your search.' : 'No proxy configurations found.' }}
+          </p>
           <BaseButton
+            v-if="!searchQuery"
             label="Create Your First Proxy"
             :icon="mdiPlus"
             color="info"
@@ -312,39 +328,42 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else class="space-y-4">
+  <div v-else :class="layoutClass">
           <div 
-            v-for="proxy in paginatedProxies" 
+            v-for="proxy in paginatedItems" 
             :key="proxy.name"
-            class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+            class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors flex flex-col h-full"
           >
-            <div class="flex items-center space-x-6">
-              <div class="flex-shrink-0">
-                <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
-                  <BaseIcon :path="mdiServer" size="24" class="text-white" />
-                </div>
-              </div>
-              
-              <div class="flex-1">
-                <h3 class="font-semibold text-lg">{{ proxy.name }}</h3>
-                <div class="flex items-center space-x-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  <div class="flex items-center">
-                    <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
-                    {{ proxy.local_port }}
-                  </div>
-                  <BaseIcon :path="mdiArrowRight" size="16" />
-                  <div class="flex items-center">
-                    <BaseIcon :path="mdiEarth" size="16" class="mr-1" />
-                    {{ proxy.host }}:{{ proxy.remote_port }}
-                  </div>
-                  <div class="flex items-center">
-                    <BaseIcon :path="mdiTimer" size="16" class="mr-1" />
-                    {{ proxy.timeout }}s
+            <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+              <div class="flex items-start gap-4 flex-1">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-xl flex items-center justify-center">
+                    <BaseIcon :path="mdiServer" size="24" class="text-white" />
                   </div>
                 </div>
+                
+                <div class="space-y-2 flex-1">
+                  <h3 class="font-semibold text-lg">{{ proxy.name }}</h3>
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+                    <div class="flex items-center">
+                      <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
+                      {{ proxy.local_port }}
+                    </div>
+                    <div class="flex items-center gap-2">
+                      <BaseIcon :path="mdiArrowRight" size="16" class="text-slate-400" />
+                      <span class="flex items-center">
+                        <BaseIcon :path="mdiEarth" size="16" class="mr-1" />
+                        {{ proxy.host }}:{{ proxy.remote_port }}
+                      </span>
+                    </div>
+                    <div class="flex items-center">
+                      <BaseIcon :path="mdiTimer" size="16" class="mr-1" />
+                      {{ proxy.timeout }}s
+                    </div>
+                  </div>
+                </div>
               </div>
-              
-              <div class="flex-shrink-0">
+              <div class="flex items-start lg:flex-none justify-start lg:justify-end">
                 <span 
                   :class="[
                     'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium',
@@ -356,11 +375,11 @@ onMounted(() => {
               </div>
             </div>
             
-            <div class="flex items-center space-x-2 ml-6">
+            <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
               <BaseButton 
                 :icon="proxy.status === 'active' ? mdiStop : mdiPlay" 
                 :color="proxy.status === 'active' ? 'danger' : 'success'"
-                size="small"
+                small
                 @click="toggleProxyStatus(proxy)"
                 :title="proxy.status === 'active' ? 'Stop Proxy' : 'Start Proxy'"
               />
@@ -368,14 +387,14 @@ onMounted(() => {
               <BaseButton 
                 :icon="mdiPencil" 
                 color="info"
-                size="small"
+                small
                 title="Edit"
               />
               
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
-                size="small"
+                small
                 @click="deleteModal(proxy)"
                 title="Delete"
               />
@@ -384,40 +403,34 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 px-6 pb-4">
+        <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 px-6 pb-4">
           <div class="text-sm text-slate-500 dark:text-slate-400">
-            {{ paginationInfo }}
+            Showing {{ paginationInfo }}
           </div>
-          <div class="flex space-x-2">
+          <div class="flex items-center gap-2">
             <BaseButton
               :icon="mdiChevronLeft"
-              label="Previous"
+              color="lightDark"
+              small
               :disabled="currentPage === 1"
-              color="light"
-              size="small"
               @click="prevPage"
             />
-            <div class="flex space-x-1">
-              <button
-                v-for="page in totalPages"
+            <div class="flex flex-wrap gap-1">
+              <BaseButton
+                v-for="page in pages"
                 :key="page"
+                :label="page"
+                color="lightDark"
+                small
+                :active="page === currentPage"
                 @click="goToPage(page)"
-                :class="[
-                  'px-3 py-2 text-sm rounded-lg transition-colors',
-                  page === currentPage
-                    ? 'bg-blue-600 text-white shadow-md'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-700'
-                ]"
-              >
-                {{ page }}
-              </button>
+              />
             </div>
             <BaseButton
               :icon="mdiChevronRight"
-              label="Next"
+              color="lightDark"
+              small
               :disabled="currentPage === totalPages"
-              color="light"
-              size="small"
               @click="nextPage"
             />
           </div>
