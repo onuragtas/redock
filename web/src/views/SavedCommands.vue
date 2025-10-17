@@ -5,6 +5,9 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -17,8 +20,11 @@ import {
   mdiConsole,
   mdiDelete,
   mdiHistory,
+  mdiMagnify,
   mdiPlus,
-  mdiRefresh
+  mdiRefresh,
+  mdiViewGridOutline,
+  mdiViewList
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 
@@ -29,14 +35,28 @@ const isAddModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const modalCommand = ref({})
 
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(8)
-
 // Form data
 const createSavedCommand = ref({
   command: '',
 })
+
+// Shared pagination & filter logic
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(
+  savedCommands,
+  (item, query) => item.command?.toLowerCase().includes(query.toLowerCase()),
+  8
+)
 
 // Computed
 const commandStats = computed(() => {
@@ -51,21 +71,14 @@ const commandStats = computed(() => {
   return { total, shell: shellCommands, docker: dockerCommands }
 })
 
-const paginatedCommands = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return savedCommands.value.slice(start, end)
-})
+const {
+  isGridLayout,
+  layoutClass,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: 2 })
 
-const totalPages = computed(() => {
-  return Math.ceil(savedCommands.value.length / itemsPerPage.value)
-})
-
-const paginationInfo = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, savedCommands.value.length)
-  return `${start}-${end} of ${savedCommands.value.length}`
-})
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
 const getAllSavedCommands = async () => {
@@ -118,37 +131,6 @@ const addSubmit = async () => {
 const resetForm = () => {
   createSavedCommand.value = {
     command: '',
-  }
-}
-
-const getCommandType = (command) => {
-  if (command.includes('docker')) return { type: 'Docker', color: 'text-blue-600', bg: 'bg-blue-100 dark:bg-blue-900/30' }
-  if (command.includes('git')) return { type: 'Git', color: 'text-orange-600', bg: 'bg-orange-100 dark:bg-orange-900/30' }
-  if (command.includes('npm') || command.includes('yarn')) return { type: 'Node.js', color: 'text-green-600', bg: 'bg-green-100 dark:bg-green-900/30' }
-  if (command.includes('sudo') || command.includes('systemctl')) return { type: 'System', color: 'text-red-600', bg: 'bg-red-100 dark:bg-red-900/30' }
-  if (command.startsWith('cd ') || command.includes('ls') || command.includes('cat')) return { type: 'Shell', color: 'text-gray-600', bg: 'bg-gray-100 dark:bg-gray-900/30' }
-  return { type: 'Command', color: 'text-purple-600', bg: 'bg-purple-100 dark:bg-purple-900/30' }
-}
-
-const truncateCommand = (command, maxLength = 60) => {
-  return command.length > maxLength ? command.substring(0, maxLength) + '...' : command
-}
-
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
   }
 }
 
@@ -219,34 +201,45 @@ onMounted(() => {
               <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ commandStats.docker }}</div>
               <div class="text-sm text-green-600/70 dark:text-green-400/70">Docker Commands</div>
             </div>
-            <BaseIcon :path="mdiTerminal" size="48" class="text-green-500 opacity-20" />
+            <BaseIcon :path="mdiConsole" size="48" class="text-green-500 opacity-20" />
           </div>
         </CardBox>
       </div>
 
       <!-- Commands List -->
       <CardBox>
-        <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold flex items-center">
-                <BaseIcon :path="mdiHistory" size="24" class="mr-3 text-indigo-600 dark:text-indigo-400" />
-                Command Library
-              </h2>
-              <p class="text-slate-600 dark:text-slate-400 mt-1">Your frequently used commands</p>
+        <SectionTitleLineWithButton :icon="mdiHistory" title="Command Library" main>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <div class="w-full md:w-64">
+              <FormControl
+                v-model="searchQuery"
+                :icon="mdiMagnify"
+                placeholder="Search commands"
+              />
             </div>
+            <BaseButton
+              :icon="layoutToggleIcon"
+              :label="layoutToggleLabel"
+              color="lightDark"
+              outline
+              @click="toggleLayout"
+              class="shrink-0"
+            />
           </div>
-        </div>
+        </SectionTitleLineWithButton>
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
           <p class="text-slate-500 dark:text-slate-400 mt-4">Loading commands...</p>
         </div>
 
-        <div v-else-if="savedCommands.length === 0" class="text-center py-12">
+        <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiConsole" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500 dark:text-slate-400 mb-4">No saved commands found</p>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">
+            {{ searchQuery ? 'No commands match your search.' : 'No saved commands found.' }}
+          </p>
           <BaseButton
+            v-if="!searchQuery"
             label="Save Your First Command"
             :icon="mdiPlus"
             color="info"
@@ -254,27 +247,31 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else class="space-y-4">
+  <div v-else :class="layoutClass">
           <div 
-            v-for="(command, index) in paginatedCommands" 
+            v-for="(command, index) in paginatedItems" 
             :key="index"
-            class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
+            class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors flex flex-col h-full"
           >
-            <div class="flex items-center space-x-6 flex-1 min-w-0">
+            <div class="flex items-start gap-4 flex-1">
               <div class="flex-shrink-0">
                 <div class="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-xl flex items-center justify-center">
                   <BaseIcon :path="mdiCodeBraces" size="24" class="text-white" />
                 </div>
               </div>
               
-              <div class="flex-1 min-w-0">
-                <div class="text-sm text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-md">
+              <div class="flex-1 space-y-3 min-w-0">
+                <div class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
+                  <BaseIcon :path="mdiConsole" size="18" class="text-indigo-500" />
+                  Command {{ index + 1 }}
+                </div>
+                <div class="text-sm text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-md break-words">
                   {{ command.command }}
                 </div>
               </div>
             </div>
             
-            <div class="flex items-center space-x-2 ml-6">
+            <div class="mt-6 flex items-center justify-end gap-2">
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
@@ -287,40 +284,36 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+        <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
           <div class="text-sm text-slate-700 dark:text-slate-300">
             Showing {{ paginationInfo }}
           </div>
           
-          <div class="flex items-center space-x-2">
+          <div class="flex items-center gap-2">
             <BaseButton
               :icon="mdiChevronLeft"
               color="lightDark"
-              size="small"
+              small
               @click="prevPage"
               :disabled="currentPage === 1"
             />
             
-            <div class="flex space-x-1">
-              <button
-                v-for="page in Math.min(totalPages, 5)"
+            <div class="flex flex-wrap gap-1">
+              <BaseButton
+                v-for="page in pages"
                 :key="page"
+                :label="page"
+                color="lightDark"
+                small
+                :active="page === currentPage"
                 @click="goToPage(page)"
-                :class="[
-                  'px-3 py-2 text-sm font-medium rounded-lg transition-colors',
-                  currentPage === page
-                    ? 'bg-blue-600 text-white'
-                    : 'text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800'
-                ]"
-              >
-                {{ page }}
-              </button>
+              />
             </div>
             
             <BaseButton
               :icon="mdiChevronRight"
               color="lightDark"
-              size="small"
+              small
               @click="nextPage"
               :disabled="currentPage === totalPages"
             />

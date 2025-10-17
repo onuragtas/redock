@@ -5,10 +5,15 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
+import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
+import { useLayoutToggle } from "@/composables/useLayoutToggle";
+import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
   mdiAccountBox,
+  mdiChevronLeft,
+  mdiChevronRight,
   mdiCloudOutline,
   mdiConsole,
   mdiDelete,
@@ -16,35 +21,26 @@ import {
   mdiDocker,
   mdiEthernet,
   mdiKey,
-  mdiPencil, mdiPlus,
+  mdiMagnify,
+  mdiPencil,
+  mdiPlus,
   mdiRefresh,
-  mdiServer
+  mdiServer,
+  mdiViewGridOutline,
+  mdiViewList
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
-// Router
-const router = useRouter()
+const router = useRouter();
 
 // Reactive state
-const personalContainers = ref([])
-const isEditModalActive = ref(false)
-const isAddModalActive = ref(false)
-const isDeleteModalActive = ref(false)
-const loading = ref(false)
-const selectedContainer = ref(null)
-
-// Pagination
-const currentPage = ref(1)
-const itemsPerPage = ref(6)
-
-// Form data
-const modalPath = ref({
-  username: '',
-  password: '',
-  port: '',
-  redockPort: ''
-})
+const personalContainers = ref([]);
+const loading = ref(false);
+const isAddModalActive = ref(false);
+const isEditModalActive = ref(false);
+const isDeleteModalActive = ref(false);
+const selectedContainer = ref(null);
 
 const create = ref({
   username: '',
@@ -52,6 +48,13 @@ const create = ref({
   port: 0,
   redockPort: 0,
 })
+
+const modalPath = ref({
+  username: '',
+  password: '',
+  port: '',
+  redockPort: ''
+});
 
 // Computed
 const containerStats = computed(() => {
@@ -61,21 +64,40 @@ const containerStats = computed(() => {
   return { total, withRedockPort }
 })
 
-const paginatedContainers = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value
-  const end = start + itemsPerPage.value
-  return personalContainers.value.slice(start, end)
-})
+const {
+  searchQuery,
+  filteredItems,
+  paginatedItems,
+  currentPage,
+  totalPages,
+  paginationInfo,
+  pages,
+  nextPage,
+  prevPage,
+  goToPage
+} = usePaginationFilter(
+  personalContainers,
+  (container, query) => {
+    const q = query.toLowerCase()
+    return (
+      container.username?.toLowerCase().includes(q) ||
+      container.port?.toString().includes(q) ||
+      container.redockPort?.toString().includes(q)
+    )
+  },
+  6
+)
 
-const totalPages = computed(() => {
-  return Math.ceil(personalContainers.value.length / itemsPerPage.value)
-})
+const GRID_MIN_ITEMS = 2
 
-const paginationInfo = computed(() => {
-  const start = (currentPage.value - 1) * itemsPerPage.value + 1
-  const end = Math.min(start + itemsPerPage.value - 1, personalContainers.value.length)
-  return `${start}-${end} of ${personalContainers.value.length} containers`
-})
+const {
+  isGridLayout,
+  layoutClass,
+  toggleLayout
+} = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
+
+const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
 const getPersonalContainers = async () => {
@@ -190,25 +212,6 @@ const generatePassword = () => {
   create.value.password = password
 }
 
-// Pagination methods
-const nextPage = () => {
-  if (currentPage.value < totalPages.value) {
-    currentPage.value++
-  }
-}
-
-const prevPage = () => {
-  if (currentPage.value > 1) {
-    currentPage.value--
-  }
-}
-
-const goToPage = (page) => {
-  if (page >= 1 && page <= totalPages.value) {
-    currentPage.value = page
-  }
-}
-
 // Lifecycle
 onMounted(() => {
   getPersonalContainers()
@@ -222,12 +225,21 @@ onMounted(() => {
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
           <div>
             <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
-              <BaseIcon :path="mdiDeveloperBoard" size="40" class="mr-4" />
-              Development Environment
+              <BaseIcon :path="mdiDocker" size="40" class="mr-4" />
+              Personal Development Containers
             </h1>
-            <p class="text-emerald-100 text-lg">Manage personal development containers and environments</p>
+            <p class="text-emerald-100 text-lg">Manage isolated development environments for your team</p>
           </div>
-          <div class="mt-6 lg:mt-0">
+          <div class="mt-6 lg:mt-0 flex flex-wrap gap-3">
+            <BaseButton
+              label="Refresh"
+              :icon="mdiRefresh"
+              color="white"
+              outline
+              @click="getPersonalContainers"
+              :disabled="loading"
+              class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+            />
             <BaseButton
               label="Add Container"
               :icon="mdiPlus"
@@ -239,7 +251,6 @@ onMounted(() => {
         </div>
       </div>
 
-      <!-- Statistics -->
       <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
         <CardBox class="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border-emerald-200 dark:border-emerald-700">
           <div class="flex items-center justify-between">
@@ -264,15 +275,23 @@ onMounted(() => {
 
       <!-- Containers Table -->
       <CardBox>
-        <div class="bg-gradient-to-r from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-700 p-6 -m-6 mb-6">
-          <div class="flex items-center justify-between">
-            <div>
-              <h2 class="text-xl font-bold flex items-center">
-                <BaseIcon :path="mdiServer" size="24" class="mr-3 text-emerald-600 dark:text-emerald-400" />
-                Personal Development Containers
-              </h2>
-              <p class="text-slate-600 dark:text-slate-400 mt-1">Manage isolated development environments</p>
+        <SectionTitleLineWithButton :icon="mdiServer" title="Personal Development Containers" main>
+          <div class="flex flex-col gap-3 md:flex-row md:items-center">
+            <div class="w-full md:w-64">
+              <FormControl
+                v-model="searchQuery"
+                :icon="mdiMagnify"
+                placeholder="Search containers"
+              />
             </div>
+            <BaseButton
+              :icon="layoutToggleIcon"
+              :label="layoutToggleLabel"
+              color="lightDark"
+              outline
+              @click="toggleLayout"
+              class="shrink-0"
+            />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
@@ -282,17 +301,20 @@ onMounted(() => {
               class="shadow-sm hover:shadow-md"
             />
           </div>
-        </div>
+        </SectionTitleLineWithButton>
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
           <p class="text-slate-500 dark:text-slate-400 mt-4">Loading containers...</p>
         </div>
 
-        <div v-else-if="personalContainers.length === 0" class="text-center py-12">
+        <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiDeveloperBoard" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500 dark:text-slate-400 mb-4">No development containers found</p>
+          <p class="text-slate-500 dark:text-slate-400 mb-4">
+            {{ searchQuery ? 'No containers match your search.' : 'No development containers found.' }}
+          </p>
           <BaseButton
+            v-if="!searchQuery"
             label="Create Your First Container"
             :icon="mdiPlus"
             color="success"
@@ -300,34 +322,35 @@ onMounted(() => {
           />
         </div>
 
-        <div v-else class="space-y-4">
+  <div v-else :class="layoutClass">
           <div 
-            v-for="container in paginatedContainers" 
+            v-for="container in paginatedItems" 
             :key="container.username"
-            class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
+            class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors flex flex-col h-full"
           >
-            <div class="flex items-center space-x-6">
-              <div class="flex-shrink-0">
-                <div class="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
-                  <BaseIcon :path="mdiAccountBox" size="24" class="text-white" />
-                </div>
-              </div>
-              
-              <div class="flex-1">
-                <h3 class="font-semibold text-lg">{{ container.username }}</h3>
-                <div class="flex items-center space-x-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
-                  <div class="flex items-center">
-                    <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
-                    SSH: {{ container.port }}
-                  </div>
-                  <div v-if="container.redockPort" class="flex items-center">
-                    <BaseIcon :path="mdiCloudOutline" size="16" class="mr-1" />
-                    Redock: {{ container.redockPort }}
+            <div class="flex flex-col gap-6 lg:flex-row lg:items-start lg:justify-between">
+              <div class="flex items-start gap-4 flex-1">
+                <div class="flex-shrink-0">
+                  <div class="w-12 h-12 bg-gradient-to-br from-emerald-500 to-teal-600 rounded-xl flex items-center justify-center">
+                    <BaseIcon :path="mdiAccountBox" size="24" class="text-white" />
                   </div>
                 </div>
+                
+                <div class="space-y-2 flex-1">
+                  <h3 class="font-semibold text-lg">{{ container.username }}</h3>
+                  <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+                    <div class="flex items-center">
+                      <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
+                      SSH: {{ container.port }}
+                    </div>
+                    <div v-if="container.redockPort" class="flex items-center">
+                      <BaseIcon :path="mdiCloudOutline" size="16" class="mr-1" />
+                      Redock: {{ container.redockPort }}
+                    </div>
+                  </div>
+                </div>
               </div>
-              
-              <div class="flex-shrink-0">
+              <div class="flex items-start lg:flex-none justify-start lg:justify-end">
                 <span 
                   :class="[
                     'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium',
@@ -341,11 +364,11 @@ onMounted(() => {
               </div>
             </div>
             
-            <div class="flex items-center space-x-2 ml-6">
+            <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
               <BaseButton 
                 :icon="mdiConsole" 
                 color="info"
-                size="small"
+                small
                 @click="openTerminal(container)"
                 title="SSH Access"
               />
@@ -353,7 +376,7 @@ onMounted(() => {
               <BaseButton 
                 :icon="mdiPencil" 
                 color="warning"
-                size="small"
+                small
                 @click="editModal(container)"
                 title="Edit"
               />
@@ -361,7 +384,7 @@ onMounted(() => {
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
-                size="small"
+                small
                 @click="deleteModal(container)"
                 title="Delete"
               />
@@ -370,40 +393,34 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="totalPages > 1" class="flex items-center justify-between mt-6 px-6 pb-4">
-          <div class="text-sm text-slate-500 dark:text-slate-400">
-            {{ paginationInfo }}
+        <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+          <div class="text-sm text-slate-700 dark:text-slate-300">
+            Showing {{ paginationInfo }}
           </div>
-          <div class="flex space-x-2">
+          <div class="flex items-center gap-2">
             <BaseButton
               :icon="mdiChevronLeft"
-              label="Previous"
+              color="lightDark"
+              small
               :disabled="currentPage === 1"
-              color="light"
-              size="small"
               @click="prevPage"
             />
-            <div class="flex space-x-1">
-              <button
-                v-for="page in totalPages"
+            <div class="flex flex-wrap gap-1">
+              <BaseButton
+                v-for="page in pages"
                 :key="page"
+                :label="page"
+                color="lightDark"
+                small
+                :active="currentPage === page"
                 @click="goToPage(page)"
-                :class="[
-                  'px-3 py-2 text-sm rounded-lg transition-colors',
-                  page === currentPage
-                    ? 'bg-emerald-600 text-white shadow-md'
-                    : 'text-slate-600 dark:text-slate-300 hover:text-emerald-600 hover:bg-emerald-50 dark:hover:bg-slate-700'
-                ]"
-              >
-                {{ page }}
-              </button>
+              />
             </div>
             <BaseButton
               :icon="mdiChevronRight"
-              label="Next"
+              color="lightDark"
+              small
               :disabled="currentPage === totalPages"
-              color="light"
-              size="small"
               @click="nextPage"
             />
           </div>
