@@ -867,7 +867,7 @@ onMounted(() => {
   </div>
 </template>
 
-<style scoped>
+<style>
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 4px;
@@ -957,6 +957,7 @@ onMounted(() => {
 /* Terminal specific styles */
 .xterm {
   height: 100% !important;
+  padding-bottom: 32px;
 }
 
 .xterm .xterm-viewport {
