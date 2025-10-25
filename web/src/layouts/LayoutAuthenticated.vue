@@ -51,6 +51,7 @@ const activeTab = computed(() => terminalStore.getActiveTab)
 // Navigation items
 const navigationItems = [
   { name: 'Dashboard', path: '/', icon: mdiHome },
+  { name: 'Setup Environment', path: '/setup_environment', icon: mdiServer },
   { name: 'Deployment', path: '/deployment', icon: mdiRocket },
   { name: 'Dev Environment', path: '/devenv', icon: mdiServer },
   { name: 'Local Proxy', path: '/local-proxy', icon: mdiServer },
@@ -318,7 +319,7 @@ const maximizeTerminal = () => {
 }
 
   const duplicateActiveTerminal = () => {
-    const activeTerminal = terminalStore.terminals.find(t => t.id === terminalStore.activeTerminalId)
+    const activeTerminal = terminalStore.getActiveTab
     if (activeTerminal) {
       createNewTerminal(activeTerminal.containerId, `${activeTerminal.name} (Copy)`)
     }
