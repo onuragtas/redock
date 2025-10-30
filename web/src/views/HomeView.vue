@@ -225,6 +225,21 @@ const goToPage = (page) => {
   }
 }
 
+// Personal DevEnv actions
+const userRegenerating = ref(false)
+const regenerateDevEnv = async () => {
+  if (userRegenerating.value) return
+  userRegenerating.value = true
+  try {
+    await ApiService.regeneratePersonalContainer()
+    await getUserContainers()
+  } catch (error) {
+    console.error('Failed to regenerate DevEnv:', error)
+  } finally {
+    userRegenerating.value = false
+  }
+}
+
 // Lifecycle
 let statsInterval = null
 let ipInterval = null
@@ -408,6 +423,15 @@ onUnmounted(() => {
               <span>Install System</span>
             </button>
 
+            <button
+              @click="regenerateDevEnv"
+              :disabled="userRegenerating"
+              class="flex items-center justify-center space-x-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+            >
+              <BaseIcon :path="mdiRefresh" size="20" />
+              <span>{{ userRegenerating ? 'Resetting…' : 'Reset Personal Development Containers' }}</span>
+            </button>
+
             <router-link 
               to="/exec"
               class="flex items-center justify-center space-x-2 p-4 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
@@ -531,6 +555,7 @@ onUnmounted(() => {
                 <BaseIcon :path="mdiRefresh" size="16" />
                 <span>Refresh</span>
               </button>
+
             </div>
           </div>
         </div>
