@@ -147,6 +147,14 @@ class ApiService {
     return await this.get('/api/v1/docker/services');
   }
 
+  static async getDockerServiceSettings() {
+    return await this.get('/api/v1/docker/service_settings');
+  }
+
+  static async updateDockerServiceSettings(data) {
+    return await this.post('/api/v1/docker/service_settings', data);
+  }
+
   static async getAllVHosts() {
     return await this.get('/api/v1/docker/vhosts');
   }

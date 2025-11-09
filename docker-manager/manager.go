@@ -43,6 +43,7 @@ type DockerEnvironmentManager struct {
 	NginxConfPath      string
 	DevEnv             bool
 	Username           string
+	ServiceSettings    *ServiceSettings
 }
 
 type DevEnv struct {
@@ -119,6 +120,7 @@ func (t *DockerEnvironmentManager) initialize() {
 
 func (t *DockerEnvironmentManager) Init() {
 	t.initialize()
+	t.loadServiceSettings()
 
 	t.Services = Services{}
 	t.activeServices = make(map[int]bool)
@@ -276,8 +278,8 @@ func (t *DockerEnvironmentManager) AddService(item string) {
 	}
 
 	for _, item := range services {
-		if service, ok := t.GetService(item); ok {
-			t.CopyStruct["services"].(map[interface{}]interface{})[item] = service.Original
+		if definition := t.serviceDefinitionWithOverrides(item); definition != nil {
+			t.CopyStruct["services"].(map[interface{}]interface{})[item] = definition
 		}
 	}
 
@@ -307,7 +309,11 @@ func (t *DockerEnvironmentManager) RemoveService(item string) {
 		log.Println(err)
 	}
 
-	t.command.RunCommand(t.GetWorkDir(), "docker", "rm", item, "-f")
+	containerName := t.containerNameForService(item)
+	if containerName == "" {
+		containerName = item
+	}
+	t.command.RunCommand(t.GetWorkDir(), "docker", "rm", containerName, "-f")
 	newList := []string{}
 	for _, v := range t.ActiveServices {
 		if v != item {
@@ -334,8 +340,8 @@ func (t *DockerEnvironmentManager) createComposeFile(services []string) {
 	t.CopyStruct = t.Struct
 	t.CopyStruct["services"] = make(map[interface{}]interface{})
 	for _, item := range services {
-		if service, ok := t.GetService(item); ok {
-			t.CopyStruct["services"].(map[interface{}]interface{})[item] = service.Original
+		if definition := t.serviceDefinitionWithOverrides(item); definition != nil {
+			t.CopyStruct["services"].(map[interface{}]interface{})[item] = definition
 		}
 	}
 
