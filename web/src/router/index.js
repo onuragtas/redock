@@ -44,6 +44,22 @@ const routes = [
       },
       {
         meta: {
+          title: 'Container Settings',
+        },
+        path: 'container_settings',
+        name: 'container_settings',
+        component: () => import('@/views/ContainerSettings.vue')
+      },
+      {
+        meta: {
+          title: 'Container Settings',
+        },
+        path: 'container-settings',
+        name: 'container-settings',
+        component: () => import('@/views/ContainerSettings.vue')
+      },
+      {
+        meta: {
           title: 'Virtual Hosts',
         },
         path: 'virtual_hosts',

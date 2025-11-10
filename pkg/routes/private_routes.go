@@ -21,6 +21,8 @@ func PrivateRoutes(a *fiber.App) {
 	route.Post("/docker/regenerate", controllers.Regenerate)
 	route.Get("/docker/ip", controllers.GetLocalIp)
 	route.Get("/docker/services", controllers.GetAllServices)
+	route.Get("/docker/service_settings", controllers.GetServiceSettings)
+	route.Post("/docker/service_settings", controllers.UpdateServiceSettings)
 	route.Get("/docker/vhosts", controllers.GetAllVHosts)
 	route.Post("/docker/get_vhost", controllers.GetVHostContent)
 	route.Post("/docker/set_vhost", controllers.SetVHostContent)

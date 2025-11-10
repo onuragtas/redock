@@ -179,6 +179,69 @@ func GetAllServices(c *fiber.Ctx) error {
 	})
 }
 
+// GetServiceSettings exposes docker service customization inputs.
+func GetServiceSettings(c *fiber.Ctx) error {
+	manager := docker_manager.GetDockerManager()
+	settings := manager.GetServiceSettings()
+	metadata := manager.ListServiceMetadata()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"settings": settings,
+			"services": metadata,
+		},
+	})
+}
+
+// UpdateServiceSettings lets contributors store container prefixes and port overrides.
+func UpdateServiceSettings(c *fiber.Ctx) error {
+	type Request struct {
+		ContainerNamePrefix string                                     `json:"container_name_prefix"`
+		Overrides           map[string]*docker_manager.ServiceOverride `json:"overrides"`
+	}
+
+	request := &Request{}
+	if err := c.BodyParser(request); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	manager := docker_manager.GetDockerManager()
+	filteredOverrides := make(map[string]*docker_manager.ServiceOverride)
+	for name, override := range request.Overrides {
+		if _, ok := manager.GetService(name); !ok || override == nil {
+			continue
+		}
+		filteredOverrides[name] = override
+	}
+
+	settings := &docker_manager.ServiceSettings{
+		ContainerNamePrefix: request.ContainerNamePrefix,
+		Overrides:           filteredOverrides,
+	}
+
+	if err := manager.SaveServiceSettings(settings); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	go manager.ReapplyServiceSettings()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"settings": manager.GetServiceSettings(),
+		},
+	})
+}
+
 // GetAllVHosts method to create a new user.
 // @Description Create a new user.
 // @Summary create a new user

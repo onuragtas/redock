@@ -120,12 +120,19 @@ To build the application locally:
    cd <repository-folder>
    ```
 
-2. Build the binary:
+2. Install dependencies and build the web UI:
    ```bash
+   cd web
+   npm install && npm run build
+   ```
+
+3. Build the binary:
+   ```bash
+   cd ..
    go build -o redock
    ```
 
-3. Move the binary to a location in your `PATH`, such as `/usr/local/bin`:
+4. Move the binary to a location in your `PATH`, such as `/usr/local/bin`:
    ```bash
    mv redock /usr/local/bin/
    ```
@@ -155,5 +162,4 @@ redock > redock.log 2>&1
 
 ## License
 This project is licensed under the MIT License. See the `LICENSE` file for more details.
-
 
