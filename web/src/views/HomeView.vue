@@ -81,13 +81,19 @@ const itemsPerPage = ref(5)
 
 // Search
 const searchQuery = ref('')
+const filterStatus = ref('all') // 'all', 'running', 'stopped'
+
+const setFilter = (status) => {
+  filterStatus.value = status
+  currentPage.value = 1
+}
 
 // Computed properties
-const runningContainers = computed(() => 
+const runningContainers = computed(() =>
   containers.value.filter(c => c.active).length
 )
 
-const stoppedContainers = computed(() => 
+const stoppedContainers = computed(() =>
   containers.value.filter(c => !c.active).length
 )
 
@@ -95,12 +101,22 @@ const totalContainers = computed(() => containers.value.length)
 
 // Search functionality
 const filteredContainers = computed(() => {
-  if (!searchQuery.value) {
-    return containers.value
+  let filtered = containers.value
+
+  // Filter by status
+  if (filterStatus.value === 'running') {
+    filtered = filtered.filter(c => c.active)
+  } else if (filterStatus.value === 'stopped') {
+    filtered = filtered.filter(c => !c.active)
   }
-  
+
+  // Filter by search query
+  if (!searchQuery.value) {
+    return filtered
+  }
+
   const query = searchQuery.value.toLowerCase()
-  return containers.value.filter(container => 
+  return filtered.filter(container =>
     container.container_name.toLowerCase().includes(query) ||
     (container.active ? 'running' : 'stopped').includes(query) ||
     (container.active ? 'active' : 'inactive').includes(query)
@@ -120,7 +136,7 @@ const totalPages = computed(() => {
 const paginationInfo = computed(() => {
   const total = filteredContainers.value.length
   if (total === 0) return 'No containers found'
-  
+
   const start = (currentPage.value - 1) * itemsPerPage.value + 1
   const end = Math.min(start + itemsPerPage.value - 1, total)
   return `${start}-${end} of ${total} containers`
@@ -172,7 +188,7 @@ const toggleContainer = async (container) => {
 
 const executeQuickAction = async (actionName) => {
   quickActions.value[actionName] = true
-  
+
   try {
     switch (actionName) {
       case 'regenerateXDebug':
@@ -248,7 +264,7 @@ onMounted(async () => {
   await getLocalIp()
   await getAllServices()
   await updateSystemStats()
-  
+
   // Update stats periodically (every 3 seconds for real-time feel)
   statsInterval = setInterval(updateSystemStats, 3000)
   ipInterval = setInterval(getLocalIp, 30000)
@@ -279,7 +295,7 @@ onUnmounted(() => {
       <!-- Stats Grid -->
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <!-- Running Containers -->
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer hover:bg-gray-700" @click="setFilter('running')">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-400 text-sm">Running</p>
@@ -292,7 +308,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Stopped Containers -->
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer hover:bg-gray-700" @click="setFilter('stopped')">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-400 text-sm">Stopped</p>
@@ -305,7 +321,7 @@ onUnmounted(() => {
         </div>
 
         <!-- Total Containers -->
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer hover:bg-gray-700" @click="setFilter('all')">
           <div class="flex items-center justify-between">
             <div>
               <p class="text-gray-400 text-sm">Total</p>
@@ -348,7 +364,7 @@ onUnmounted(() => {
                 <span class="text-sm font-medium">{{ systemStats.memory_percent }}</span>
               </div>
               <div class="w-full bg-gray-700 rounded-full h-3">
-                <div 
+                <div
                   class="bg-blue-500 h-3 rounded-full transition-all duration-300"
                   :style="{ width: systemStats.memory_percent }"
                 ></div>
@@ -366,7 +382,7 @@ onUnmounted(() => {
                 <span class="text-sm font-medium">{{ systemStats.disk_percent }}</span>
               </div>
               <div class="w-full bg-gray-700 rounded-full h-3">
-                <div 
+                <div
                   class="bg-green-500 h-3 rounded-full transition-all duration-300"
                   :style="{ width: systemStats.disk_percent }"
                 ></div>
@@ -432,7 +448,7 @@ onUnmounted(() => {
               <span>{{ userRegenerating ? 'Resetting…' : 'Reset Personal Development Containers' }}</span>
             </button>
 
-            <router-link 
+            <router-link
               to="/exec"
               class="flex items-center justify-center space-x-2 p-4 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
             >
@@ -490,7 +506,7 @@ onUnmounted(() => {
 
       <!-- Container Statistics -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
-        <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border border-emerald-200 dark:border-emerald-700 rounded-2xl p-6">
+        <div class="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border border-emerald-200 dark:border-emerald-700 rounded-2xl p-6 cursor-pointer hover:bg-gray-700" @click="setFilter('all')">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ totalContainers }}</div>
@@ -500,7 +516,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border border-green-200 dark:border-green-700 rounded-2xl p-6">
+        <div class="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border border-green-200 dark:border-green-700 rounded-2xl p-6 cursor-pointer hover:bg-gray-700" @click="setFilter('running')">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ runningContainers }}</div>
@@ -510,7 +526,7 @@ onUnmounted(() => {
           </div>
         </div>
 
-        <div class="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 border border-red-200 dark:border-red-700 rounded-2xl p-6">
+        <div class="bg-gradient-to-br from-red-50 to-red-100 dark:from-red-900/20 dark:to-red-800/20 border border-red-200 dark:border-red-700 rounded-2xl p-6 cursor-pointer hover:bg-gray-700" @click="setFilter('stopped')">
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ stoppedContainers }}</div>
@@ -546,7 +562,7 @@ onUnmounted(() => {
                   class="pl-10 pr-4 py-2 bg-white/20 backdrop-blur border border-white/30 text-white placeholder-white/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-200 w-64"
                 />
               </div>
-              
+
               <button
                 @click="getContainerList"
                 :disabled="loading"
@@ -559,7 +575,7 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
-        
+
         <!-- Content -->
         <div class="p-6">
           <div v-if="loading" class="text-center py-12">
@@ -579,8 +595,8 @@ onUnmounted(() => {
           </div>
 
           <div v-else class="space-y-4">
-            <div 
-              v-for="container in paginatedContainers" 
+            <div
+              v-for="container in paginatedContainers"
               :key="container.container_name"
               class="flex items-center justify-between p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-700/50 transition-colors"
             >
@@ -588,7 +604,7 @@ onUnmounted(() => {
                 <div class="flex-shrink-0">
                   <div class="w-12 h-12 bg-gradient-to-br from-purple-500 to-indigo-600 rounded-xl flex items-center justify-center relative">
                     <BaseIcon :path="mdiDocker" size="24" class="text-white" />
-                    <div 
+                    <div
                       :class="[
                         'absolute -top-1 -right-1 w-4 h-4 rounded-full border-2 border-white',
                         container.active ? 'bg-green-500' : 'bg-red-500'
@@ -596,7 +612,7 @@ onUnmounted(() => {
                     ></div>
                   </div>
                 </div>
-                
+
                 <div class="flex-1">
                   <h3 class="font-semibold text-lg">{{ container.container_name }}</h3>
                   <div class="flex items-center space-x-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
@@ -606,12 +622,12 @@ onUnmounted(() => {
                     </div>
                   </div>
                 </div>
-                
+
                 <div class="flex-shrink-0">
-                  <span 
+                  <span
                     :class="[
                       'inline-flex items-center px-3 py-1 rounded-full text-xs font-medium',
-                      container.active 
+                      container.active
                         ? 'text-green-600 bg-green-100 dark:text-green-400 dark:bg-green-900/30'
                         : 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     ]"
@@ -620,9 +636,9 @@ onUnmounted(() => {
                   </span>
                 </div>
               </div>
-              
+
               <div class="flex items-center space-x-2 ml-6">
-                <router-link 
+                <router-link
                   v-if="container.active"
                   :to="`/exec/${container.container_name}`"
                   class="inline-flex items-center px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors space-x-2 shadow-sm hover:shadow-md"
@@ -630,14 +646,14 @@ onUnmounted(() => {
                   <BaseIcon :path="mdiConsole" size="16" />
                   <span>Console</span>
                 </router-link>
-                
+
                 <button
                   @click="toggleContainer(container)"
                   :disabled="container.disabled"
                   :class="[
                     'inline-flex items-center px-3 py-2 text-sm rounded-lg transition-colors space-x-2 shadow-sm hover:shadow-md',
-                    container.active 
-                      ? 'bg-red-600 hover:bg-red-700 text-white' 
+                    container.active
+                      ? 'bg-red-600 hover:bg-red-700 text-white'
                       : 'bg-green-600 hover:bg-green-700 text-white',
                     container.disabled ? 'opacity-50 cursor-not-allowed' : ''
                   ]"
@@ -668,7 +684,7 @@ onUnmounted(() => {
                 <BaseIcon :path="mdiChevronLeft" size="16" />
                 <span>Previous</span>
               </button>
-              
+
               <div class="flex space-x-1">
                 <button
                   v-for="page in totalPages"
@@ -684,7 +700,7 @@ onUnmounted(() => {
                   {{ page }}
                 </button>
               </div>
-              
+
               <button
                 @click="nextPage"
                 :disabled="currentPage === totalPages"
