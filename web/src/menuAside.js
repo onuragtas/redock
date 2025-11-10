@@ -1,5 +1,6 @@
 import {
     mdiBookSearch,
+    mdiDocker,
     mdiMonitorDashboard
 } from '@mdi/js'
 
@@ -13,6 +14,11 @@ export default [
     to: '/setup_environment',
     icon: mdiMonitorDashboard,
     label: 'Setup Environment',
+  },
+  {
+    to: '/container_settings',
+    icon: mdiDocker,
+    label: 'Container Settings',
   },
   {
     to: '/virtual_hosts',
