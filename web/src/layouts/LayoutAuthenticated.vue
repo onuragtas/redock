@@ -52,6 +52,7 @@ const activeTab = computed(() => terminalStore.getActiveTab)
 const navigationItems = [
   { name: 'Dashboard', path: '/', icon: mdiHome },
   { name: 'Deployment', path: '/deployment', icon: mdiRocket },
+  { name: 'Setup Environment', path: '/setup_environment', icon: mdiRocket },
   { name: 'Dev Environment', path: '/devenv', icon: mdiServer },
   { name: 'Container Settings', path: '/container_settings', icon: mdiDocker },
   { name: 'Local Proxy', path: '/local-proxy', icon: mdiServer },
