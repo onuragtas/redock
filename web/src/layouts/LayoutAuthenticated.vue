@@ -53,6 +53,7 @@ const navigationItems = [
   { name: 'Dashboard', path: '/', icon: mdiHome },
   { name: 'Deployment', path: '/deployment', icon: mdiRocket },
   { name: 'Dev Environment', path: '/devenv', icon: mdiServer },
+  { name: 'Container Settings', path: '/container_settings', icon: mdiDocker },
   { name: 'Local Proxy', path: '/local-proxy', icon: mdiServer },
   { name: 'Terminal', path: '/exec', icon: mdiConsole },
   { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiTunnel },
@@ -105,17 +106,17 @@ const createNewTerminal = async (containerId, name = null) => {
   if (isCreatingTerminal) {
     return
   }
-  
+
   // Container ID yoksa da terminal oluşturabilir, ama uyarı göster
   if (!containerId) {
     console.warn('No container ID provided, creating terminal without container connection')
   }
 
   isCreatingTerminal = true
-  
+
   try {
     const tab = terminalStore.addTab(containerId, name)
-    
+
     // Ensure terminal is visible and persistent
     terminalStore.showTerminal()
     terminalStore.setKeepTerminalOpen(true)
@@ -137,16 +138,16 @@ const initializeTerminal = async (tab) => {
   // Fast terminal initialization with RAF
   const findAndInit = () => {
     const terminalElement = document.getElementById(`terminal-${tab.id}`)
-    
+
     if (terminalElement) {
       initializeTerminalInstance(tab, terminalElement)
       return
     }
-    
+
     // Use RAF for smoother retries
     requestAnimationFrame(findAndInit)
   }
-  
+
   // Start immediately
   requestAnimationFrame(findAndInit)
 }
@@ -164,10 +165,10 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
         selection: '#374151'
       }
     })
-    
+
     const fitAddon = new FitAddon()
     terminal.loadAddon(fitAddon)
-    
+
     terminal.open(terminalElement)
 
     // Fit with delay and retries
@@ -191,13 +192,13 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
     const connectWebSocket = () => {
       let wsUrl = window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''))
       wsUrl = 'ws://' + wsUrl + '/ws/' + tab.containerId
-      
+
       const socket = new WebSocket(wsUrl)
 
       socket.onopen = () => {
         terminalStore.updateTabConnection(tab.id, true)
         terminal.write('\r\n\x1b[32mConnected to terminal\x1b[0m\r\n')
-        
+
         // Send initial window size (backend expects this first)
         setTimeout(() => {
           if (socket.readyState === WebSocket.OPEN) {
@@ -220,7 +221,7 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
 
       socket.onclose = (event) => {
         terminalStore.updateTabConnection(tab.id, false)
-        
+
         // Only attempt reconnect for unexpected closures (not manual closes)
         if (event.code !== 1000 && event.code !== 1001) {
           terminal.write('\r\n\x1b[33mConnection lost. Reconnecting...\x1b[0m\r\n')
@@ -257,7 +258,7 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
 
       // Store terminal references
       terminalStore.setTabTerminal(tab.id, terminal, socket, fitAddon)
-      
+
       return socket
     }
 
@@ -273,7 +274,7 @@ const switchToTerminalTab = (tabId) => {
   terminalStore.setActiveTab(tabId)
   terminalStore.showTerminal()
   terminalStore.setKeepTerminalOpen(true)
-  
+
   // Fast fit on tab switch using store method
   requestAnimationFrame(() => {
     terminalStore.fitActiveTerminal()
@@ -287,7 +288,7 @@ const closeTerminalTab = (tabId) => {
 const toggleTerminal = () => {
   terminalStore.toggleTerminal()
   terminalMinimized.value = !terminalStore.isTerminalVisible
-  
+
   // Terminal açıldığında persistent mode'u aç
   if (terminalStore.isTerminalVisible && terminalStore.hasAnyTabs) {
     terminalStore.setKeepTerminalOpen(true)
@@ -305,12 +306,12 @@ const maximizeTerminal = () => {
   // Calculate dynamic maximum height based on screen size
   // Use 70% of viewport height, but cap at 800px minimum and respect the resize handle limits
   const maxHeight = Math.min(800, Math.max(600, Math.floor(window.innerHeight * 0.9)))
-  
+
   terminalStore.setTerminalHeight(maxHeight)
   terminalStore.showTerminal()
   terminalMinimized.value = false
   terminalStore.setKeepTerminalOpen(true)
-  
+
   // Fit terminal after resize
   setTimeout(() => {
     terminalStore.fitActiveTerminal()
@@ -329,7 +330,7 @@ const startResize = (event) => {
   isResizing.value = true
   const startY = event.clientY
   const startHeight = terminalStore.terminalHeight
-  
+
   let animationId = null
   let lastFitTime = 0
   const FIT_THROTTLE = 50 // Reduced for faster response
@@ -337,7 +338,7 @@ const startResize = (event) => {
   const fitTerminals = () => {
     const now = performance.now()
     if (now - lastFitTime < FIT_THROTTLE) return
-    
+
     lastFitTime = now
     // Use store method for consistent fit logic
     terminalStore.fitActiveTerminal()
@@ -346,7 +347,7 @@ const startResize = (event) => {
   const handleMouseMove = (e) => {
     // Cancel previous frame
     if (animationId) cancelAnimationFrame(animationId)
-    
+
     // Ultra smooth RAF updates
     animationId = requestAnimationFrame(() => {
       const deltaY = startY - e.clientY
@@ -360,12 +361,12 @@ const startResize = (event) => {
   const handleMouseUp = () => {
     isResizing.value = false
     if (animationId) cancelAnimationFrame(animationId)
-    
+
     // Only fit active terminal on resize end
     requestAnimationFrame(() => {
       terminalStore.fitActiveTerminal()
     })
-    
+
     document.removeEventListener('mousemove', handleMouseMove)
     document.removeEventListener('mouseup', handleMouseUp)
   }
@@ -390,17 +391,17 @@ const getAllSavedCommands = async () => {
 const filterCommands = (event) => {
   const filter = event.target.value.toLowerCase()
   commandFilter.value = filter
-  
+
   if (!filter) {
     filteredCommands.value = savedCommands.value
   } else {
-    filteredCommands.value = savedCommands.value.filter(command => 
+    filteredCommands.value = savedCommands.value.filter(command =>
       command.command.toLowerCase().includes(filter) ||
       (command.description && command.description.toLowerCase().includes(filter)) ||
       (command.category && command.category.toLowerCase().includes(filter))
     )
   }
-  
+
   // Reset selection when filtering
   selectedCommandIndex.value = -1
 }
@@ -412,7 +413,7 @@ const selectCommand = (index) => {
 const executeSelectedCommand = () => {
   if (selectedCommandIndex.value >= 0 && selectedCommandIndex.value < filteredCommands.value.length) {
     const command = filteredCommands.value[selectedCommandIndex.value]
-    
+
     if (activeTab.value && activeTab.value.socket && activeTab.value.socket.readyState === WebSocket.OPEN) {
       activeTab.value.socket.send(command.command + '\n')
     } else {
@@ -425,23 +426,23 @@ const executeSelectedCommand = () => {
 onMounted(() => {
   // Load user info
   getUserInfo()
-  
+
   // Load saved commands
   getAllSavedCommands()
-  
+
   // Window resize listener for responsive design
   const updateWindowWidth = () => {
     windowWidth.value = window.innerWidth
   }
-  
+
   window.addEventListener('resize', updateWindowWidth)
-  
+
   // Handle terminal creation from TerminalView
   const handleCreateTerminal = (event) => {
     const { containerId, name } = event.detail
     createNewTerminal(containerId, name)
   }
-  
+
   window.addEventListener('create-terminal', handleCreateTerminal)
 
   // Handle window resize
@@ -460,12 +461,12 @@ onMounted(() => {
   }
 
   window.addEventListener('resize', handleResize)
-  
+
   onUnmounted(() => {
     window.removeEventListener('resize', updateWindowWidth)
     window.removeEventListener('create-terminal', handleCreateTerminal)
     window.removeEventListener('resize', handleResize)
-    
+
     // Clean up terminals only on real page unload
     // terminalStore.tabs.forEach(tab => {
     //   if (tab.socket) {
@@ -482,7 +483,7 @@ onMounted(() => {
 <template>
   <div class="min-h-screen bg-gray-950" @click="closeMenus">
     <!-- Sidebar -->
-    <div 
+    <div
       :class="[
         'fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl transform transition-transform duration-300 ease-in-out border-r border-gray-700/50',
         sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
@@ -502,8 +503,8 @@ onMounted(() => {
             <p class="text-xs text-gray-400">DevStation</p>
           </div>
         </div>
-        
-        <button 
+
+        <button
           @click="toggleSidebar"
           class="lg:hidden p-1 text-gray-400 hover:text-white rounded"
         >
@@ -512,11 +513,11 @@ onMounted(() => {
       </div>
 
       <!-- Navigation -->
-      <nav 
+      <nav
         class="flex-1 px-4 py-6 space-y-2 overflow-y-auto"
-        :style="{ 
-          maxHeight: terminalStore.isTerminalVisible 
-            ? `calc(100vh - ${terminalStore.terminalHeight}px - 12rem)` 
+        :style="{
+          maxHeight: terminalStore.isTerminalVisible
+            ? `calc(100vh - ${terminalStore.terminalHeight}px - 12rem)`
             : 'calc(100vh - 12rem)'
         }"
       >
@@ -563,9 +564,9 @@ onMounted(() => {
         <!-- Search -->
         <div class="flex-1 max-w-md mx-auto lg:mx-4">
           <div class="relative">
-            <BaseIcon 
-              :path="mdiMagnify" 
-              size="20" 
+            <BaseIcon
+              :path="mdiMagnify"
+              size="20"
               class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
             />
             <input
@@ -626,28 +627,28 @@ onMounted(() => {
       </nav>
 
       <!-- Page Content -->
-      <main 
-        :style="{ 
-          height: terminalStore.isTerminalVisible 
-            ? `calc(100vh - ${terminalStore.terminalHeight}px - 4rem)` 
+      <main
+        :style="{
+          height: terminalStore.isTerminalVisible
+            ? `calc(100vh - ${terminalStore.terminalHeight}px - 4rem)`
             : 'calc(100vh - 4rem)',
-          maxHeight: terminalStore.isTerminalVisible 
-            ? `calc(100vh - ${terminalStore.terminalHeight}px - 4rem)` 
+          maxHeight: terminalStore.isTerminalVisible
+            ? `calc(100vh - ${terminalStore.terminalHeight}px - 4rem)`
             : 'calc(100vh - 4rem)',
           paddingBottom: terminalStore.isTerminalVisible ? '0' : '1.5rem'
-        }" 
+        }"
         class="p-6 bg-gray-950 transition-all duration-300 overflow-y-auto"
       >
         <router-view />
       </main>
 
       <!-- Saved Commands Panel (Left Side of Terminal) -->
-      <div 
+      <div
         v-if="terminalStore.hasAnyTabs && terminalStore.isTerminalVisible && savedCommands.length > 0"
         :class="[
           'fixed left-0 bottom-0 w-80 bg-gray-800/95 backdrop-blur-xl border-r border-t border-gray-700/50 transition-all duration-300 z-40'
         ]"
-        :style="{ 
+        :style="{
           height: `${terminalStore.terminalHeight}px`
         }"
       >
@@ -658,7 +659,7 @@ onMounted(() => {
             {{ filteredCommands.length }}/{{ savedCommands.length }}
           </span>
         </div>
-        
+
         <!-- Search/Filter -->
         <div class="p-2 border-b border-gray-700/50">
           <input
@@ -669,7 +670,7 @@ onMounted(() => {
             @input="filterCommands"
           />
         </div>
-        
+
         <!-- Commands List -->
         <div class="h-full overflow-y-auto pb-20">
           <div class="p-2 space-y-1">
@@ -699,12 +700,12 @@ onMounted(() => {
                     ▶ Run
                   </button>
                 </div>
-                
+
                 <!-- Description -->
                 <p class="text-xs text-gray-400 leading-relaxed">
                   {{ command.description || 'No description available' }}
                 </p>
-                
+
                 <!-- Tags/Category (if available) -->
                 <div v-if="command.category" class="flex items-center space-x-2">
                   <span class="text-xs text-blue-400 bg-blue-500/10 px-2 py-0.5 rounded-full">
@@ -713,7 +714,7 @@ onMounted(() => {
                 </div>
               </div>
             </div>
-            
+
             <!-- No results message -->
             <div v-if="filteredCommands.length === 0 && commandFilter" class="text-center py-8">
               <p class="text-gray-400 text-sm">No commands found</p>
@@ -724,18 +725,18 @@ onMounted(() => {
       </div>
 
       <!-- Terminal Container (Full Width) -->
-      <div 
+      <div
         v-if="terminalStore.hasAnyTabs"
         :class="[
           'fixed bottom-0 left-0 right-0 bg-gray-900/95 backdrop-blur-xl border-t border-gray-700/50 transition-all duration-300 z-30',
           terminalStore.isTerminalVisible ? 'translate-y-0' : 'translate-y-full'
         ]"
-        :style="{ 
+        :style="{
           height: terminalStore.isTerminalVisible ? `${terminalStore.terminalHeight}px` : '0px'
         }"
       >
         <!-- Terminal Header -->
-        <div 
+        <div
           class="flex items-center px-4 py-2 bg-gray-800/80 border-b border-gray-700/50"
           :style="{ marginLeft: savedCommands.length > 0 ? '320px' : '0px' }"
         >
@@ -799,16 +800,16 @@ onMounted(() => {
         <div
           @mousedown="startResize"
           class="absolute top-0 right-0 h-1 cursor-ns-resize bg-gradient-to-r from-transparent via-gray-600/50 to-transparent hover:via-blue-500/50 transition-colors"
-          :style="{ 
+          :style="{
             left: savedCommands.length > 0 ? '320px' : '0px'
           }"
         ></div>
 
         <!-- Terminal Content -->
-        <div 
+        <div
           ref="terminalContainerRef"
           class="h-full overflow-hidden"
-          :style="{ 
+          :style="{
             height: 'calc(100% - 40px)',
             marginLeft: savedCommands.length > 0 ? '320px' : '0px'
           }"
@@ -834,7 +835,7 @@ onMounted(() => {
     ></div>
 
     <!-- Minimized Terminal Indicator -->
-    <div 
+    <div
       v-if="terminalStore.hasAnyTabs && !terminalStore.isTerminalVisible"
       class="fixed bottom-4 right-4 z-50 lg:right-6"
     >
