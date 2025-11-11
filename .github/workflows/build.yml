@@ -9,14 +9,34 @@ on:
       - "!*"
     tags:
       - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Hotfix sürümü (örn. v1.2.3)"
+        required: false
+      auto_increment:
+        description: "Önceki tag’den patch’i otomatik artır"
+        required: false
+        default: "true"
+      target_ref:
+        description: "Build alınacak git ref (branch, tag veya SHA)"
+        required: false
+        default: "main"
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
+      CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_ref || github.ref }}
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          ref: ${{ env.CHECKOUT_REF }}
+          fetch-depth: 0
 
       - name: Build with Node.js
         uses: actions/setup-node@v3
@@ -31,6 +51,39 @@ jobs:
         uses: actions/setup-go@v4
         with:
           go-version: 1.21
+
+      - name: Manuel tetikleme için sürümü belirle
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ -n "${{ github.event.inputs.version }}" ]; then
+            RELEASE_TAG="${{ github.event.inputs.version }}"
+          elif [ "${{ github.event.inputs.auto_increment }}" = "true" ]; then
+            git fetch --tags
+            LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
+            if [ -z "$LAST_TAG" ]; then
+              RELEASE_TAG="v1.0.0"
+            elif [[ "$LAST_TAG" =~ ^v([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              MAJOR=${BASH_REMATCH[1]}
+              MINOR=${BASH_REMATCH[2]}
+              PATCH=${BASH_REMATCH[3]}
+              PATCH=$((PATCH + 1))
+              RELEASE_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+            else
+              echo "Son tag ($LAST_TAG) desteklenmeyen formatta. Lütfen manuel sürüm girin."
+              exit 1
+            fi
+          else
+            echo "Otomatik artırma kapatıldı ancak sürüm girilmedi. Lütfen geçerli bir sürüm belirtin."
+            exit 1
+          fi
+
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([\-+][0-9A-Za-z\.-]+)?$ ]]; then
+            echo "Geçersiz sürüm: $RELEASE_TAG. Örnek format: v1.2.3 veya v1.2.3-hotfix1"
+            exit 1
+          fi
+
+          echo "Seçilen sürüm: $RELEASE_TAG"
+          echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
 
       - name: Create Config
         env:
@@ -47,12 +100,30 @@ jobs:
           cat tunnel_proxy/account.go
         shell: bash
 
+      - name: Manuel tetikleme için tag oluştur ve push et
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          RELEASE_TAG: ${{ env.RELEASE_TAG }}
+        run: |
+          git fetch --tags
+          if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "Tag $RELEASE_TAG zaten mevcut. Lütfen yeni bir sürüm seçin."
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          CURRENT_SHA=$(git rev-parse HEAD)
+          echo "Tagging $CURRENT_SHA with $RELEASE_TAG"
+          git tag "$RELEASE_TAG" "$CURRENT_SHA"
+          git push origin "$RELEASE_TAG"
 
       - name: Create version
         run: |
           cat <<EOF > app_version.go
           package main
-          var version = "${{ github.ref_name }}"
+          var version = "$RELEASE_TAG"
           EOF
 
           echo "cat app_version.go"
