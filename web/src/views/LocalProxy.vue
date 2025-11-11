@@ -232,15 +232,15 @@ onMounted(() => {
               :icon="mdiPlay"
               color="white"
               outline
-              @click="startAllProxies"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="startAllProxies"
             />
             <BaseButton
               label="Add Proxy"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
           </div>
         </div>
@@ -295,16 +295,16 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
               rounded-full
-              @click="getList"
               :disabled="loading"
               class="shadow-sm hover:shadow-md"
+              @click="getList"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -380,8 +380,8 @@ onMounted(() => {
                 :icon="proxy.status === 'active' ? mdiStop : mdiPlay" 
                 :color="proxy.status === 'active' ? 'danger' : 'success'"
                 small
-                @click="toggleProxyStatus(proxy)"
                 :title="proxy.status === 'active' ? 'Stop Proxy' : 'Start Proxy'"
+                @click="toggleProxyStatus(proxy)"
               />
               
               <BaseButton 
@@ -395,8 +395,8 @@ onMounted(() => {
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                @click="deleteModal(proxy)"
                 title="Delete"
+                @click="deleteModal(proxy)"
               />
             </div>
           </div>
@@ -442,7 +442,7 @@ onMounted(() => {
         v-model="isAddModalActive" 
         title="Add New Proxy" 
         button="success" 
-        buttonLabel="Create Proxy"
+        button-label="Create Proxy"
         has-cancel
         @confirm="addSubmit"
       >
@@ -527,7 +527,7 @@ onMounted(() => {
         v-model="isDeleteModalActive" 
         title="Delete Proxy" 
         button="danger" 
-        buttonLabel="Delete Proxy"
+        button-label="Delete Proxy"
         has-cancel
         @confirm="deleteSubmit"
       >

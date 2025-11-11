@@ -224,24 +224,24 @@ onMounted(() => {
               :icon="mdiCog"
               color="white"
               outline
-              @click="isConfigurationModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isConfigurationModalActive = true"
             />
             <BaseButton
               label="Refresh"
               :icon="mdiRefresh"
               color="white"
               outline
-              @click="getList"
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="getList"
             />
             <BaseButton
               label="Add Mapping"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
           </div>
         </div>
@@ -269,15 +269,15 @@ onMounted(() => {
                 label="Start Adapter"
                 :icon="mdiPlay"
                 color="success"
-                @click="start()"
                 class="flex-1"
+                @click="start()"
               />
               <BaseButton
                 label="Stop Adapter"
                 :icon="mdiStop"
                 color="danger"
-                @click="stop()"
                 class="flex-1"
+                @click="stop()"
               />
             </div>
           </div>
@@ -323,8 +323,8 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -381,8 +381,8 @@ onMounted(() => {
                 :icon="mdiDelete" 
                 color="danger"
                 size="small"
-                @click="deleteModal(mapping)"
                 title="Delete Mapping"
+                @click="deleteModal(mapping)"
               />
             </div>
           </div>
@@ -428,7 +428,7 @@ onMounted(() => {
         v-model="isAddModalActive" 
         title="Add Debug Mapping" 
         button="success" 
-        buttonLabel="Add Mapping"
+        button-label="Add Mapping"
         has-cancel
         @confirm="addSubmit"
       >
@@ -509,7 +509,7 @@ onMounted(() => {
         v-model="isConfigurationModalActive" 
         title="XDebug Adapter Configuration" 
         button="success" 
-        buttonLabel="Save Configuration"
+        button-label="Save Configuration"
         has-cancel
         @confirm="saveConfiguration"
       >
