@@ -1,7 +1,7 @@
 # This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
 # For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
 
-name: Node.js CI
+name: Redock CI
 
 on:
   push:
@@ -11,24 +11,17 @@ on:
       - "v*.*.*"
   workflow_dispatch:
     inputs:
-      version:
-        description: "Hotfix sürümü (örn. v1.2.3)"
-        required: false
       auto_increment:
-        description: "Önceki tag’den patch’i otomatik artır"
+        description: "Increment patch version from previous tag"
         required: false
         default: "true"
-      target_ref:
-        description: "Build alınacak git ref (branch, tag veya SHA)"
-        required: false
-        default: "main"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      RELEASE_TAG: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.version || github.ref_name }}
-      CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.target_ref || github.ref }}
+      RELEASE_TAG: ${{ github.event_name == 'push' && github.ref_name || '' }}
+      CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
 
     steps:
       - name: Checkout code
@@ -52,12 +45,10 @@ jobs:
         with:
           go-version: 1.21
 
-      - name: Manuel tetikleme için sürümü belirle
+      - name: Manually set the version
         if: github.event_name == 'workflow_dispatch'
         run: |
-          if [ -n "${{ github.event.inputs.version }}" ]; then
-            RELEASE_TAG="${{ github.event.inputs.version }}"
-          elif [ "${{ github.event.inputs.auto_increment }}" = "true" ]; then
+          if [ "${{ github.event.inputs.auto_increment }}" = "true" ]; then
             git fetch --tags
             LAST_TAG=$(git tag --list 'v*' --sort=-version:refname | head -n 1)
             if [ -z "$LAST_TAG" ]; then
@@ -69,20 +60,20 @@ jobs:
               PATCH=$((PATCH + 1))
               RELEASE_TAG="v${MAJOR}.${MINOR}.${PATCH}"
             else
-              echo "Son tag ($LAST_TAG) desteklenmeyen formatta. Lütfen manuel sürüm girin."
+              echo "Unsupported tag format: $LAST_TAG. Please enter a valid version."
               exit 1
             fi
           else
-            echo "Otomatik artırma kapatıldı ancak sürüm girilmedi. Lütfen geçerli bir sürüm belirtin."
+            echo "Automatic increment is disabled but manual version input is not defined."
             exit 1
           fi
 
           if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([\-+][0-9A-Za-z\.-]+)?$ ]]; then
-            echo "Geçersiz sürüm: $RELEASE_TAG. Örnek format: v1.2.3 veya v1.2.3-hotfix1"
+            echo "Invalid version: $RELEASE_TAG. Example format: v1.2.3 or v1.2.3-hotfix1"
             exit 1
           fi
 
-          echo "Seçilen sürüm: $RELEASE_TAG"
+          echo "Selected version: $RELEASE_TAG"
           echo "RELEASE_TAG=$RELEASE_TAG" >> $GITHUB_ENV
 
       - name: Create Config
@@ -100,14 +91,14 @@ jobs:
           cat tunnel_proxy/account.go
         shell: bash
 
-      - name: Manuel tetikleme için tag oluştur ve push et
+      - name: Create tag and push
         if: github.event_name == 'workflow_dispatch'
         env:
           RELEASE_TAG: ${{ env.RELEASE_TAG }}
         run: |
           git fetch --tags
           if git rev-parse "$RELEASE_TAG" >/dev/null 2>&1; then
-            echo "Tag $RELEASE_TAG zaten mevcut. Lütfen yeni bir sürüm seçin."
+            echo "Tag $RELEASE_TAG already exists. Please select a new version."
             exit 1
           fi
 
