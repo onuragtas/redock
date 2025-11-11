@@ -171,7 +171,7 @@ onMounted(async () => {
 
         <div class="p-6">
           <!-- Login Form -->
-          <form v-if="!isRegisterMode" @submit.prevent="handleLogin" class="space-y-4">
+          <form v-if="!isRegisterMode" class="space-y-4" @submit.prevent="handleLogin">
             <!-- Username -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-2">Username</label>
@@ -205,8 +205,8 @@ onMounted(async () => {
                 />
                 <button
                   type="button"
-                  @click="togglePasswordVisibility"
                   class="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  @click="togglePasswordVisibility"
                 >
                   <BaseIcon 
                     :path="showPassword ? mdiEyeOff : mdiEye" 
@@ -230,7 +230,7 @@ onMounted(async () => {
           </form>
 
           <!-- Register Form -->
-          <form v-else @submit.prevent="handleRegister" class="space-y-4">
+          <form v-else class="space-y-4" @submit.prevent="handleRegister">
             <!-- Email -->
             <div>
               <label class="block text-sm font-medium text-gray-300 mb-2">Email</label>
@@ -281,8 +281,8 @@ onMounted(async () => {
                 />
                 <button
                   type="button"
-                  @click="togglePasswordVisibility"
                   class="absolute inset-y-0 right-0 pr-3 flex items-center"
+                  @click="togglePasswordVisibility"
                 >
                   <BaseIcon 
                     :path="showPassword ? mdiEyeOff : mdiEye" 
@@ -328,8 +328,8 @@ onMounted(async () => {
               {{ isRegisterMode ? 'Already have an account?' : "Don't have an account?" }}
             </p>
             <button
-              @click="toggleMode"
               class="text-blue-400 hover:text-blue-300 font-medium transition-colors"
+              @click="toggleMode"
             >
               {{ isRegisterMode ? 'Sign in instead' : 'Create an account' }}
             </button>

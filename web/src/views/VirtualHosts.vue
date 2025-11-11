@@ -246,16 +246,16 @@ onMounted(() => {
               :icon="mdiRefresh"
               color="white"
               outline
-              @click="getAllVHosts"
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="getAllVHosts"
             />
             <BaseButton
               label="Create VHost"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
           </div>
         </div>
@@ -310,16 +310,16 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
               rounded-full
-              @click="getAllVHosts"
               :disabled="loading"
               class="shadow-sm hover:shadow-md"
+              @click="getAllVHosts"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -386,16 +386,16 @@ onMounted(() => {
                 :icon="mdiPencil" 
                 color="info"
                 small
-                @click="editVirtualHost(vhost)"
                 title="Edit Configuration"
+                @click="editVirtualHost(vhost)"
               />
               
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                @click="deleteVirtualHost(vhost)"
                 title="Delete VHost"
+                @click="deleteVirtualHost(vhost)"
               />
             </div>
           </div>
@@ -412,8 +412,8 @@ onMounted(() => {
               :icon="mdiChevronLeft"
               color="lightDark"
               small
-              @click="prevPage"
               :disabled="currentPage === 1"
+              @click="prevPage"
             />
             
             <div class="flex flex-wrap gap-1">
@@ -432,8 +432,8 @@ onMounted(() => {
               :icon="mdiChevronRight"
               color="lightDark"
               small
-              @click="nextPage"
               :disabled="currentPage === totalPages"
+              @click="nextPage"
             />
           </div>
         </div>
@@ -444,7 +444,7 @@ onMounted(() => {
         v-model="isAddModalActive" 
         title="Create Virtual Host" 
         button="success" 
-        buttonLabel="Create Virtual Host"
+        button-label="Create Virtual Host"
         has-cancel
         @confirm="addSubmit"
       >
@@ -547,7 +547,7 @@ onMounted(() => {
         v-model="isEditModalActive" 
         title="Edit Virtual Host" 
         button="success" 
-        buttonLabel="Update Configuration"
+        button-label="Update Configuration"
         has-cancel
         @confirm="editSubmit"
       >
@@ -596,7 +596,7 @@ onMounted(() => {
         v-model="isDeleteModalActive" 
         title="Delete Virtual Host" 
         button="danger"
-        buttonLabel="Delete Virtual Host"
+        button-label="Delete Virtual Host"
         has-cancel
         @confirm="deleteSubmit"
       >

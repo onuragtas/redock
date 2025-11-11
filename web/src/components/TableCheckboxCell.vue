@@ -29,7 +29,7 @@ const onchange = (e) => {
 <template>
   <component :is="type" class="lg:w-1">
     <label class="checkbox">
-      <input @change="onchange" :disabled="disabled" :checked="disabled" type="checkbox" />
+      <input :disabled="disabled" :checked="disabled" type="checkbox" @change="onchange" />
       <span class="check" />
     </label>
   </component>

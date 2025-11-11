@@ -199,10 +199,12 @@ export default {
               </tr>
             </thead>
             <template #column-1="props">
-              <BaseButton class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark"
-                @click="editVirtualHost(props.rowData)" rounded-full />
-              <BaseButton label="Delete" :icon="mdiDelete()" color="whiteDark" @click="deleteVirtualHost(props.rowData)"
-                rounded-full />
+              <BaseButton
+class="mr-2" label="Edit" :icon="mdiEdit()" color="whiteDark"
+                rounded-full @click="editVirtualHost(props.rowData)" />
+              <BaseButton
+label="Delete" :icon="mdiDelete()" color="whiteDark" rounded-full
+                @click="deleteVirtualHost(props.rowData)" />
             </template>
           </DataTable>
         </CardBox>

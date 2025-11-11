@@ -301,7 +301,7 @@ onUnmounted(() => {
               <p class="text-gray-400 text-sm">Running</p>
               <p class="text-2xl font-bold text-green-400">{{ runningContainers }}</p>
             </div>
-            <div class="p-3 bg-green-600/20 rounded-full">
+            <div class="p-4 bg-green-600/20 rounded-full">
               <BaseIcon :path="mdiPlay" size="24" class="text-green-400" />
             </div>
           </div>
@@ -314,7 +314,7 @@ onUnmounted(() => {
               <p class="text-gray-400 text-sm">Stopped</p>
               <p class="text-2xl font-bold text-red-400">{{ stoppedContainers }}</p>
             </div>
-            <div class="p-3 bg-red-600/20 rounded-full">
+            <div class="p-4 bg-red-600/20 rounded-full">
               <BaseIcon :path="mdiStop" size="24" class="text-red-400" />
             </div>
           </div>
@@ -327,7 +327,7 @@ onUnmounted(() => {
               <p class="text-gray-400 text-sm">Total</p>
               <p class="text-2xl font-bold text-blue-400">{{ totalContainers }}</p>
             </div>
-            <div class="p-3 bg-blue-600/20 rounded-full">
+            <div class="p-4 bg-blue-600/20 rounded-full">
               <BaseIcon :path="mdiDocker" size="24" class="text-blue-400" />
             </div>
           </div>
@@ -340,7 +340,7 @@ onUnmounted(() => {
               <p class="text-gray-400 text-sm">CPU Usage</p>
               <p class="text-2xl font-bold text-yellow-400">{{ systemStats.cpu_percent }}</p>
             </div>
-            <div class="p-3 bg-yellow-600/20 rounded-full">
+            <div class="p-4 bg-yellow-600/20 rounded-full">
               <BaseIcon :path="mdiSpeedometer" size="24" class="text-yellow-400" />
             </div>
           </div>
@@ -431,18 +431,18 @@ onUnmounted(() => {
         <div class="p-6">
           <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             <button
-              @click="executeQuickAction('install')"
               :disabled="quickActions.install"
               class="flex items-center justify-center space-x-2 p-4 bg-emerald-600 hover:bg-emerald-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="executeQuickAction('install')"
             >
               <BaseIcon :path="mdiCloudDownload" size="20" />
               <span>Install System</span>
             </button>
 
             <button
-              @click="regenerateDevEnv"
               :disabled="userRegenerating"
               class="flex items-center justify-center space-x-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="regenerateDevEnv"
             >
               <BaseIcon :path="mdiRefresh" size="20" />
               <span>{{ userRegenerating ? 'Resetting…' : 'Reset Personal Development Containers' }}</span>
@@ -457,45 +457,45 @@ onUnmounted(() => {
             </router-link>
 
             <button
-              @click="executeQuickAction('regenerateXDebug')"
               :disabled="quickActions.regenerateXDebug"
               class="flex items-center justify-center space-x-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="executeQuickAction('regenerateXDebug')"
             >
               <BaseIcon :path="mdiRefresh" size="20" />
               <span>Regenerate XDebug</span>
             </button>
 
             <button
-              @click="executeQuickAction('restartNginx')"
               :disabled="quickActions.restartNginx"
               class="flex items-center justify-center space-x-2 p-4 bg-orange-600 hover:bg-orange-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="executeQuickAction('restartNginx')"
             >
               <BaseIcon :path="mdiServer" size="20" />
               <span>Restart Nginx</span>
             </button>
 
             <button
-              @click="executeQuickAction('selfUpdate')"
               :disabled="quickActions.selfUpdate"
               class="flex items-center justify-center space-x-2 p-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="executeQuickAction('selfUpdate')"
             >
               <BaseIcon :path="mdiUpdate" size="20" />
               <span>Self Update</span>
             </button>
 
             <button
-              @click="executeQuickAction('updateDocker')"
               :disabled="quickActions.updateDocker"
               class="flex items-center justify-center space-x-2 p-4 bg-red-600 hover:bg-red-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="executeQuickAction('updateDocker')"
             >
               <BaseIcon :path="mdiDownload" size="20" />
               <span>Update Docker</span>
             </button>
 
             <button
-              @click="executeQuickAction('updateDockerImages')"
               :disabled="quickActions.updateDockerImages"
               class="flex items-center justify-center space-x-2 p-4 bg-indigo-600 hover:bg-indigo-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
+              @click="executeQuickAction('updateDockerImages')"
             >
               <BaseIcon :path="mdiCloudDownload" size="20" />
               <span>Update Images</span>
@@ -564,9 +564,9 @@ onUnmounted(() => {
               </div>
 
               <button
-                @click="getContainerList"
                 :disabled="loading"
                 class="px-4 py-2 bg-white/20 hover:bg-white/30 backdrop-blur text-white rounded-xl transition-all duration-200 flex items-center space-x-2 shadow-lg hover:shadow-xl"
+                @click="getContainerList"
               >
                 <BaseIcon :path="mdiRefresh" size="16" />
                 <span>Refresh</span>
@@ -648,7 +648,6 @@ onUnmounted(() => {
                 </router-link>
 
                 <button
-                  @click="toggleContainer(container)"
                   :disabled="container.disabled"
                   :class="[
                     'inline-flex items-center px-3 py-2 text-sm rounded-lg transition-colors space-x-2 shadow-sm hover:shadow-md',
@@ -657,6 +656,7 @@ onUnmounted(() => {
                       : 'bg-green-600 hover:bg-green-700 text-white',
                     container.disabled ? 'opacity-50 cursor-not-allowed' : ''
                   ]"
+                  @click="toggleContainer(container)"
                 >
                   <BaseIcon :path="container.active ? mdiStop : mdiPlay" size="16" />
                   <span>{{ container.active ? 'Stop' : 'Start' }}</span>
@@ -672,7 +672,6 @@ onUnmounted(() => {
             </div>
             <div class="flex space-x-2">
               <button
-                @click="prevPage"
                 :disabled="currentPage === 1"
                 :class="[
                   'inline-flex items-center px-3 py-2 text-sm rounded-lg transition-colors space-x-2 shadow-sm hover:shadow-md',
@@ -680,6 +679,7 @@ onUnmounted(() => {
                     ? 'text-slate-400 bg-slate-100 dark:text-slate-600 dark:bg-slate-700 cursor-not-allowed'
                     : 'text-slate-600 bg-white hover:bg-slate-50 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700'
                 ]"
+                @click="prevPage"
               >
                 <BaseIcon :path="mdiChevronLeft" size="16" />
                 <span>Previous</span>
@@ -689,20 +689,19 @@ onUnmounted(() => {
                 <button
                   v-for="page in totalPages"
                   :key="page"
-                  @click="goToPage(page)"
                   :class="[
                     'px-3 py-2 text-sm rounded-lg transition-colors shadow-sm hover:shadow-md',
                     page === currentPage
                       ? 'bg-purple-600 text-white'
                       : 'text-slate-600 dark:text-slate-300 bg-white dark:bg-slate-800 hover:bg-purple-50 dark:hover:bg-slate-700 hover:text-purple-600'
                   ]"
+                  @click="goToPage(page)"
                 >
                   {{ page }}
                 </button>
               </div>
 
               <button
-                @click="nextPage"
                 :disabled="currentPage === totalPages"
                 :class="[
                   'inline-flex items-center px-3 py-2 text-sm rounded-lg transition-colors space-x-2 shadow-sm hover:shadow-md',
@@ -710,6 +709,7 @@ onUnmounted(() => {
                     ? 'text-slate-400 bg-slate-100 dark:text-slate-600 dark:bg-slate-700 cursor-not-allowed'
                     : 'text-slate-600 bg-white hover:bg-slate-50 dark:text-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700'
                 ]"
+                @click="nextPage"
               >
                 <span>Next</span>
                 <BaseIcon :path="mdiChevronRight" size="16" />

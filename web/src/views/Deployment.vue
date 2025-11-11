@@ -257,8 +257,8 @@ onMounted(() => {
             :icon="mdiRefresh"
             label="Refresh"
             color="lightDark"
-            @click="getList"
             :disabled="loading"
+            @click="getList"
           />
           <BaseButton
             :icon="mdiCog"
@@ -328,16 +328,16 @@ onMounted(() => {
                 :label="layoutToggleLabel"
                 color="lightDark"
                 outline
-                @click="toggleLayout"
                 class="shrink-0"
+                @click="toggleLayout"
               />
               <BaseButton
                 :icon="mdiRefresh"
                 color="info"
                 rounded-full
-                @click="getList"
                 :disabled="loading"
                 class="shadow-sm hover:shadow-md"
+                @click="getList"
               />
             </div>
           </SectionTitleLineWithButton>
@@ -488,7 +488,7 @@ onMounted(() => {
       v-model="isAddModalActive" 
       title="Create New Deployment"
       button="success"
-      buttonLabel="Create Deployment"
+      button-label="Create Deployment"
       has-cancel
       @confirm="addSubmit"
     >
@@ -561,7 +561,7 @@ onMounted(() => {
       v-model="isEditModalActive" 
       title="Edit Deployment"
       button="success"
-      buttonLabel="Update Deployment"
+      button-label="Update Deployment"
       has-cancel
       @confirm="editSubmit"
     >
@@ -624,7 +624,7 @@ onMounted(() => {
       v-model="isSettingsModalActive" 
       title="Deployment Settings"
       button="success"
-      buttonLabel="Save Settings"
+      button-label="Save Settings"
       has-cancel
       @confirm="saveCredentials"
     >
@@ -671,7 +671,7 @@ onMounted(() => {
       v-model="isDeleteModalActive" 
       title="Delete Deployment"
       button="danger"
-      buttonLabel="Delete"
+      button-label="Delete"
       has-cancel
       @confirm="confirmDelete"
     >

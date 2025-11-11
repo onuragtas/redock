@@ -147,8 +147,9 @@ export default {
               </tr>
             </thead>
             <template #column-1="props">
-              <BaseButton label="Delete" :icon="mdiDelete()" color="whiteDark" @click="deleteSavedCommand(props.rowData)"
-                rounded-full />
+              <BaseButton
+label="Delete" :icon="mdiDelete()" color="whiteDark" rounded-full
+                @click="deleteSavedCommand(props.rowData)" />
             </template>
           </DataTable>
         </CardBox>

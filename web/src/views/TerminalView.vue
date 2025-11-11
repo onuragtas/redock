@@ -48,9 +48,9 @@
             </div>
 
             <button
-              @click="createTerminal"
               :disabled="isCreatingTerminal"
               class="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 disabled:from-gray-600 disabled:to-gray-700 text-white font-semibold py-3 px-6 rounded-xl transition-all duration-200 disabled:cursor-not-allowed flex items-center justify-center"
+              @click="createTerminal"
             >
               <svg v-if="isCreatingTerminal" class="animate-spin -ml-1 mr-3 h-5 w-5 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
@@ -85,7 +85,8 @@
               class="flex items-center justify-between p-4 bg-gray-800/50 rounded-xl border border-gray-600/30"
             >
               <div class="flex items-center space-x-3">
-                <div :class="[
+                <div
+:class="[
                   'w-3 h-3 rounded-full',
                   tab.connected ? 'bg-green-400' : 'bg-red-400'
                 ]"></div>
@@ -97,14 +98,14 @@
 
               <div class="flex items-center space-x-2">
                 <button
-                  @click="switchToTerminal(tab.id)"
                   class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
+                  @click="switchToTerminal(tab.id)"
                 >
                   Switch
                 </button>
                 <button
-                  @click="closeTerminal(tab.id)"
                   class="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
+                  @click="closeTerminal(tab.id)"
                 >
                   Close
                 </button>

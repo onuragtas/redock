@@ -506,8 +506,8 @@ onMounted(() => {
         </div>
 
         <button
-          @click="toggleSidebar"
           class="lg:hidden p-1 text-gray-400 hover:text-white rounded"
+          @click="toggleSidebar"
         >
           <BaseIcon :path="mdiClose" size="20" />
         </button>
@@ -541,8 +541,8 @@ onMounted(() => {
       <!-- Sidebar Footer -->
       <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-700/50 bg-gray-900/95">
         <button
-          @click="logout"
           class="w-full flex items-center px-3 py-2.5 text-sm font-medium text-red-400 hover:text-white hover:bg-red-600/20 rounded-xl transition-all duration-200 border border-red-600/20"
+          @click="logout"
         >
           <BaseIcon :path="mdiLogout" size="20" class="mr-3" />
           <span>Logout</span>
@@ -556,8 +556,8 @@ onMounted(() => {
       <nav class="bg-gray-900/80 backdrop-blur-xl border-b border-gray-700/50 px-6 py-4 flex items-center justify-between h-16 sticky top-0 z-40">
         <!-- Mobile menu button -->
         <button
-          @click="toggleSidebar"
           class="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
+          @click="toggleSidebar"
         >
           <BaseIcon :path="mdiMenu" size="20" />
         </button>
@@ -589,8 +589,8 @@ onMounted(() => {
           <!-- User menu -->
           <div class="relative" @click.stop>
             <button
-              @click="toggleUserMenu"
               class="flex items-center space-x-2 p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
+              @click="toggleUserMenu"
             >
               <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-full flex items-center justify-center">
                 <BaseIcon :path="mdiAccount" size="16" class="text-white" />
@@ -614,8 +614,8 @@ onMounted(() => {
               >
                 <div class="py-2">
                   <button
-                    @click="logout"
                     class="w-full flex items-center px-4 py-3 text-red-400 hover:bg-red-600/10 hover:text-red-300 transition-colors"
+                    @click="logout"
                   >
                     <BaseIcon :path="mdiLogout" size="16" class="mr-3" />
                     <span>Sign out</span>
@@ -695,8 +695,8 @@ onMounted(() => {
                   </code>
                   <button
                     v-if="selectedCommandIndex === index"
-                    @click.stop="executeSelectedCommand"
                     class="ml-2 flex-shrink-0 px-2 py-1 text-xs bg-green-600 hover:bg-green-700 text-white rounded transition-colors"
+                    @click.stop="executeSelectedCommand"
                   >
                     ▶ Run
                   </button>
@@ -755,14 +755,15 @@ onMounted(() => {
                 ]"
                 @click="switchToTerminalTab(tab.id)"
               >
-                <div :class="[
+                <div
+:class="[
                   'w-2 h-2 rounded-full flex-shrink-0',
                   tab.connected ? 'bg-green-400' : 'bg-red-400'
                 ]"></div>
                 <span class="max-w-24 truncate">{{ tab.name }}</span>
                 <button
-                  @click.stop="closeTerminalTab(tab.id)"
                   class="p-0.5 text-gray-500 hover:text-red-400 transition-colors flex-shrink-0"
+                  @click.stop="closeTerminalTab(tab.id)"
                 >
                   <BaseIcon :path="mdiClose" size="12" />
                 </button>
@@ -774,23 +775,23 @@ onMounted(() => {
           <div class="flex items-center space-x-2 flex-shrink-0">
             <!-- Duplicate Button -->
             <button
-              @click="duplicateActiveTerminal"
               class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded transition-colors"
               title="Duplicate Terminal"
+              @click="duplicateActiveTerminal"
             >
               <BaseIcon :path="mdiContentDuplicate" size="16" />
             </button>
             <button
-              @click="minimizeTerminal"
               class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded transition-colors"
               title="Minimize Terminal"
+              @click="minimizeTerminal"
             >
               <BaseIcon :path="mdiMinus" size="16" />
             </button>
             <button
-              @click="maximizeTerminal"
               class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded transition-colors"
               title="Maximize Terminal"
+              @click="maximizeTerminal"
             >
               <BaseIcon :path="mdiWindowMaximize" size="16" />
             </button>
@@ -799,11 +800,11 @@ onMounted(() => {
 
         <!-- Resize Handle -->
         <div
-          @mousedown="startResize"
           class="absolute top-0 right-0 h-1 cursor-ns-resize bg-gradient-to-r from-transparent via-gray-600/50 to-transparent hover:via-blue-500/50 transition-colors"
           :style="{
             left: savedCommands.length > 0 ? '320px' : '0px'
           }"
+          @mousedown="startResize"
         ></div>
 
         <!-- Terminal Content -->
@@ -817,9 +818,9 @@ onMounted(() => {
         >
           <div
             v-for="tab in terminalStore.tabs"
-            :key="tab.id"
-            :id="`terminal-${tab.id}`"
             v-show="tab.active"
+            :id="`terminal-${tab.id}`"
+            :key="tab.id"
             class="w-full h-full bg-black border border-gray-700 rounded"
             :data-tab-id="tab.id"
             style="min-height: 300px;"
@@ -841,11 +842,11 @@ onMounted(() => {
       class="fixed bottom-4 right-4 z-50 lg:right-6"
     >
       <button
-        @click="maximizeTerminal"
         :class="[
           'flex items-center space-x-2 px-4 py-2 bg-gray-800/90 backdrop-blur-xl border border-gray-700/50 rounded-xl shadow-2xl transition-all duration-200',
           'hover:bg-gray-700/90 hover:border-gray-600/50 hover:shadow-xl'
         ]"
+        @click="maximizeTerminal"
       >
         <BaseIcon :path="mdiConsole" size="20" class="text-green-400" />
         <span class="text-white text-sm font-medium">

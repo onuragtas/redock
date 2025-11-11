@@ -292,24 +292,24 @@ onMounted(() => {
               :icon="mdiRefresh"
               color="white"
               outline
-              @click="tunnelList"
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="tunnelList"
             />
             <BaseButton
               label="Add Domain"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
             <BaseButton
               label="Logout"
               :icon="mdiLogout"
               color="white"
               outline
-              @click="logoutSubmit"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="logoutSubmit"
             />
           </div>
         </div>
@@ -364,16 +364,16 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
               rounded-full
-              @click="tunnelList"
               :disabled="loading"
               class="shadow-sm hover:shadow-md"
+              @click="tunnelList"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -449,15 +449,15 @@ onMounted(() => {
                 :icon="tunnel.started ? mdiStop : mdiPlay" 
                 :color="tunnel.started ? 'danger' : 'success'"
                 small
-                @click="tunnel.started ? stopModal(tunnel) : startModal(tunnel)"
                 :title="tunnel.started ? 'Stop Tunnel' : 'Start Tunnel'"
+                @click="tunnel.started ? stopModal(tunnel) : startModal(tunnel)"
               />
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                @click="deleteModal(tunnel)"
                 title="Delete"
+                @click="deleteModal(tunnel)"
               />
             </div>
           </div>
@@ -511,7 +511,7 @@ onMounted(() => {
             <p class="text-slate-600 dark:text-slate-400">Access your secure tunnel dashboard</p>
           </div>
 
-          <form @submit.prevent="loginSubmit" class="space-y-6">
+          <form class="space-y-6" @submit.prevent="loginSubmit">
             <FormField label="Username">
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
@@ -555,8 +555,8 @@ onMounted(() => {
                 label="Create Account"
                 color="info"
                 outline
-                @click="isRegisterModalActive = true"
                 class="w-full justify-center py-2"
+                @click="isRegisterModalActive = true"
               />
             </div>
           </form>
@@ -576,7 +576,7 @@ onMounted(() => {
             <p class="text-slate-600 dark:text-slate-400">Join the secure tunnel network</p>
           </div>
 
-          <form @submit.prevent="registerSubmit" class="space-y-6">
+          <form class="space-y-6" @submit.prevent="registerSubmit">
             <FormField label="Username">
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
@@ -635,8 +635,8 @@ onMounted(() => {
                 label="Back to Login"
                 color="info"
                 outline
-                @click="isRegisterModalActive = false"
                 class="w-full justify-center py-2"
+                @click="isRegisterModalActive = false"
               />
             </div>
           </form>
@@ -649,9 +649,9 @@ onMounted(() => {
       v-model="isAddModalActive"
       title="Add Tunnel Domain" 
       button="success" 
-      :buttonLabel="addLoading ? 'Creating...' : 'Add Domain'"
-      :buttonDisabled="addLoading"
-      :cancelDisabled="addLoading"
+      :button-label="addLoading ? 'Creating...' : 'Add Domain'"
+      :button-disabled="addLoading"
+      :cancel-disabled="addLoading"
       has-cancel
       @confirm="addSubmit"
     >
@@ -686,7 +686,7 @@ onMounted(() => {
       v-model="isStartModalActive" 
       title="Start Tunnel" 
       button="success" 
-      buttonLabel="Start Tunnel"
+      button-label="Start Tunnel"
       has-cancel
       @confirm="startSubmit"
     >
@@ -751,7 +751,7 @@ onMounted(() => {
       v-model="isDeleteModalActive" 
       title="Delete Tunnel" 
       button="danger" 
-      buttonLabel="Delete Tunnel"
+      button-label="Delete Tunnel"
       has-cancel
       @confirm="deleteSubmit"
     >
