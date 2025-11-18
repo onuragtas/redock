@@ -67,7 +67,7 @@ onMounted(() => {
         </div>
       </div>
 
-      <form @submit.prevent="submit" class="space-y-6">
+      <form class="space-y-6" @submit.prevent="submit">
         <FormField 
           label="Environment Configuration" 
           help="Enter your environment variables in .env format (KEY=VALUE)"

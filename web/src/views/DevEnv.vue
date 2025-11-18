@@ -236,16 +236,16 @@ onMounted(() => {
               :icon="mdiRefresh"
               color="white"
               outline
-              @click="getPersonalContainers"
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="getPersonalContainers"
             />
             <BaseButton
               label="Add Container"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
           </div>
         </div>
@@ -289,16 +289,16 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
               rounded-full
-              @click="getPersonalContainers"
               :disabled="loading"
               class="shadow-sm hover:shadow-md"
+              @click="getPersonalContainers"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -369,24 +369,24 @@ onMounted(() => {
                 :icon="mdiConsole" 
                 color="info"
                 small
-                @click="openTerminal(container)"
                 title="SSH Access"
+                @click="openTerminal(container)"
               />
               
               <BaseButton 
                 :icon="mdiPencil" 
                 color="warning"
                 small
-                @click="editModal(container)"
                 title="Edit"
+                @click="editModal(container)"
               />
               
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                @click="deleteModal(container)"
                 title="Delete"
+                @click="deleteModal(container)"
               />
             </div>
           </div>
@@ -432,7 +432,7 @@ onMounted(() => {
         v-model="isAddModalActive" 
         title="Add Development Container" 
         button="success" 
-        buttonLabel="Create Container"
+        button-label="Create Container"
         has-cancel
         @confirm="addSubmit"
       >
@@ -465,9 +465,9 @@ onMounted(() => {
               />
               <button
                 type="button"
-                @click="generatePassword"
                 class="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-600 hover:text-blue-800"
                 title="Generate Password"
+                @click="generatePassword"
               >
                 <BaseIcon :path="mdiRefresh" size="20" />
               </button>
@@ -510,7 +510,7 @@ onMounted(() => {
         v-model="isEditModalActive" 
         title="Edit Development Container" 
         button="success" 
-        buttonLabel="Update Container"
+        button-label="Update Container"
         has-cancel
         @confirm="editSubmit"
       >
@@ -558,7 +558,7 @@ onMounted(() => {
         v-model="isDeleteModalActive" 
         title="Delete Container" 
         button="danger" 
-        buttonLabel="Delete Container"
+        button-label="Delete Container"
         has-cancel
         @confirm="deleteSubmit"
       >

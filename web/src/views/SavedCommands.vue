@@ -158,16 +158,16 @@ onMounted(() => {
               :icon="mdiRefresh"
               color="white"
               outline
-              @click="getAllSavedCommands"
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="getAllSavedCommands"
             />
             <BaseButton
               label="Add Command"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
           </div>
         </div>
@@ -222,8 +222,8 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -276,8 +276,8 @@ onMounted(() => {
                 :icon="mdiDelete" 
                 color="danger"
                 size="small"
-                @click="deleteSavedCommand(command)"
                 title="Delete Command"
+                @click="deleteSavedCommand(command)"
               />
             </div>
           </div>
@@ -294,8 +294,8 @@ onMounted(() => {
               :icon="mdiChevronLeft"
               color="lightDark"
               small
-              @click="prevPage"
               :disabled="currentPage === 1"
+              @click="prevPage"
             />
             
             <div class="flex flex-wrap gap-1">
@@ -314,8 +314,8 @@ onMounted(() => {
               :icon="mdiChevronRight"
               color="lightDark"
               small
-              @click="nextPage"
               :disabled="currentPage === totalPages"
+              @click="nextPage"
             />
           </div>
         </div>
@@ -326,7 +326,7 @@ onMounted(() => {
         v-model="isAddModalActive" 
         title="Save New Command" 
         button="success" 
-        buttonLabel="Save Command"
+        button-label="Save Command"
         has-cancel
         @confirm="addSubmit"
       >
@@ -389,7 +389,7 @@ onMounted(() => {
         v-model="isDeleteModalActive" 
         title="Delete Saved Command" 
         button="danger"
-        buttonLabel="Delete Command"
+        button-label="Delete Command"
         has-cancel
         @confirm="deleteSubmit"
       >

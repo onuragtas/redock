@@ -144,10 +144,11 @@ if (props.ctrlKFocus) {
         {{ option.label ?? option }}
       </option>
     </select>
-    <textarea :style="height !== '' ? {height: `${height}`} : {}"
-      v-else-if="computedType === 'textarea'"
+    <textarea
+v-else-if="computedType === 'textarea'"
       :id="id"
       v-model="computedValue"
+      :style="height !== '' ? {height: `${height}`} : {}"
       :class="inputElClass"
       :name="name"
       :maxlength="maxlength"
