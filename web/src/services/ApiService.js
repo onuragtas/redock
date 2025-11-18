@@ -242,6 +242,10 @@ class ApiService {
     return await this.post('/api/v1/tunnel/stop', data);
   }
 
+  static async tunnelRenew(data) {
+    return await this.post('/api/v1/tunnel/renew', data);
+  }
+
   static async localProxyCreate(data) {
     return await this.post('/api/v1/local_proxy/create', data);
   }

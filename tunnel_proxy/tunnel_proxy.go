@@ -1,9 +1,10 @@
 package tunnel_proxy
 
 import (
+	docker_manager "redock/docker-manager"
+
 	tunnel "github.com/onuragtas/tunnel-client"
 	"github.com/onuragtas/tunnel-client/models"
-	docker_manager "redock/docker-manager"
 )
 
 type TunnelProxy struct {
@@ -68,4 +69,8 @@ func (t *TunnelProxy) GetStartedList() tunnel.StartedTunnels {
 
 func (t *TunnelProxy) UserInfo() models.UserInfo {
 	return t.client.UserInfo()
+}
+
+func (t *TunnelProxy) RenewDomain(domain string) {
+	t.client.RenewDomain(domain)
 }

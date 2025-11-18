@@ -13,6 +13,7 @@ import ApiService from "@/services/ApiService";
 import {
   mdiAccount,
   mdiAccountPlus,
+  mdiAutorenew,
   mdiCheckCircle,
   mdiChevronLeft, mdiChevronRight,
   mdiCloseCircle,
@@ -230,6 +231,22 @@ const stopModal = async (item) => {
     }, 2000)
   } catch (error) {
     console.error('Failed to stop tunnel:', error)
+  }
+}
+
+const renewTunnel = async (item) => {
+  try {
+    const data = {
+      id: item.id,
+      domain: item.domain,
+    }
+    
+    await ApiService.tunnelRenew(data)
+    setTimeout(() => {
+      tunnelList()
+    }, 2000)
+  } catch (error) {
+    console.error('Failed to renew tunnel:', error)
   }
 }
 
@@ -451,6 +468,13 @@ onMounted(() => {
                 small
                 @click="tunnel.started ? stopModal(tunnel) : startModal(tunnel)"
                 :title="tunnel.started ? 'Stop Tunnel' : 'Start Tunnel'"
+              />
+              <BaseButton 
+                :icon="mdiAutorenew" 
+                color="info"
+                small
+                title="Renew Domain"
+                @click="renewTunnel(tunnel)"
               />
               <BaseButton 
                 :icon="mdiDelete" 

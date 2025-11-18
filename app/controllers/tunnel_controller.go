@@ -335,3 +335,22 @@ func TunnelUserInfo(c *fiber.Ctx) error {
 		"data":  check.Data.User,
 	})
 }
+
+func TunnelRenewDomain(c *fiber.Ctx) error {
+	model := &tunnel_models.DomainItem{}
+	// Checking received data from JSON body.
+	if err := c.BodyParser(model); err != nil {
+		// Return status 400 and error message.
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	tunnel_proxy.GetTunnelProxy().RenewDomain(model.Domain)
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+	})
+}
