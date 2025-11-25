@@ -17,7 +17,8 @@
       </div>
 
       <!-- Saved Commands Section -->
-      <div v-if="savedCommands != null && savedCommands.length > 0" 
+      <div
+v-if="savedCommands != null && savedCommands.length > 0" 
            class="bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl">
         <div class="flex items-center mb-4">
           <svg class="w-6 h-6 text-cyan-400 mr-3" fill="currentColor" viewBox="0 0 24 24">
@@ -61,7 +62,8 @@
       </div>
 
       <!-- PHP Debug Section -->
-      <div v-if="containerId != ''" 
+      <div
+v-if="containerId != ''" 
            class="bg-gray-900/50 backdrop-blur-sm border border-gray-700/50 rounded-2xl p-6 shadow-xl">
         <div class="flex items-center mb-4">
           <svg class="w-6 h-6 text-purple-400 mr-3" fill="currentColor" viewBox="0 0 24 24">
@@ -83,8 +85,8 @@
             type="submit" 
             color="info" 
             label="Enable Debug" 
-            @click="enableDebugForDomain"
             class="bg-gradient-to-r from-purple-500 to-pink-500 hover:from-purple-600 hover:to-pink-600 text-white font-medium px-6 py-3 rounded-lg transition-all duration-200 shadow-lg whitespace-nowrap"
+            @click="enableDebugForDomain"
           />
         </div>
       </div>
@@ -102,8 +104,8 @@
           
           <!-- Add New Tab Button -->
           <button
-            @click="addNewTab"
             class="flex items-center bg-gradient-to-r from-green-500 to-teal-500 hover:from-green-600 hover:to-teal-600 text-white px-4 py-2 rounded-lg transition-all duration-200 shadow-lg"
+            @click="addNewTab"
           >
             <svg class="w-5 h-5 mr-2" fill="currentColor" viewBox="0 0 24 24">
               <path d="M19,13H13V19H11V13H5V11H11V5H13V11H19V13Z"/>
@@ -133,8 +135,8 @@
             <div v-else class="w-2 h-2 bg-gray-500 rounded-full flex-shrink-0 mr-2"></div>
             <button
               v-if="tabs.length > 1"
-              @click.stop="closeTab(tab.id)"
               class="ml-1 p-1 rounded hover:bg-red-500/20 text-gray-400 hover:text-red-400 transition-colors duration-200 flex-shrink-0"
+              @click.stop="closeTab(tab.id)"
             >
               <svg class="w-3 h-3" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z"/>
@@ -158,8 +160,8 @@
           <div v-else class="terminal-wrapper bg-black rounded-lg overflow-hidden shadow-inner">
             <div
               v-for="tab in tabs"
-              :key="'terminal-' + tab.id"
               v-show="activeTabId === tab.id"
+              :key="'terminal-' + tab.id"
               :ref="'terminalContainer' + tab.id"
               class="terminal-container"
             ></div>
