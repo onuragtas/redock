@@ -417,9 +417,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if health != nil && !health.Healthy {
 		g.recordError()
-		// http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		g.logRequest(r, http.StatusServiceUnavailable, startTime, route.ID, service.ID, "service unhealthy")
-		// return
+		return
 	}
 
 	// Update service stats
@@ -914,22 +914,32 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 		if health.FailureCount >= service.HealthCheck.UnhealthyThreshold {
 			health.Healthy = false
 		}
-	} else {
-		resp.Body.Close()
-		if resp.StatusCode >= 200 && resp.StatusCode < 300 {
-			health.SuccessCount++
-			health.FailureCount = 0
-			health.LastError = ""
-			if health.SuccessCount >= service.HealthCheck.HealthyThreshold {
-				health.Healthy = true
-			}
-		} else {
-			health.FailureCount++
-			health.SuccessCount = 0
-			health.LastError = fmt.Sprintf("HTTP %d", resp.StatusCode)
-			if health.FailureCount >= service.HealthCheck.UnhealthyThreshold {
-				health.Healthy = false
-			}
+		return
+	}
+
+	resp.Body.Close()
+	switch {
+	case resp.StatusCode >= 500:
+		health.FailureCount++
+		health.SuccessCount = 0
+		health.LastError = fmt.Sprintf("HTTP %d", resp.StatusCode)
+		if health.FailureCount >= service.HealthCheck.UnhealthyThreshold {
+			health.Healthy = false
+		}
+	case resp.StatusCode >= 400:
+		// Client errors still prove the service is reachable, so treat them as successes
+		health.SuccessCount++
+		health.FailureCount = 0
+		health.LastError = fmt.Sprintf("HTTP %d (client error)", resp.StatusCode)
+		if health.SuccessCount >= service.HealthCheck.HealthyThreshold {
+			health.Healthy = true
+		}
+	default:
+		health.SuccessCount++
+		health.FailureCount = 0
+		health.LastError = ""
+		if health.SuccessCount >= service.HealthCheck.HealthyThreshold {
+			health.Healthy = true
 		}
 	}
 }
