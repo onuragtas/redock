@@ -339,6 +339,114 @@ class ApiService {
     return await this.get('/api/v1/deployment/settings');
   }
 
+  // API Gateway methods
+  static async apiGatewayGetConfig() {
+    return await this.get('/api/v1/api_gateway/config');
+  }
+
+  static async apiGatewayUpdateConfig(data) {
+    return await this.post('/api/v1/api_gateway/config', data);
+  }
+
+  static async apiGatewayStart() {
+    return await this.post('/api/v1/api_gateway/start');
+  }
+
+  static async apiGatewayStop() {
+    return await this.post('/api/v1/api_gateway/stop');
+  }
+
+  static async apiGatewayStatus() {
+    return await this.get('/api/v1/api_gateway/status');
+  }
+
+  static async apiGatewayStats() {
+    return await this.get('/api/v1/api_gateway/stats');
+  }
+
+  static async apiGatewayHealth() {
+    return await this.get('/api/v1/api_gateway/health');
+  }
+
+  static async apiGatewayListServices() {
+    return await this.get('/api/v1/api_gateway/services');
+  }
+
+  static async apiGatewayAddService(data) {
+    return await this.post('/api/v1/api_gateway/services', data);
+  }
+
+  static async apiGatewayUpdateService(data) {
+    return await this.put('/api/v1/api_gateway/services', data);
+  }
+
+  static async apiGatewayDeleteService(data) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + '/api/v1/api_gateway/services';
+    return ApiService.vueInstance.axios.delete(url, { data });
+  }
+
+  static async apiGatewayListRoutes() {
+    return await this.get('/api/v1/api_gateway/routes');
+  }
+
+  static async apiGatewayAddRoute(data) {
+    return await this.post('/api/v1/api_gateway/routes', data);
+  }
+
+  static async apiGatewayUpdateRoute(data) {
+    return await this.put('/api/v1/api_gateway/routes', data);
+  }
+
+  static async apiGatewayDeleteRoute(data) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + '/api/v1/api_gateway/routes';
+    return ApiService.vueInstance.axios.delete(url, { data });
+  }
+
+  static async apiGatewayTestUpstream(data) {
+    return await this.post('/api/v1/api_gateway/test_upstream', data);
+  }
+
+  static async apiGatewayHealthCheck(data) {
+    return await this.post('/api/v1/api_gateway/health_check', data);
+  }
+
+  static async apiGatewayValidate(data) {
+    return await this.post('/api/v1/api_gateway/validate', data);
+  }
+
+  // Certificate/Let's Encrypt methods
+  static async apiGatewayCertificateInfo() {
+    return await this.get('/api/v1/api_gateway/certificate');
+  }
+
+  static async apiGatewayConfigureLetsEncrypt(data) {
+    return await this.post('/api/v1/api_gateway/letsencrypt', data);
+  }
+
+  static async apiGatewayRequestCertificate() {
+    return await this.post('/api/v1/api_gateway/certificate/request');
+  }
+
+  static async apiGatewayRenewerStatus() {
+    return await this.get('/api/v1/api_gateway/certificate/renewer');
+  }
+
+  static async apiGatewayStartRenewer() {
+    return await this.post('/api/v1/api_gateway/certificate/renewer/start');
+  }
+
+  static async apiGatewayStopRenewer() {
+    return await this.post('/api/v1/api_gateway/certificate/renewer/stop');
+  }
+
+  static async apiGatewayGetObservabilityStatus() {
+    return await this.get('/api/v1/api_gateway/observability');
+  }
+
+  static async apiGatewayConfigureObservability(data) {
+    return await this.post('/api/v1/api_gateway/observability', data);
+  }
+
 }
 
 export default ApiService;

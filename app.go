@@ -106,7 +106,8 @@ func app() {
 	routes.SavedCommandRoutes(app)     // Register a local proxy routes for app.
 	routes.WebSocketRoutes(app)        // Register a websocket routes for app.
 	routes.DeploymentRoutes(app)       // Register a deployment routes for app.
-	routes.UsageRoutes(app)       // Register a usage routes for app.
+	routes.UsageRoutes(app)            // Register a usage routes for app.
+	routes.APIGatewayRoutes(app)       // Register API Gateway routes for app.
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))
