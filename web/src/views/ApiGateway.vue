@@ -10,18 +10,13 @@ import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.
 
 import ApiService from "@/services/ApiService";
 import {
-  mdiArrowRight,
   mdiCertificate,
   mdiChartLine,
-  mdiChevronLeft,
-  mdiChevronRight,
   mdiCog,
   mdiDelete,
-  mdiEarth,
   mdiHeart,
   mdiHeartPulse,
   mdiLock,
-  mdiMagnify,
   mdiPencil,
   mdiPlay,
   mdiPlus,
@@ -32,8 +27,6 @@ import {
   mdiSpeedometer,
   mdiStop,
   mdiSync,
-  mdiViewGridOutline,
-  mdiViewList,
   mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
@@ -139,6 +132,10 @@ const gatewayConfig = ref({
   access_log_enabled: true
 })
 
+const isSuccessfulResponse = (response) => {
+  return response && response.data && response.data.error === false
+}
+
 // Computed
 const gatewayStats = computed(() => {
   const totalServices = services.value.length
@@ -236,9 +233,11 @@ const openAddServiceModal = () => {
 
 const addService = async () => {
   try {
-    await ApiService.apiGatewayAddService(newService.value)
-    isAddServiceModalActive.value = false
-    await loadData()
+    const response = await ApiService.apiGatewayAddService(newService.value)
+    if (isSuccessfulResponse(response)) {
+      isAddServiceModalActive.value = false
+      await loadData()
+    }
   } catch (error) {
     console.error('Failed to add service:', error)
   }
@@ -260,9 +259,11 @@ const openEditServiceModal = (service) => {
 
 const updateService = async () => {
   try {
-    await ApiService.apiGatewayUpdateService(editingService.value)
-    isEditServiceModalActive.value = false
-    await loadData()
+    const response = await ApiService.apiGatewayUpdateService(editingService.value)
+    if (isSuccessfulResponse(response)) {
+      isEditServiceModalActive.value = false
+      await loadData()
+    }
   } catch (error) {
     console.error('Failed to update service:', error)
   }
@@ -271,7 +272,7 @@ const updateService = async () => {
 const openAddRouteModal = () => {
   newRoute.value = {
     name: '',
-    service_id: '',
+    service_id: null,
     paths: '',
     methods: '',
     hosts: '',
@@ -294,22 +295,33 @@ const addRoute = async () => {
       ...newRoute.value,
       paths: newRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: newRoute.value.methods ? newRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
-      hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : []
+      hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
+      service_id: newRoute.value.service_id?.value || newRoute.value.service_id
     }
-    await ApiService.apiGatewayAddRoute(routeData)
-    isAddRouteModalActive.value = false
-    await loadData()
+    const response = await ApiService.apiGatewayAddRoute(routeData)
+    if (isSuccessfulResponse(response)) {
+      isAddRouteModalActive.value = false
+      await loadData()
+    }
   } catch (error) {
     console.error('Failed to add route:', error)
   }
 }
 
 const openEditRouteModal = (route) => {
+  const serviceId = route.service_id?.value || route.service_id
+  const serviceMatch = services.value.find(s => s.id === serviceId)
+
   editingRoute.value = {
     ...route,
     paths: Array.isArray(route.paths) ? route.paths.join(', ') : route.paths || '',
     methods: Array.isArray(route.methods) ? route.methods.join(', ') : route.methods || '',
-    hosts: Array.isArray(route.hosts) ? route.hosts.join(', ') : route.hosts || ''
+    hosts: Array.isArray(route.hosts) ? route.hosts.join(', ') : route.hosts || '',
+    service_id: serviceMatch
+      ? { value: serviceMatch.id, label: serviceMatch.name }
+      : serviceId
+        ? { value: serviceId, label: route.service_name || serviceId }
+        : null
   }
   isEditRouteModalActive.value = true
 }
@@ -320,11 +332,14 @@ const updateRoute = async () => {
       ...editingRoute.value,
       paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
-      hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : []
+      hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
+      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id
     }
-    await ApiService.apiGatewayUpdateRoute(routeData)
-    isEditRouteModalActive.value = false
-    await loadData()
+    const response = await ApiService.apiGatewayUpdateRoute(routeData)
+    if (isSuccessfulResponse(response)) {
+      isEditRouteModalActive.value = false
+      await loadData()
+    }
   } catch (error) {
     console.error('Failed to update route:', error)
   }
