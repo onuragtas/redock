@@ -155,6 +155,16 @@ const gatewayStats = computed(() => {
   }
 })
 
+const serviceNameMap = computed(() => {
+  const map = {}
+  services.value.forEach(service => {
+    if (service?.id) {
+      map[service.id] = service.name || service.id
+    }
+  })
+  return map
+})
+
 // Methods
 const formatUptime = (seconds) => {
   if (!seconds) return '0s'
@@ -486,6 +496,11 @@ const getServiceHealth = (serviceId) => {
   return health ? health.healthy : null
 }
 
+const getServiceName = (serviceId) => {
+  if (!serviceId) return 'Unknown Service'
+  return serviceNameMap.value[serviceId] || serviceId
+}
+
 const getHealthColor = (healthy) => {
   if (healthy === null) return 'text-gray-500'
   return healthy ? 'text-green-500' : 'text-red-500'
@@ -676,7 +691,7 @@ onUnmounted(() => {
                 :class="health.healthy ? 'text-green-500' : 'text-red-500'"
                 size="20" 
               />
-              <span class="font-medium">{{ health.service_id }}</span>
+              <span class="font-medium">{{ getServiceName(health.service_id) }}</span>
             </div>
             <div class="flex items-center gap-4 text-sm text-slate-500">
               <span>{{ health.response_time_ms }}ms</span>
@@ -782,7 +797,7 @@ onUnmounted(() => {
               </h3>
               <p class="text-sm text-slate-500 mt-1">
                 <span class="font-mono">{{ route.paths?.join(', ') }}</span>
-                → {{ route.service_id }}
+                → {{ getServiceName(route.service_id) }}
               </p>
             </div>
             <div class="flex gap-2">
