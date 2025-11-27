@@ -417,9 +417,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if health != nil && !health.Healthy {
 		g.recordError()
-		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
+		// http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
 		g.logRequest(r, http.StatusServiceUnavailable, startTime, route.ID, service.ID, "service unhealthy")
-		return
+		// return
 	}
 
 	// Update service stats
