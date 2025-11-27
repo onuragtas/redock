@@ -732,3 +732,186 @@ func APIGatewayValidateRoute(c *fiber.Ctx) error {
 		},
 	})
 }
+
+// APIGatewayGetCertificateInfo returns certificate information
+// @Description Get SSL/TLS certificate information
+// @Summary get certificate info
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/certificate [get]
+func APIGatewayGetCertificateInfo(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  gw.GetCertificateInfo(),
+	})
+}
+
+// APIGatewayConfigureLetsEncrypt configures Let's Encrypt settings
+// @Description Configure Let's Encrypt for automatic SSL certificate management
+// @Summary configure Let's Encrypt
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Param config body api_gateway.LetsEncryptConfig true "Let's Encrypt configuration"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/letsencrypt [post]
+func APIGatewayConfigureLetsEncrypt(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	config := &api_gateway.LetsEncryptConfig{}
+	if err := c.BodyParser(config); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	if err := gw.ConfigureLetsEncrypt(config); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Let's Encrypt configuration saved",
+		"data":  gw.GetConfig().LetsEncrypt,
+	})
+}
+
+// APIGatewayRequestCertificate requests a new SSL certificate
+// @Description Request a new SSL certificate from Let's Encrypt
+// @Summary request certificate
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/certificate/request [post]
+func APIGatewayRequestCertificate(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	if err := gw.RequestCertificate(); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Certificate requested successfully",
+		"data":  gw.GetCertificateInfo(),
+	})
+}
+
+// APIGatewayGetRenewerStatus returns certificate renewer status
+// @Description Get certificate renewal scheduler status
+// @Summary get renewer status
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/certificate/renewer [get]
+func APIGatewayGetRenewerStatus(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	renewer := api_gateway.GetCertificateRenewer(gw)
+	config := gw.GetConfig()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"running":           renewer.IsRunning(),
+			"auto_renew":        config.LetsEncrypt != nil && config.LetsEncrypt.AutoRenew,
+			"renew_before_days": func() int {
+				if config.LetsEncrypt != nil {
+					return config.LetsEncrypt.RenewBeforeDays
+				}
+				return 30
+			}(),
+		},
+	})
+}
+
+// APIGatewayStartRenewer starts the certificate renewal scheduler
+// @Description Start the certificate renewal scheduler
+// @Summary start renewer
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/certificate/renewer/start [post]
+func APIGatewayStartRenewer(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	renewer := api_gateway.GetCertificateRenewer(gw)
+	renewer.Start()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Certificate renewer started",
+	})
+}
+
+// APIGatewayStopRenewer stops the certificate renewal scheduler
+// @Description Stop the certificate renewal scheduler
+// @Summary stop renewer
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/certificate/renewer/stop [post]
+func APIGatewayStopRenewer(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	renewer := api_gateway.GetCertificateRenewer(gw)
+	renewer.Stop()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Certificate renewer stopped",
+	})
+}

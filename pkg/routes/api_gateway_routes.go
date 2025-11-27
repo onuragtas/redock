@@ -36,4 +36,12 @@ func APIGatewayRoutes(a *fiber.App) {
 	route.Post("/api_gateway/test_upstream", controllers.APIGatewayTestUpstream)
 	route.Post("/api_gateway/health_check", controllers.APIGatewayHealthCheckNow)
 	route.Post("/api_gateway/validate", controllers.APIGatewayValidateRoute)
+
+	// SSL/TLS Certificate management
+	route.Get("/api_gateway/certificate", controllers.APIGatewayGetCertificateInfo)
+	route.Post("/api_gateway/letsencrypt", controllers.APIGatewayConfigureLetsEncrypt)
+	route.Post("/api_gateway/certificate/request", controllers.APIGatewayRequestCertificate)
+	route.Get("/api_gateway/certificate/renewer", controllers.APIGatewayGetRenewerStatus)
+	route.Post("/api_gateway/certificate/renewer/start", controllers.APIGatewayStartRenewer)
+	route.Post("/api_gateway/certificate/renewer/stop", controllers.APIGatewayStopRenewer)
 }

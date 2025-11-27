@@ -327,6 +327,11 @@ func (g *Gateway) IsRunning() bool {
 func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
+	// Handle ACME challenges for Let's Encrypt
+	if HandleACMEChallenge(w, r) {
+		return
+	}
+
 	// Update stats
 	g.stats.mu.Lock()
 	g.stats.totalRequests++
@@ -1041,6 +1046,11 @@ func (g *Gateway) StartAll() {
 		if err := g.Start(); err != nil {
 			log.Printf("API Gateway: Failed to auto-start: %v", err)
 		}
+	}
+
+	// Start certificate renewer if Let's Encrypt is enabled with auto-renew
+	if g.config.LetsEncrypt != nil && g.config.LetsEncrypt.Enabled && g.config.LetsEncrypt.AutoRenew {
+		GetCertificateRenewer(g).Start()
 	}
 }
 

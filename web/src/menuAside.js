@@ -1,7 +1,8 @@
 import {
     mdiBookSearch,
     mdiDocker,
-    mdiMonitorDashboard
+    mdiMonitorDashboard,
+    mdiRouter
 } from '@mdi/js'
 
 export default [
@@ -44,6 +45,11 @@ export default [
     to: '/local_proxy',
     icon: mdiBookSearch,
     label: 'Local Proxy',
+  },
+  {
+    to: '/api_gateway',
+    icon: mdiRouter,
+    label: 'API Gateway',
   },
   {
     to: '/php_xdebug_adapter',

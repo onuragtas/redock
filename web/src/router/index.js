@@ -180,6 +180,22 @@ const routes = [
       },
       {
         meta: {
+          title: 'API Gateway'
+        },
+        path: 'api_gateway',
+        name: 'api_gateway',
+        component: () => import('@/views/ApiGateway.vue')
+      },
+      {
+        meta: {
+          title: 'API Gateway'
+        },
+        path: 'api-gateway',
+        name: 'api-gateway',
+        component: () => import('@/views/ApiGateway.vue')
+      },
+      {
+        meta: {
           title: 'Forms'
         },
         path: 'forms',

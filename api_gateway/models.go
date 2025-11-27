@@ -54,17 +54,31 @@ type HealthCheck struct {
 
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
-	HTTPPort         int              `json:"http_port"`
-	HTTPSPort        int              `json:"https_port"`
-	HTTPSEnabled     bool             `json:"https_enabled"`
-	TLSCertFile      string           `json:"tls_cert_file,omitempty"`
-	TLSKeyFile       string           `json:"tls_key_file,omitempty"`
-	Services         []Service        `json:"services"`
-	Routes           []Route          `json:"routes"`
-	GlobalRateLimit  *RateLimitConfig `json:"global_rate_limit,omitempty"`
-	LogLevel         string           `json:"log_level"`
-	AccessLogEnabled bool             `json:"access_log_enabled"`
-	Enabled          bool             `json:"enabled"`
+	HTTPPort           int                `json:"http_port"`
+	HTTPSPort          int                `json:"https_port"`
+	HTTPSEnabled       bool               `json:"https_enabled"`
+	TLSCertFile        string             `json:"tls_cert_file,omitempty"`
+	TLSKeyFile         string             `json:"tls_key_file,omitempty"`
+	LetsEncrypt        *LetsEncryptConfig `json:"lets_encrypt,omitempty"`
+	Services           []Service          `json:"services"`
+	Routes             []Route            `json:"routes"`
+	GlobalRateLimit    *RateLimitConfig   `json:"global_rate_limit,omitempty"`
+	LogLevel           string             `json:"log_level"`
+	AccessLogEnabled   bool               `json:"access_log_enabled"`
+	Enabled            bool               `json:"enabled"`
+}
+
+// LetsEncryptConfig represents Let's Encrypt certificate configuration
+type LetsEncryptConfig struct {
+	Enabled          bool     `json:"enabled"`
+	Email            string   `json:"email"`
+	Domains          []string `json:"domains"`
+	Staging          bool     `json:"staging"`           // Use staging server for testing
+	AutoRenew        bool     `json:"auto_renew"`        // Auto-renew before expiry
+	RenewBeforeDays  int      `json:"renew_before_days"` // Days before expiry to renew
+	LastRenewAt      string   `json:"last_renew_at,omitempty"`
+	ExpiresAt        string   `json:"expires_at,omitempty"`
+	CertificateReady bool     `json:"certificate_ready"`
 }
 
 // RateLimitConfig represents global rate limiting configuration
