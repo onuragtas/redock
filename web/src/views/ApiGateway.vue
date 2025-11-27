@@ -10,24 +10,24 @@ import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.
 
 import ApiService from "@/services/ApiService";
 import {
-  mdiCertificate,
-  mdiChartLine,
-  mdiCog,
-  mdiDelete,
-  mdiHeart,
-  mdiHeartPulse,
-  mdiLock,
-  mdiPencil,
-  mdiPlay,
-  mdiPlus,
-  mdiRefresh,
-  mdiRouter,
-  mdiServer,
-  mdiShield,
-  mdiSpeedometer,
-  mdiStop,
-  mdiSync,
-  mdiWeb
+    mdiCertificate,
+    mdiChartLine,
+    mdiCog,
+    mdiDelete,
+    mdiHeart,
+    mdiHeartPulse,
+    mdiLock,
+    mdiPencil,
+    mdiPlay,
+    mdiPlus,
+    mdiRefresh,
+    mdiRouter,
+    mdiServer,
+    mdiShield,
+    mdiSpeedometer,
+    mdiStop,
+    mdiSync,
+    mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
