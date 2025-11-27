@@ -21,9 +21,9 @@ import (
 )
 
 var (
-	gateway         *Gateway
-	gatewayLock     sync.Mutex
-	dockerManager   *dockermanager.DockerEnvironmentManager
+	gateway       *Gateway
+	gatewayLock   sync.Mutex
+	dockerManager *dockermanager.DockerEnvironmentManager
 )
 
 // Init initializes the API Gateway
@@ -68,8 +68,8 @@ func (g *Gateway) loadConfig() {
 	if err != nil {
 		// Default configuration
 		g.config = &GatewayConfig{
-			HTTPPort:         80,
-			HTTPSPort:        443,
+			HTTPPort:         8080,
+			HTTPSPort:        8081,
 			HTTPSEnabled:     false,
 			LogLevel:         "info",
 			AccessLogEnabled: true,
@@ -84,8 +84,8 @@ func (g *Gateway) loadConfig() {
 	if err := json.Unmarshal(file, &config); err != nil {
 		log.Printf("API Gateway: Error parsing config: %v", err)
 		g.config = &GatewayConfig{
-			HTTPPort:         80,
-			HTTPSPort:        443,
+			HTTPPort:         8080,
+			HTTPSPort:        8081,
 			HTTPSEnabled:     false,
 			LogLevel:         "info",
 			AccessLogEnabled: true,
