@@ -5,12 +5,16 @@ import { useTerminalStore } from '@/stores/terminalStore'
 import {
   mdiAccount,
   mdiBell,
+  mdiBugCheck,
   mdiChevronDown,
   mdiClose,
   mdiConsole,
   mdiContentDuplicate,
   mdiDocker,
   mdiHome,
+  mdiLan,
+  mdiLanConnect,
+  mdiLaptop,
   mdiLogout,
   mdiMagnify,
   mdiMenu,
@@ -18,14 +22,9 @@ import {
   mdiNetworkOutline,
   mdiPlaylistEdit,
   mdiRocket,
-  mdiTunnel,
   mdiWeb,
-  mdiWrench,
-  mdiLaptop,
-  mdiLan,
-  mdiLanConnect,
-  mdiBugCheck,
-  mdiWindowMaximize
+  mdiWindowMaximize,
+  mdiWrench
 } from '@mdi/js'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
