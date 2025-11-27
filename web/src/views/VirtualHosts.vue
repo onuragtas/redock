@@ -27,6 +27,8 @@ import {
     mdiPlus,
     mdiRefresh,
     mdiServer,
+    mdiToggleSwitch,
+    mdiToggleSwitchOff,
     mdiViewGridOutline,
     mdiViewList,
     mdiWeb
@@ -42,6 +44,8 @@ const isEditModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const modalPath = ref('')
 const virtualhostContent = ref('')
+const envModes = ref({}) // Track env mode for each vhost path
+const togglingEnv = ref({}) // Track which vhosts are currently toggling
 
 // Form data
 const createVirtualHost = ref({
@@ -124,6 +128,71 @@ const getPhpServices = async () => {
     console.error('Failed to load PHP services:', error)
     phpServices.value = ['php8.2-fpm', 'php8.1-fpm', 'php7.4-fpm']
   }
+}
+
+// Fetch environment mode for a single vhost
+const fetchEnvMode = async (path) => {
+  try {
+    const response = await ApiService.getVHostEnvMode(path)
+    if (response.data && response.data.data) {
+      envModes.value[path] = {
+        mode: response.data.data.mode || '',
+        hasEnvConfig: response.data.data.hasEnvConfig || false
+      }
+    }
+  } catch (error) {
+    console.error('Failed to fetch env mode for', path, error)
+    envModes.value[path] = { mode: '', hasEnvConfig: false }
+  }
+}
+
+// Fetch env modes for all vhosts
+const fetchAllEnvModes = async () => {
+  for (const vhost of virtualHosts.value) {
+    await fetchEnvMode(vhost[0])
+  }
+}
+
+// Toggle environment mode for a vhost
+const toggleEnvMode = async (path) => {
+  togglingEnv.value[path] = true
+  try {
+    const response = await ApiService.toggleVHostEnvMode(path)
+    if (response.data && response.data.data) {
+      envModes.value[path] = {
+        mode: response.data.data.mode || '',
+        hasEnvConfig: true
+      }
+    }
+  } catch (error) {
+    console.error('Failed to toggle env mode for', path, error)
+  } finally {
+    togglingEnv.value[path] = false
+  }
+}
+
+// Get the display text for env mode
+const getEnvModeLabel = (path) => {
+  const envInfo = envModes.value[path]
+  if (!envInfo || !envInfo.hasEnvConfig) return ''
+  if (envInfo.mode === 'dev') return 'Development'
+  if (envInfo.mode === 'prod') return 'Production'
+  return ''
+}
+
+// Get the color class for env mode button
+const getEnvModeColor = (path) => {
+  const envInfo = envModes.value[path]
+  if (!envInfo || !envInfo.hasEnvConfig) return 'lightDark'
+  if (envInfo.mode === 'dev') return 'warning'
+  if (envInfo.mode === 'prod') return 'success'
+  return 'lightDark'
+}
+
+// Check if vhost has env config
+const hasEnvConfig = (path) => {
+  const envInfo = envModes.value[path]
+  return envInfo && envInfo.hasEnvConfig
 }
 
 const editVirtualHost = async (data) => {
@@ -222,8 +291,9 @@ const extractDomain = (path) => {
 }
 
 // Lifecycle
-onMounted(() => {
-  getAllVHosts()
+onMounted(async () => {
+  await getAllVHosts()
+  await fetchAllEnvModes()
   getPhpServices()
 })
 </script>
@@ -246,16 +316,16 @@ onMounted(() => {
               :icon="mdiRefresh"
               color="white"
               outline
-              @click="getAllVHosts"
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="getAllVHosts"
             />
             <BaseButton
               label="Create VHost"
               :icon="mdiPlus"
               color="white"
-              @click="isAddModalActive = true"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="isAddModalActive = true"
             />
           </div>
         </div>
@@ -310,16 +380,16 @@ onMounted(() => {
               :label="layoutToggleLabel"
               color="lightDark"
               outline
-              @click="toggleLayout"
               class="shrink-0"
+              @click="toggleLayout"
             />
             <BaseButton
               :icon="mdiRefresh"
               color="info"
               rounded-full
-              @click="getAllVHosts"
               :disabled="loading"
               class="shadow-sm hover:shadow-md"
+              @click="getAllVHosts"
             />
           </div>
         </SectionTitleLineWithButton>
@@ -377,25 +447,46 @@ onMounted(() => {
                     <BaseIcon :path="getServiceIcon(vhost[0])" size="16" class="mr-1" />
                     {{ vhost[0].includes('nginx') ? 'Nginx' : vhost[0].includes('apache') ? 'Apache' : 'Other' }}
                   </div>
+                  <!-- Environment Mode Badge -->
+                  <div 
+                    v-if="hasEnvConfig(vhost[0])"
+                    class="flex items-center"
+                    :class="envModes[vhost[0]]?.mode === 'dev' ? 'text-yellow-600' : 'text-green-600'"
+                  >
+                    <BaseIcon :path="envModes[vhost[0]]?.mode === 'dev' ? mdiToggleSwitchOff : mdiToggleSwitch" size="16" class="mr-1" />
+                    {{ getEnvModeLabel(vhost[0]) }}
+                  </div>
                 </div>
               </div>
             </div>
             
             <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+              <!-- Dev/Prod Toggle Button -->
+              <BaseButton 
+                v-if="hasEnvConfig(vhost[0])"
+                :icon="envModes[vhost[0]]?.mode === 'dev' ? mdiToggleSwitchOff : mdiToggleSwitch"
+                :label="envModes[vhost[0]]?.mode === 'dev' ? 'Switch to Prod' : 'Switch to Dev'"
+                :color="getEnvModeColor(vhost[0])"
+                small
+                :disabled="togglingEnv[vhost[0]]"
+                :title="envModes[vhost[0]]?.mode === 'dev' ? 'Switch to Production Mode' : 'Switch to Development Mode'"
+                @click="toggleEnvMode(vhost[0])"
+              />
+              
               <BaseButton 
                 :icon="mdiPencil" 
                 color="info"
                 small
-                @click="editVirtualHost(vhost)"
                 title="Edit Configuration"
+                @click="editVirtualHost(vhost)"
               />
               
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                @click="deleteVirtualHost(vhost)"
                 title="Delete VHost"
+                @click="deleteVirtualHost(vhost)"
               />
             </div>
           </div>
@@ -412,8 +503,8 @@ onMounted(() => {
               :icon="mdiChevronLeft"
               color="lightDark"
               small
-              @click="prevPage"
               :disabled="currentPage === 1"
+              @click="prevPage"
             />
             
             <div class="flex flex-wrap gap-1">
@@ -432,8 +523,8 @@ onMounted(() => {
               :icon="mdiChevronRight"
               color="lightDark"
               small
-              @click="nextPage"
               :disabled="currentPage === totalPages"
+              @click="nextPage"
             />
           </div>
         </div>
@@ -444,7 +535,7 @@ onMounted(() => {
         v-model="isAddModalActive" 
         title="Create Virtual Host" 
         button="success" 
-        buttonLabel="Create Virtual Host"
+        button-label="Create Virtual Host"
         has-cancel
         @confirm="addSubmit"
       >
@@ -547,7 +638,7 @@ onMounted(() => {
         v-model="isEditModalActive" 
         title="Edit Virtual Host" 
         button="success" 
-        buttonLabel="Update Configuration"
+        button-label="Update Configuration"
         has-cancel
         @confirm="editSubmit"
       >
@@ -596,7 +687,7 @@ onMounted(() => {
         v-model="isDeleteModalActive" 
         title="Delete Virtual Host" 
         button="danger"
-        buttonLabel="Delete Virtual Host"
+        button-label="Delete Virtual Host"
         has-cancel
         @confirm="deleteSubmit"
       >

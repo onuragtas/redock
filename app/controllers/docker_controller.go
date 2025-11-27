@@ -398,6 +398,215 @@ func SetVHostContent(c *fiber.Ctx) error {
 	})
 }
 
+// GetVHostEnvMode detects the current environment mode (dev/prod) from virtual host configuration.
+// @Description Detect environment mode from virtual host config
+// @Summary Get virtual host environment mode
+// @Tags VirtualHost
+// @Accept json
+// @Produce json
+// @Param path body string true "Path to virtual host configuration file"
+// @Success 200 {object} fiber.Map
+// @Router /v1/docker/vhost_env_mode [post]
+func GetVHostEnvMode(c *fiber.Ctx) error {
+	type Parameter struct {
+		Path string `json:"path"`
+	}
+
+	model := &Parameter{}
+	if err := c.BodyParser(model); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	content, err := os.ReadFile(model.Path)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	mode, hasEnvConfig := detectEnvMode(string(content))
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"mode":         mode,
+			"hasEnvConfig": hasEnvConfig,
+		},
+	})
+}
+
+// ToggleVHostEnvMode toggles between development and production mode in virtual host configuration.
+// @Description Toggle environment mode in virtual host config
+// @Summary Toggle virtual host environment mode
+// @Tags VirtualHost
+// @Accept json
+// @Produce json
+// @Param path body string true "Path to virtual host configuration file"
+// @Success 200 {object} fiber.Map
+// @Router /v1/docker/toggle_vhost_env [post]
+func ToggleVHostEnvMode(c *fiber.Ctx) error {
+	type Parameter struct {
+		Path string `json:"path"`
+	}
+
+	model := &Parameter{}
+	if err := c.BodyParser(model); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	content, err := os.ReadFile(model.Path)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	newContent, newMode := toggleEnvMode(string(content))
+
+	err = os.WriteFile(model.Path, []byte(newContent), 0644)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Restart nginx/httpd to apply changes
+	docker_manager.GetDockerManager().RestartAll()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"mode":    newMode,
+			"content": newContent,
+		},
+	})
+}
+
+// detectEnvMode detects the current environment mode from config content.
+// Returns mode ("dev", "prod", or "") and whether environment config exists.
+func detectEnvMode(content string) (string, bool) {
+	lines := strings.Split(content, "\n")
+	hasDevActive := false
+	hasProdActive := false
+	hasEnvConfig := false
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		isCommented := strings.HasPrefix(trimmed, "#")
+		lowerLine := strings.ToLower(trimmed)
+
+		// Check for fastcgi_param APP_ENV, APPLICATION_ENV, or SetEnv patterns
+		if strings.Contains(lowerLine, "fastcgi_param") || strings.Contains(lowerLine, "setenv") {
+			if strings.Contains(lowerLine, "app_env") || strings.Contains(lowerLine, "application_env") {
+				hasEnvConfig = true
+				if !isCommented {
+					if strings.Contains(lowerLine, "dev") || strings.Contains(lowerLine, "development") {
+						hasDevActive = true
+					} else if strings.Contains(lowerLine, "prod") || strings.Contains(lowerLine, "production") {
+						hasProdActive = true
+					}
+				}
+			}
+		}
+	}
+
+	if hasDevActive {
+		return "dev", hasEnvConfig
+	}
+	if hasProdActive {
+		return "prod", hasEnvConfig
+	}
+	return "", hasEnvConfig
+}
+
+// toggleEnvMode toggles between dev and prod mode in config content.
+// Returns the new content and the new mode.
+func toggleEnvMode(content string) (string, string) {
+	lines := strings.Split(content, "\n")
+	var newLines []string
+
+	// First pass: determine current mode
+	currentMode := ""
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		isCommented := strings.HasPrefix(trimmed, "#")
+		lowerLine := strings.ToLower(trimmed)
+
+		if strings.Contains(lowerLine, "fastcgi_param") || strings.Contains(lowerLine, "setenv") {
+			if strings.Contains(lowerLine, "app_env") || strings.Contains(lowerLine, "application_env") {
+				if !isCommented {
+					if strings.Contains(lowerLine, "dev") || strings.Contains(lowerLine, "development") {
+						currentMode = "dev"
+					} else if strings.Contains(lowerLine, "prod") || strings.Contains(lowerLine, "production") {
+						currentMode = "prod"
+					}
+					break
+				}
+			}
+		}
+	}
+
+	// Determine target mode
+	targetMode := "dev"
+	if currentMode == "dev" {
+		targetMode = "prod"
+	}
+
+	// Second pass: apply the toggle
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		lowerLine := strings.ToLower(trimmed)
+
+		if strings.Contains(lowerLine, "fastcgi_param") || strings.Contains(lowerLine, "setenv") {
+			if strings.Contains(lowerLine, "app_env") || strings.Contains(lowerLine, "application_env") {
+				isCommented := strings.HasPrefix(trimmed, "#")
+				isDev := strings.Contains(lowerLine, "dev") || strings.Contains(lowerLine, "development")
+				isProd := strings.Contains(lowerLine, "prod") || strings.Contains(lowerLine, "production")
+
+				if !isCommented {
+					// Currently active line - comment it out
+					newLines = append(newLines, "# "+line)
+				} else {
+					// Commented line - check if it should be uncommented
+					if (targetMode == "dev" && isDev) || (targetMode == "prod" && isProd) {
+						// Find the position of # in the line and remove "# " or just "#"
+						hashIdx := strings.Index(line, "#")
+						if hashIdx >= 0 {
+							prefix := line[:hashIdx]
+							rest := line[hashIdx+1:]
+							// Remove leading space after # if present
+							if len(rest) > 0 && rest[0] == ' ' {
+								rest = rest[1:]
+							}
+							newLines = append(newLines, prefix+rest)
+						} else {
+							newLines = append(newLines, line)
+						}
+					} else {
+						// Keep as commented
+						newLines = append(newLines, line)
+					}
+				}
+				continue
+			}
+		}
+		newLines = append(newLines, line)
+	}
+
+	return strings.Join(newLines, "\n"), targetMode
+}
+
 // DeleteVHost method to create a new user.
 // @Description Create a new user.
 // @Summary create a new user

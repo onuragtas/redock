@@ -171,6 +171,14 @@ class ApiService {
     return await this.post('/api/v1/docker/delete_vhost', { path: path });
   }
 
+  static async getVHostEnvMode(path) {
+    return await this.post('/api/v1/docker/vhost_env_mode', { path: path });
+  }
+
+  static async toggleVHostEnvMode(path) {
+    return await this.post('/api/v1/docker/toggle_vhost_env', { path: path });
+  }
+
   static async getPhpServices() {
     return await this.get('/api/v1/docker/php_services');
   }

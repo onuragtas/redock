@@ -27,6 +27,8 @@ func PrivateRoutes(a *fiber.App) {
 	route.Post("/docker/get_vhost", controllers.GetVHostContent)
 	route.Post("/docker/set_vhost", controllers.SetVHostContent)
 	route.Post("/docker/delete_vhost", controllers.DeleteVHost)
+	route.Post("/docker/vhost_env_mode", controllers.GetVHostEnvMode)
+	route.Post("/docker/toggle_vhost_env", controllers.ToggleVHostEnvMode)
 	route.Get("/docker/php_services", controllers.GetPhpServices)
 	route.Post("/docker/create_vhost", controllers.CreateVHost)
 	route.Get("/docker/devenv", controllers.GetDevEnv)
