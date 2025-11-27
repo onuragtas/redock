@@ -333,9 +333,9 @@ func APIGatewayUpdateService(c *fiber.Ctx) error {
 // @Tags API Gateway
 // @Accept json
 // @Produce json
-// @Param id path string true "Service ID"
+// @Param request body object true "Delete request with service ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/api_gateway/services/{id} [delete]
+// @Router /v1/api_gateway/services [delete]
 func APIGatewayDeleteService(c *fiber.Ctx) error {
 	gw := api_gateway.GetGateway()
 	if gw == nil {
@@ -500,9 +500,9 @@ func APIGatewayUpdateRoute(c *fiber.Ctx) error {
 // @Tags API Gateway
 // @Accept json
 // @Produce json
-// @Param id path string true "Route ID"
+// @Param request body object true "Delete request with route ID"
 // @Success 200 {object} map[string]interface{}
-// @Router /v1/api_gateway/routes/{id} [delete]
+// @Router /v1/api_gateway/routes [delete]
 func APIGatewayDeleteRoute(c *fiber.Ctx) error {
 	gw := api_gateway.GetGateway()
 	if gw == nil {
@@ -620,9 +620,9 @@ func APIGatewayTestUpstream(c *fiber.Ctx) error {
 // @Tags API Gateway
 // @Accept json
 // @Produce json
-// @Param id path string true "Service ID"
+// @Param request body object true "Health check request with service ID"
 // @Success 200 {object} api_gateway.ServiceHealth
-// @Router /v1/api_gateway/health_check/{id} [post]
+// @Router /v1/api_gateway/health_check [post]
 func APIGatewayHealthCheckNow(c *fiber.Ctx) error {
 	gw := api_gateway.GetGateway()
 	if gw == nil {

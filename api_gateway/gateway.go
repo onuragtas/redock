@@ -557,16 +557,26 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	// Create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
-	// Configure transport
+	// Configure transport with default timeout if not specified
+	dialTimeout := time.Duration(service.Timeout) * time.Second
+	if dialTimeout <= 0 {
+		dialTimeout = 30 * time.Second
+	}
 	proxy.Transport = &http.Transport{
 		DialContext: (&net.Dialer{
-			Timeout:   time.Duration(service.Timeout) * time.Second,
+			Timeout:   dialTimeout,
 			KeepAlive: 30 * time.Second,
 		}).DialContext,
 		MaxIdleConns:          100,
 		IdleConnTimeout:       90 * time.Second,
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
+	}
+
+	// Determine the incoming protocol
+	incomingProto := "http"
+	if r.TLS != nil {
+		incomingProto = "https"
 	}
 
 	// Modify the request
@@ -610,7 +620,7 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		if clientIP := getClientIP(r); clientIP != "" {
 			req.Header.Set("X-Forwarded-For", clientIP)
 		}
-		req.Header.Set("X-Forwarded-Proto", r.URL.Scheme)
+		req.Header.Set("X-Forwarded-Proto", incomingProto)
 		req.Header.Set("X-Forwarded-Host", r.Host)
 	}
 
