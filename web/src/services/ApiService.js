@@ -439,6 +439,14 @@ class ApiService {
     return await this.post('/api/v1/api_gateway/certificate/renewer/stop');
   }
 
+  static async apiGatewayGetObservabilityStatus() {
+    return await this.get('/api/v1/api_gateway/observability');
+  }
+
+  static async apiGatewayConfigureObservability(data) {
+    return await this.post('/api/v1/api_gateway/observability', data);
+  }
+
 }
 
 export default ApiService;

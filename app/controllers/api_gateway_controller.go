@@ -915,3 +915,85 @@ func APIGatewayStopRenewer(c *fiber.Ctx) error {
 		"msg":   "Certificate renewer stopped",
 	})
 }
+
+// APIGatewayGetObservabilityStatus returns the observability/telemetry status
+// @Description Get the observability/telemetry exporter status
+// @Summary get observability status
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/observability [get]
+func APIGatewayGetObservabilityStatus(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	exporter := api_gateway.GetTelemetryExporter()
+	config := gw.GetConfig()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"status": exporter.GetStatus(),
+			"config": config.Observability,
+		},
+	})
+}
+
+// APIGatewayConfigureObservability configures the observability/telemetry settings
+// @Description Configure observability/telemetry settings for sending data to Grafana, OpenTelemetry, or ClickHouse
+// @Summary configure observability
+// @Tags API Gateway
+// @Accept json
+// @Produce json
+// @Param config body api_gateway.ObservabilityConfig true "Observability configuration"
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/api_gateway/observability [post]
+func APIGatewayConfigureObservability(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	config := &api_gateway.ObservabilityConfig{}
+	if err := c.BodyParser(config); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Update the gateway config
+	gwConfig := gw.GetConfig()
+	gwConfig.Observability = config
+	if err := gw.UpdateConfig(gwConfig); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	// Configure and start/stop exporter based on config
+	exporter := api_gateway.GetTelemetryExporter()
+	exporter.Configure(config)
+	if config.Enabled {
+		exporter.Start()
+	} else {
+		exporter.Stop()
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Observability configuration updated",
+		"data":  config,
+	})
+}

@@ -44,4 +44,8 @@ func APIGatewayRoutes(a *fiber.App) {
 	route.Get("/api_gateway/certificate/renewer", controllers.APIGatewayGetRenewerStatus)
 	route.Post("/api_gateway/certificate/renewer/start", controllers.APIGatewayStartRenewer)
 	route.Post("/api_gateway/certificate/renewer/stop", controllers.APIGatewayStopRenewer)
+
+	// Observability/Telemetry
+	route.Get("/api_gateway/observability", controllers.APIGatewayGetObservabilityStatus)
+	route.Post("/api_gateway/observability", controllers.APIGatewayConfigureObservability)
 }

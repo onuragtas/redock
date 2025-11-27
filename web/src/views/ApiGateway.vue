@@ -12,6 +12,7 @@ import ApiService from "@/services/ApiService";
 import {
   mdiArrowRight,
   mdiCertificate,
+  mdiChartLine,
   mdiChevronLeft,
   mdiChevronRight,
   mdiCog,
@@ -59,11 +60,16 @@ const renewerStatus = ref({ running: false })
 // Modal states
 const activeTab = ref('overview')
 const isAddServiceModalActive = ref(false)
+const isEditServiceModalActive = ref(false)
 const isAddRouteModalActive = ref(false)
+const isEditRouteModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const isLetsEncryptModalActive = ref(false)
 const isConfigModalActive = ref(false)
+const isObservabilityModalActive = ref(false)
 const deleteTarget = ref({ type: '', item: null })
+const editingService = ref(null)
+const editingRoute = ref(null)
 
 // Form data
 const newService = ref({
@@ -107,6 +113,23 @@ const letsEncryptConfig = ref({
   staging: true,
   auto_renew: true,
   renew_before_days: 30
+})
+
+const observabilityConfig = ref({
+  enabled: false,
+  grafana_enabled: false,
+  grafana_endpoint: '',
+  grafana_api_key: '',
+  otlp_enabled: false,
+  otlp_endpoint: '',
+  clickhouse_enabled: false,
+  clickhouse_endpoint: '',
+  clickhouse_database: 'default',
+  clickhouse_table: 'api_gateway_logs',
+  clickhouse_username: '',
+  clickhouse_password: '',
+  batch_size: 100,
+  flush_interval: 30
 })
 
 const gatewayConfig = ref({
@@ -221,6 +244,30 @@ const addService = async () => {
   }
 }
 
+const openEditServiceModal = (service) => {
+  editingService.value = { ...service }
+  if (!editingService.value.health_check) {
+    editingService.value.health_check = {
+      path: '/health',
+      interval: 30,
+      timeout: 5,
+      healthy_threshold: 2,
+      unhealthy_threshold: 3
+    }
+  }
+  isEditServiceModalActive.value = true
+}
+
+const updateService = async () => {
+  try {
+    await ApiService.apiGatewayUpdateService(editingService.value)
+    isEditServiceModalActive.value = false
+    await loadData()
+  } catch (error) {
+    console.error('Failed to update service:', error)
+  }
+}
+
 const openAddRouteModal = () => {
   newRoute.value = {
     name: '',
@@ -254,6 +301,32 @@ const addRoute = async () => {
     await loadData()
   } catch (error) {
     console.error('Failed to add route:', error)
+  }
+}
+
+const openEditRouteModal = (route) => {
+  editingRoute.value = {
+    ...route,
+    paths: Array.isArray(route.paths) ? route.paths.join(', ') : route.paths || '',
+    methods: Array.isArray(route.methods) ? route.methods.join(', ') : route.methods || '',
+    hosts: Array.isArray(route.hosts) ? route.hosts.join(', ') : route.hosts || ''
+  }
+  isEditRouteModalActive.value = true
+}
+
+const updateRoute = async () => {
+  try {
+    const routeData = {
+      ...editingRoute.value,
+      paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
+      methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
+      hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : []
+    }
+    await ApiService.apiGatewayUpdateRoute(routeData)
+    isEditRouteModalActive.value = false
+    await loadData()
+  } catch (error) {
+    console.error('Failed to update route:', error)
   }
 }
 
@@ -354,6 +427,42 @@ const saveConfig = async () => {
     await loadData()
   } catch (error) {
     console.error('Failed to save config:', error)
+  }
+}
+
+const openObservabilityModal = async () => {
+  try {
+    const res = await ApiService.apiGatewayGetObservabilityStatus()
+    const cfg = res.data.data?.config || {}
+    observabilityConfig.value = {
+      enabled: cfg.enabled || false,
+      grafana_enabled: cfg.grafana_enabled || false,
+      grafana_endpoint: cfg.grafana_endpoint || '',
+      grafana_api_key: cfg.grafana_api_key || '',
+      otlp_enabled: cfg.otlp_enabled || false,
+      otlp_endpoint: cfg.otlp_endpoint || '',
+      clickhouse_enabled: cfg.clickhouse_enabled || false,
+      clickhouse_endpoint: cfg.clickhouse_endpoint || '',
+      clickhouse_database: cfg.clickhouse_database || 'default',
+      clickhouse_table: cfg.clickhouse_table || 'api_gateway_logs',
+      clickhouse_username: cfg.clickhouse_username || '',
+      clickhouse_password: cfg.clickhouse_password || '',
+      batch_size: cfg.batch_size || 100,
+      flush_interval: cfg.flush_interval || 30
+    }
+    isObservabilityModalActive.value = true
+  } catch (error) {
+    console.error('Failed to load observability config:', error)
+  }
+}
+
+const saveObservability = async () => {
+  try {
+    await ApiService.apiGatewayConfigureObservability(observabilityConfig.value)
+    isObservabilityModalActive.value = false
+    await loadData()
+  } catch (error) {
+    console.error('Failed to save observability config:', error)
   }
 }
 
@@ -495,7 +604,7 @@ onUnmounted(() => {
     <!-- Tabs -->
     <div class="flex border-b border-gray-200 dark:border-gray-700">
       <button
-        v-for="tab in ['overview', 'services', 'routes', 'certificates']"
+        v-for="tab in ['overview', 'services', 'routes', 'certificates', 'observability']"
         :key="tab"
         :class="[
           'px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
@@ -611,7 +720,7 @@ onUnmounted(() => {
               <span>Timeout: {{ service.timeout }}s</span>
             </div>
             <div class="flex gap-2">
-              <BaseButton :icon="mdiPencil" color="info" small />
+              <BaseButton :icon="mdiPencil" color="info" small @click="openEditServiceModal(service)" />
               <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('service', service)" />
             </div>
           </div>
@@ -662,7 +771,7 @@ onUnmounted(() => {
               </p>
             </div>
             <div class="flex gap-2">
-              <BaseButton :icon="mdiPencil" color="info" small />
+              <BaseButton :icon="mdiPencil" color="info" small @click="openEditRouteModal(route)" />
               <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('route', route)" />
             </div>
           </div>
@@ -766,6 +875,85 @@ onUnmounted(() => {
             </div>
           </div>
         </div>
+      </div>
+    </CardBox>
+
+    <!-- Observability Tab -->
+    <CardBox v-if="activeTab === 'observability'">
+      <SectionTitleLineWithButton :icon="mdiChartLine" title="Observability & Telemetry" main>
+        <BaseButton
+          label="Configure"
+          :icon="mdiCog"
+          color="info"
+          small
+          @click="openObservabilityModal"
+        />
+      </SectionTitleLineWithButton>
+
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
+        <!-- Grafana Status -->
+        <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+          <h3 class="font-semibold mb-4 flex items-center gap-2">
+            <BaseIcon :path="mdiChartLine" size="20" />
+            Grafana / Loki
+          </h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Status</span>
+              <span :class="observabilityConfig.grafana_enabled ? 'text-green-500' : 'text-gray-500'">
+                {{ observabilityConfig.grafana_enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+            </div>
+            <div v-if="observabilityConfig.grafana_endpoint" class="text-sm text-slate-500 truncate">
+              {{ observabilityConfig.grafana_endpoint }}
+            </div>
+          </div>
+        </div>
+
+        <!-- OTLP Status -->
+        <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+          <h3 class="font-semibold mb-4 flex items-center gap-2">
+            <BaseIcon :path="mdiSync" size="20" />
+            OpenTelemetry
+          </h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Status</span>
+              <span :class="observabilityConfig.otlp_enabled ? 'text-green-500' : 'text-gray-500'">
+                {{ observabilityConfig.otlp_enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+            </div>
+            <div v-if="observabilityConfig.otlp_endpoint" class="text-sm text-slate-500 truncate">
+              {{ observabilityConfig.otlp_endpoint }}
+            </div>
+          </div>
+        </div>
+
+        <!-- ClickHouse Status -->
+        <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+          <h3 class="font-semibold mb-4 flex items-center gap-2">
+            <BaseIcon :path="mdiServer" size="20" />
+            ClickHouse
+          </h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Status</span>
+              <span :class="observabilityConfig.clickhouse_enabled ? 'text-green-500' : 'text-gray-500'">
+                {{ observabilityConfig.clickhouse_enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+            </div>
+            <div v-if="observabilityConfig.clickhouse_endpoint" class="text-sm text-slate-500 truncate">
+              {{ observabilityConfig.clickhouse_endpoint }}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
+        <p class="text-sm text-blue-800 dark:text-blue-200">
+          <strong>Note:</strong> When enabled, all request and response data will be sent to the configured endpoints.
+          This includes method, path, status code, latency, service ID, and route ID.
+        </p>
       </div>
     </CardBox>
 
@@ -906,6 +1094,176 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="gatewayConfig.access_log_enabled" label="Enable Access Logging" name="access_log" />
         </FormField>
+      </div>
+    </CardBoxModal>
+
+    <!-- Edit Service Modal -->
+    <CardBoxModal 
+      v-model="isEditServiceModalActive" 
+      title="Edit Service" 
+      button="success" 
+      button-label="Update Service"
+      has-cancel
+      @confirm="updateService"
+    >
+      <div v-if="editingService" class="space-y-4">
+        <FormField label="Service Name">
+          <FormControl v-model="editingService.name" placeholder="my-service" />
+        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Host">
+            <FormControl v-model="editingService.host" placeholder="localhost or IP" />
+          </FormField>
+          <FormField label="Port">
+            <FormControl v-model="editingService.port" type="number" placeholder="80" />
+          </FormField>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Protocol">
+            <FormControl v-model="editingService.protocol" :options="['http', 'https']" />
+          </FormField>
+          <FormField label="Timeout (seconds)">
+            <FormControl v-model="editingService.timeout" type="number" placeholder="30" />
+          </FormField>
+        </div>
+        <FormField label="Base Path (optional)">
+          <FormControl v-model="editingService.path" placeholder="/api" />
+        </FormField>
+        <FormField>
+          <FormCheckRadio v-model="editingService.enabled" label="Enabled" name="edit_service_enabled" />
+        </FormField>
+        <FormField label="Health Check Path">
+          <FormControl v-model="editingService.health_check.path" placeholder="/health" />
+        </FormField>
+      </div>
+    </CardBoxModal>
+
+    <!-- Edit Route Modal -->
+    <CardBoxModal 
+      v-model="isEditRouteModalActive" 
+      title="Edit Route" 
+      button="success" 
+      button-label="Update Route"
+      has-cancel
+      @confirm="updateRoute"
+    >
+      <div v-if="editingRoute" class="space-y-4">
+        <FormField label="Route Name">
+          <FormControl v-model="editingRoute.name" placeholder="my-route" />
+        </FormField>
+        <FormField label="Service">
+          <FormControl v-model="editingRoute.service_id" :options="services.length ? services.map(s => ({ value: s.id, label: s.name })) : []" />
+        </FormField>
+        <FormField label="Paths (comma-separated)">
+          <FormControl v-model="editingRoute.paths" placeholder="/api, /api/*" />
+        </FormField>
+        <FormField label="Hosts (comma-separated, optional)">
+          <FormControl v-model="editingRoute.hosts" placeholder="api.example.com" />
+        </FormField>
+        <FormField label="Methods (comma-separated, optional)">
+          <FormControl v-model="editingRoute.methods" placeholder="GET, POST, PUT" />
+        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField>
+            <FormCheckRadio v-model="editingRoute.strip_path" label="Strip Path" name="edit_strip_path" />
+          </FormField>
+          <FormField>
+            <FormCheckRadio v-model="editingRoute.enabled" label="Enabled" name="edit_route_enabled" />
+          </FormField>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField>
+            <FormCheckRadio v-model="editingRoute.rate_limit_enabled" label="Enable Rate Limiting" name="edit_rate_limit" />
+          </FormField>
+          <FormField>
+            <FormCheckRadio v-model="editingRoute.auth_required" label="Require Auth" name="edit_auth" />
+          </FormField>
+        </div>
+        <div v-if="editingRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
+          <FormField label="Requests">
+            <FormControl v-model="editingRoute.rate_limit_requests" type="number" placeholder="100" />
+          </FormField>
+          <FormField label="Window (seconds)">
+            <FormControl v-model="editingRoute.rate_limit_window" type="number" placeholder="60" />
+          </FormField>
+        </div>
+      </div>
+    </CardBoxModal>
+
+    <!-- Observability Modal -->
+    <CardBoxModal 
+      v-model="isObservabilityModalActive" 
+      title="Configure Observability" 
+      button="success" 
+      button-label="Save Configuration"
+      has-cancel
+      @confirm="saveObservability"
+    >
+      <div class="space-y-4">
+        <FormField>
+          <FormCheckRadio v-model="observabilityConfig.enabled" label="Enable Observability" name="obs_enabled" />
+        </FormField>
+        
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Grafana / Loki</h4>
+          <FormField>
+            <FormCheckRadio v-model="observabilityConfig.grafana_enabled" label="Enable Grafana" name="grafana_enabled" />
+          </FormField>
+          <FormField label="Grafana Endpoint">
+            <FormControl v-model="observabilityConfig.grafana_endpoint" placeholder="http://grafana:3000" />
+          </FormField>
+          <FormField label="API Key (optional)">
+            <FormControl v-model="observabilityConfig.grafana_api_key" type="password" placeholder="API Key" />
+          </FormField>
+        </div>
+
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">OpenTelemetry (OTLP)</h4>
+          <FormField>
+            <FormCheckRadio v-model="observabilityConfig.otlp_enabled" label="Enable OTLP" name="otlp_enabled" />
+          </FormField>
+          <FormField label="OTLP Endpoint">
+            <FormControl v-model="observabilityConfig.otlp_endpoint" placeholder="http://otel-collector:4318" />
+          </FormField>
+        </div>
+
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">ClickHouse</h4>
+          <FormField>
+            <FormCheckRadio v-model="observabilityConfig.clickhouse_enabled" label="Enable ClickHouse" name="ch_enabled" />
+          </FormField>
+          <FormField label="ClickHouse Endpoint">
+            <FormControl v-model="observabilityConfig.clickhouse_endpoint" placeholder="http://clickhouse:8123" />
+          </FormField>
+          <div class="grid grid-cols-2 gap-4">
+            <FormField label="Database">
+              <FormControl v-model="observabilityConfig.clickhouse_database" placeholder="default" />
+            </FormField>
+            <FormField label="Table">
+              <FormControl v-model="observabilityConfig.clickhouse_table" placeholder="api_gateway_logs" />
+            </FormField>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
+            <FormField label="Username">
+              <FormControl v-model="observabilityConfig.clickhouse_username" placeholder="default" />
+            </FormField>
+            <FormField label="Password">
+              <FormControl v-model="observabilityConfig.clickhouse_password" type="password" />
+            </FormField>
+          </div>
+        </div>
+
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Batching</h4>
+          <div class="grid grid-cols-2 gap-4">
+            <FormField label="Batch Size">
+              <FormControl v-model="observabilityConfig.batch_size" type="number" placeholder="100" />
+            </FormField>
+            <FormField label="Flush Interval (seconds)">
+              <FormControl v-model="observabilityConfig.flush_interval" type="number" placeholder="30" />
+            </FormField>
+          </div>
+        </div>
       </div>
     </CardBoxModal>
 

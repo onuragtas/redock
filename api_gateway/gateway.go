@@ -803,10 +803,6 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 
 // logRequest logs an access log entry
 func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, serviceID, errMsg string) {
-	if !g.config.AccessLogEnabled {
-		return
-	}
-
 	logEntry := RequestLog{
 		Timestamp:  startTime,
 		Method:     r.Method,
@@ -821,8 +817,16 @@ func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Tim
 		Error:      errMsg,
 	}
 
-	logJSON, _ := json.Marshal(logEntry)
-	log.Printf("API Gateway Access: %s", string(logJSON))
+	// Log to console if enabled
+	if g.config.AccessLogEnabled {
+		logJSON, _ := json.Marshal(logEntry)
+		log.Printf("API Gateway Access: %s", string(logJSON))
+	}
+
+	// Send to telemetry exporter if configured
+	if g.config.Observability != nil && g.config.Observability.Enabled {
+		GetTelemetryExporter().Record(logEntry)
+	}
 }
 
 // getClientIP extracts the client IP from the request
@@ -1051,6 +1055,13 @@ func (g *Gateway) StartAll() {
 	// Start certificate renewer if Let's Encrypt is enabled with auto-renew
 	if g.config.LetsEncrypt != nil && g.config.LetsEncrypt.Enabled && g.config.LetsEncrypt.AutoRenew {
 		GetCertificateRenewer(g).Start()
+	}
+
+	// Start telemetry exporter if observability is enabled
+	if g.config.Observability != nil && g.config.Observability.Enabled {
+		exporter := GetTelemetryExporter()
+		exporter.Configure(g.config.Observability)
+		exporter.Start()
 	}
 }
 

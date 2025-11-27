@@ -54,18 +54,38 @@ type HealthCheck struct {
 
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
-	HTTPPort           int                `json:"http_port"`
-	HTTPSPort          int                `json:"https_port"`
-	HTTPSEnabled       bool               `json:"https_enabled"`
-	TLSCertFile        string             `json:"tls_cert_file,omitempty"`
-	TLSKeyFile         string             `json:"tls_key_file,omitempty"`
-	LetsEncrypt        *LetsEncryptConfig `json:"lets_encrypt,omitempty"`
-	Services           []Service          `json:"services"`
-	Routes             []Route            `json:"routes"`
-	GlobalRateLimit    *RateLimitConfig   `json:"global_rate_limit,omitempty"`
-	LogLevel           string             `json:"log_level"`
-	AccessLogEnabled   bool               `json:"access_log_enabled"`
-	Enabled            bool               `json:"enabled"`
+	HTTPPort           int                   `json:"http_port"`
+	HTTPSPort          int                   `json:"https_port"`
+	HTTPSEnabled       bool                  `json:"https_enabled"`
+	TLSCertFile        string                `json:"tls_cert_file,omitempty"`
+	TLSKeyFile         string                `json:"tls_key_file,omitempty"`
+	LetsEncrypt        *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
+	Services           []Service             `json:"services"`
+	Routes             []Route               `json:"routes"`
+	GlobalRateLimit    *RateLimitConfig      `json:"global_rate_limit,omitempty"`
+	LogLevel           string                `json:"log_level"`
+	AccessLogEnabled   bool                  `json:"access_log_enabled"`
+	Observability      *ObservabilityConfig  `json:"observability,omitempty"`
+	Enabled            bool                  `json:"enabled"`
+}
+
+// ObservabilityConfig represents configuration for sending telemetry data
+type ObservabilityConfig struct {
+	Enabled          bool   `json:"enabled"`
+	GrafanaEnabled   bool   `json:"grafana_enabled"`
+	GrafanaEndpoint  string `json:"grafana_endpoint,omitempty"`
+	GrafanaAPIKey    string `json:"grafana_api_key,omitempty"`
+	OTLPEnabled      bool   `json:"otlp_enabled"`
+	OTLPEndpoint     string `json:"otlp_endpoint,omitempty"`
+	OTLPHeaders      map[string]string `json:"otlp_headers,omitempty"`
+	ClickHouseEnabled  bool   `json:"clickhouse_enabled"`
+	ClickHouseEndpoint string `json:"clickhouse_endpoint,omitempty"`
+	ClickHouseDatabase string `json:"clickhouse_database,omitempty"`
+	ClickHouseTable    string `json:"clickhouse_table,omitempty"`
+	ClickHouseUsername string `json:"clickhouse_username,omitempty"`
+	ClickHousePassword string `json:"clickhouse_password,omitempty"`
+	BatchSize          int    `json:"batch_size"`
+	FlushInterval      int    `json:"flush_interval"` // in seconds
 }
 
 // LetsEncryptConfig represents Let's Encrypt certificate configuration
