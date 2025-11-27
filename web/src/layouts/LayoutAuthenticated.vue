@@ -7,7 +7,6 @@ import {
   mdiBell,
   mdiChevronDown,
   mdiClose,
-  mdiCog,
   mdiConsole,
   mdiContentDuplicate,
   mdiDocker,
@@ -16,10 +15,16 @@ import {
   mdiMagnify,
   mdiMenu,
   mdiMinus,
+  mdiNetworkOutline,
+  mdiPlaylistEdit,
   mdiRocket,
-  mdiServer,
   mdiTunnel,
-  mdiVirtualReality,
+  mdiWeb,
+  mdiWrench,
+  mdiLaptop,
+  mdiLan,
+  mdiLanConnect,
+  mdiBugCheck,
   mdiWindowMaximize
 } from '@mdi/js'
 import { FitAddon } from '@xterm/addon-fit'
@@ -52,15 +57,16 @@ const activeTab = computed(() => terminalStore.getActiveTab)
 const navigationItems = [
   { name: 'Dashboard', path: '/', icon: mdiHome },
   { name: 'Deployment', path: '/deployment', icon: mdiRocket },
-  { name: 'Setup Environment', path: '/setup_environment', icon: mdiRocket },
-  { name: 'Dev Environment', path: '/devenv', icon: mdiServer },
+  { name: 'Setup Environment', path: '/setup_environment', icon: mdiWrench },
+  { name: 'Dev Environment', path: '/devenv', icon: mdiLaptop },
   { name: 'Container Settings', path: '/container_settings', icon: mdiDocker },
-  { name: 'Local Proxy', path: '/local-proxy', icon: mdiServer },
+  { name: 'API Gateway', path: '/api-gateway', icon: mdiNetworkOutline },
+  { name: 'Local Proxy', path: '/local-proxy', icon: mdiLan },
   { name: 'Terminal', path: '/exec', icon: mdiConsole },
-  { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiTunnel },
-  { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiVirtualReality },
-  { name: 'Saved Commands', path: '/saved-commands', icon: mdiCog },
-  { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiCog }
+  { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiLanConnect },
+  { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiWeb },
+  { name: 'Saved Commands', path: '/saved-commands', icon: mdiPlaylistEdit },
+  { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck }
 ]
 
 // Methods

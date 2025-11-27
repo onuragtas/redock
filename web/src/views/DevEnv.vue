@@ -113,11 +113,7 @@ const getPersonalContainers = async () => {
   } catch (error) {
     console.error('Failed to load personal containers:', error)
     // Mock data for demo
-    personalContainers.value = [
-      { username: 'developer1', password: '****', port: 2222, redockPort: 8080 },
-      { username: 'developer2', password: '****', port: 2223, redockPort: 8081 },
-      { username: 'tester', password: '****', port: 2224, redockPort: null }
-    ]
+    personalContainers.value = []
   } finally {
     loading.value = false
   }
