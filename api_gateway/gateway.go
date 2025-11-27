@@ -21,14 +21,22 @@ import (
 )
 
 var (
-	gateway       *Gateway
-	gatewayLock   sync.Mutex
-	dockerManager *dockermanager.DockerEnvironmentManager
+	gateway     *Gateway
+	gatewayLock sync.Mutex
 )
+
+const (
+	defaultRouteCacheLimit = 2048
+	defaultRouteCacheTTL   = 30 * time.Second
+)
+
+type cachedRoute struct {
+	route     *Route
+	expiresAt time.Time
+}
 
 // Init initializes the API Gateway
 func Init(dm *dockermanager.DockerEnvironmentManager) {
-	dockerManager = dm
 	gateway = NewGateway(dm.GetWorkDir())
 }
 
@@ -56,6 +64,9 @@ func NewGateway(workDir string) *Gateway {
 			startTime:    time.Now(),
 			serviceStats: make(map[string]*serviceStatsTracker),
 		},
+		routeCache:      make(map[string]*cachedRoute),
+		routeCacheLimit: defaultRouteCacheLimit,
+		routeCacheTTL:   defaultRouteCacheTTL,
 	}
 	g.loadConfig()
 	return g
@@ -152,6 +163,8 @@ func (g *Gateway) refreshServicesAndRoutes() {
 	g.rateLimiter = &rateLimiter{
 		clients: make(map[string]*clientRateLimit),
 	}
+
+	g.clearRouteCache()
 }
 
 // GetConfig returns the current gateway configuration
@@ -438,8 +451,16 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 // matchRoute finds the first matching route for the request
 func (g *Gateway) matchRoute(r *http.Request) *Route {
+	cacheKey := g.buildRouteCacheKey(r)
+	if cached := g.getRouteFromCache(cacheKey); cached != nil {
+		return cached
+	}
+
 	g.mu.RLock()
 	defer g.mu.RUnlock()
+
+	var bestRoute *Route
+	bestPathScore := -1
 
 	for _, route := range g.routes {
 		if !route.Enabled {
@@ -463,10 +484,7 @@ func (g *Gateway) matchRoute(r *http.Request) *Route {
 		// Check hosts
 		if len(route.Hosts) > 0 {
 			hostMatch := false
-			requestHost := r.Host
-			if idx := strings.Index(requestHost, ":"); idx != -1 {
-				requestHost = requestHost[:idx]
-			}
+			requestHost := normalizeHost(r.Host)
 			for _, h := range route.Hosts {
 				if matchWildcard(h, requestHost) {
 					hostMatch = true
@@ -478,15 +496,9 @@ func (g *Gateway) matchRoute(r *http.Request) *Route {
 			}
 		}
 
-		// Check paths
-		pathMatch := false
-		for _, p := range route.Paths {
-			if matchPath(p, r.URL.Path) {
-				pathMatch = true
-				break
-			}
-		}
-		if !pathMatch {
+		// Check paths and compute specificity score
+		score := pathMatchScore(route.Paths, r.URL.Path)
+		if score < 0 {
 			continue
 		}
 
@@ -504,10 +516,18 @@ func (g *Gateway) matchRoute(r *http.Request) *Route {
 			}
 		}
 
-		return route
+		// Select the most specific match, falling back to priority order
+		if bestRoute == nil || route.Priority > bestRoute.Priority || (route.Priority == bestRoute.Priority && score > bestPathScore) {
+			bestRoute = route
+			bestPathScore = score
+		}
 	}
 
-	return nil
+	if bestRoute != nil {
+		g.storeRouteInCache(cacheKey, bestRoute)
+	}
+
+	return bestRoute
 }
 
 // matchPath checks if a request path matches a route path pattern
@@ -530,6 +550,119 @@ func matchPath(pattern, path string) bool {
 
 	// Check if path starts with pattern
 	return strings.HasPrefix(path, pattern+"/") || path == pattern
+}
+
+func normalizeHost(host string) string {
+	if idx := strings.Index(host, ":"); idx != -1 {
+		return host[:idx]
+	}
+	return host
+}
+
+// pathMatchScore returns the highest specificity score for the provided patterns
+// or -1 if none of the patterns match the incoming path.
+func pathMatchScore(patterns []string, requestPath string) int {
+	best := -1
+	for _, p := range patterns {
+		if matchPath(p, requestPath) {
+			score := pathSpecificity(p)
+			if score > best {
+				best = score
+			}
+		}
+	}
+	return best
+}
+
+// pathSpecificity approximates how "specific" a route path is so more detailed
+// definitions (like /api/users) win over generic ones (like /).
+func pathSpecificity(pattern string) int {
+	clean := strings.TrimSuffix(pattern, "*")
+	if clean == "" {
+		clean = pattern
+	}
+	score := len(clean)
+	if !strings.HasSuffix(pattern, "*") {
+		// Reward exact/prefix matches without wildcards so they outrank catch-alls.
+		score += 10
+	}
+	return score
+}
+
+func (g *Gateway) buildRouteCacheKey(r *http.Request) string {
+	method := strings.ToUpper(r.Method)
+	host := normalizeHost(r.Host)
+	path := r.URL.Path
+	return method + "|" + host + "|" + path
+}
+
+func (g *Gateway) getRouteFromCache(key string) *Route {
+	if g.routeCacheTTL <= 0 || g.routeCacheLimit <= 0 {
+		return nil
+	}
+
+	g.routeCacheMu.RLock()
+	entry, ok := g.routeCache[key]
+	g.routeCacheMu.RUnlock()
+	if !ok || entry == nil {
+		return nil
+	}
+	if entry.route == nil || time.Now().After(entry.expiresAt) || !entry.route.Enabled {
+		g.removeRouteCacheKey(key)
+		return nil
+	}
+	return entry.route
+}
+
+func (g *Gateway) storeRouteInCache(key string, route *Route) {
+	if route == nil || g.routeCacheTTL <= 0 || g.routeCacheLimit <= 0 {
+		return
+	}
+
+	g.routeCacheMu.Lock()
+	defer g.routeCacheMu.Unlock()
+	g.routeCache[key] = &cachedRoute{
+		route:     route,
+		expiresAt: time.Now().Add(g.routeCacheTTL),
+	}
+	g.routeCacheOrder = append(g.routeCacheOrder, key)
+	g.pruneRouteCacheLocked()
+}
+
+func (g *Gateway) removeRouteCacheKey(key string) {
+	g.routeCacheMu.Lock()
+	defer g.routeCacheMu.Unlock()
+	g.removeRouteCacheKeyLocked(key)
+}
+
+func (g *Gateway) removeRouteCacheKeyLocked(key string) {
+	delete(g.routeCache, key)
+	for i, cachedKey := range g.routeCacheOrder {
+		if cachedKey == key {
+			g.routeCacheOrder = append(g.routeCacheOrder[:i], g.routeCacheOrder[i+1:]...)
+			break
+		}
+	}
+}
+
+func (g *Gateway) pruneRouteCacheLocked() {
+	if g.routeCacheLimit <= 0 {
+		g.routeCache = make(map[string]*cachedRoute)
+		g.routeCacheOrder = nil
+		return
+	}
+	for len(g.routeCacheOrder) > g.routeCacheLimit {
+		oldest := g.routeCacheOrder[0]
+		g.routeCacheOrder = g.routeCacheOrder[1:]
+		delete(g.routeCache, oldest)
+	}
+}
+
+func (g *Gateway) clearRouteCache() {
+	g.routeCacheMu.Lock()
+	defer g.routeCacheMu.Unlock()
+	g.routeCache = make(map[string]*cachedRoute)
+	g.routeCacheOrder = g.routeCacheOrder[:0]
 }
 
 // matchWildcard matches a host pattern with wildcards

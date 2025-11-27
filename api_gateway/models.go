@@ -28,13 +28,13 @@ type Route struct {
 	ID                string            `json:"id"`
 	Name              string            `json:"name"`
 	ServiceID         string            `json:"service_id"`
-	Paths             []string          `json:"paths"`              // URL paths to match
-	Methods           []string          `json:"methods,omitempty"`  // HTTP methods to match (empty = all)
-	Hosts             []string          `json:"hosts,omitempty"`    // Host headers to match (empty = all)
-	Headers           map[string]string `json:"headers,omitempty"`  // Required headers to match
-	StripPath         bool              `json:"strip_path"`         // Strip the matched path before forwarding
-	PreserveHost      bool              `json:"preserve_host"`      // Forward original Host header
-	Priority          int               `json:"priority"`           // Higher priority routes are matched first
+	Paths             []string          `json:"paths"`             // URL paths to match
+	Methods           []string          `json:"methods,omitempty"` // HTTP methods to match (empty = all)
+	Hosts             []string          `json:"hosts,omitempty"`   // Host headers to match (empty = all)
+	Headers           map[string]string `json:"headers,omitempty"` // Required headers to match
+	StripPath         bool              `json:"strip_path"`        // Strip the matched path before forwarding
+	PreserveHost      bool              `json:"preserve_host"`     // Forward original Host header
+	Priority          int               `json:"priority"`          // Higher priority routes are matched first
 	RateLimitEnabled  bool              `json:"rate_limit_enabled"`
 	RateLimitRequests int               `json:"rate_limit_requests"` // requests per window
 	RateLimitWindow   int               `json:"rate_limit_window"`   // window in seconds
@@ -54,38 +54,38 @@ type HealthCheck struct {
 
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
-	HTTPPort           int                   `json:"http_port"`
-	HTTPSPort          int                   `json:"https_port"`
-	HTTPSEnabled       bool                  `json:"https_enabled"`
-	TLSCertFile        string                `json:"tls_cert_file,omitempty"`
-	TLSKeyFile         string                `json:"tls_key_file,omitempty"`
-	LetsEncrypt        *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
-	Services           []Service             `json:"services"`
-	Routes             []Route               `json:"routes"`
-	GlobalRateLimit    *RateLimitConfig      `json:"global_rate_limit,omitempty"`
-	LogLevel           string                `json:"log_level"`
-	AccessLogEnabled   bool                  `json:"access_log_enabled"`
-	Observability      *ObservabilityConfig  `json:"observability,omitempty"`
-	Enabled            bool                  `json:"enabled"`
+	HTTPPort         int                  `json:"http_port"`
+	HTTPSPort        int                  `json:"https_port"`
+	HTTPSEnabled     bool                 `json:"https_enabled"`
+	TLSCertFile      string               `json:"tls_cert_file,omitempty"`
+	TLSKeyFile       string               `json:"tls_key_file,omitempty"`
+	LetsEncrypt      *LetsEncryptConfig   `json:"lets_encrypt,omitempty"`
+	Services         []Service            `json:"services"`
+	Routes           []Route              `json:"routes"`
+	GlobalRateLimit  *RateLimitConfig     `json:"global_rate_limit,omitempty"`
+	LogLevel         string               `json:"log_level"`
+	AccessLogEnabled bool                 `json:"access_log_enabled"`
+	Observability    *ObservabilityConfig `json:"observability,omitempty"`
+	Enabled          bool                 `json:"enabled"`
 }
 
 // ObservabilityConfig represents configuration for sending telemetry data
 type ObservabilityConfig struct {
-	Enabled          bool   `json:"enabled"`
-	GrafanaEnabled   bool   `json:"grafana_enabled"`
-	GrafanaEndpoint  string `json:"grafana_endpoint,omitempty"`
-	GrafanaAPIKey    string `json:"grafana_api_key,omitempty"`
-	OTLPEnabled      bool   `json:"otlp_enabled"`
-	OTLPEndpoint     string `json:"otlp_endpoint,omitempty"`
-	OTLPHeaders      map[string]string `json:"otlp_headers,omitempty"`
-	ClickHouseEnabled  bool   `json:"clickhouse_enabled"`
-	ClickHouseEndpoint string `json:"clickhouse_endpoint,omitempty"`
-	ClickHouseDatabase string `json:"clickhouse_database,omitempty"`
-	ClickHouseTable    string `json:"clickhouse_table,omitempty"`
-	ClickHouseUsername string `json:"clickhouse_username,omitempty"`
-	ClickHousePassword string `json:"clickhouse_password,omitempty"`
-	BatchSize          int    `json:"batch_size"`
-	FlushInterval      int    `json:"flush_interval"` // in seconds
+	Enabled            bool              `json:"enabled"`
+	GrafanaEnabled     bool              `json:"grafana_enabled"`
+	GrafanaEndpoint    string            `json:"grafana_endpoint,omitempty"`
+	GrafanaAPIKey      string            `json:"grafana_api_key,omitempty"`
+	OTLPEnabled        bool              `json:"otlp_enabled"`
+	OTLPEndpoint       string            `json:"otlp_endpoint,omitempty"`
+	OTLPHeaders        map[string]string `json:"otlp_headers,omitempty"`
+	ClickHouseEnabled  bool              `json:"clickhouse_enabled"`
+	ClickHouseEndpoint string            `json:"clickhouse_endpoint,omitempty"`
+	ClickHouseDatabase string            `json:"clickhouse_database,omitempty"`
+	ClickHouseTable    string            `json:"clickhouse_table,omitempty"`
+	ClickHouseUsername string            `json:"clickhouse_username,omitempty"`
+	ClickHousePassword string            `json:"clickhouse_password,omitempty"`
+	BatchSize          int               `json:"batch_size"`
+	FlushInterval      int               `json:"flush_interval"` // in seconds
 }
 
 // LetsEncryptConfig represents Let's Encrypt certificate configuration
@@ -110,13 +110,13 @@ type RateLimitConfig struct {
 
 // ServiceHealth represents the health status of a service
 type ServiceHealth struct {
-	ServiceID     string    `json:"service_id"`
-	Healthy       bool      `json:"healthy"`
-	LastCheck     time.Time `json:"last_check"`
-	SuccessCount  int       `json:"success_count"`
-	FailureCount  int       `json:"failure_count"`
-	ResponseTime  int64     `json:"response_time_ms"`
-	LastError     string    `json:"last_error,omitempty"`
+	ServiceID    string    `json:"service_id"`
+	Healthy      bool      `json:"healthy"`
+	LastCheck    time.Time `json:"last_check"`
+	SuccessCount int       `json:"success_count"`
+	FailureCount int       `json:"failure_count"`
+	ResponseTime int64     `json:"response_time_ms"`
+	LastError    string    `json:"last_error,omitempty"`
 }
 
 // RequestLog represents an access log entry
@@ -138,13 +138,13 @@ type RequestLog struct {
 
 // GatewayStats represents gateway statistics
 type GatewayStats struct {
-	TotalRequests   int64            `json:"total_requests"`
-	TotalErrors     int64            `json:"total_errors"`
-	Uptime          int64            `json:"uptime_seconds"`
-	RequestsPerSec  float64          `json:"requests_per_second"`
-	AverageLatency  float64          `json:"average_latency_ms"`
-	ServiceStats    []ServiceStats   `json:"service_stats"`
-	RateLimitStats  RateLimitStats   `json:"rate_limit_stats"`
+	TotalRequests  int64          `json:"total_requests"`
+	TotalErrors    int64          `json:"total_errors"`
+	Uptime         int64          `json:"uptime_seconds"`
+	RequestsPerSec float64        `json:"requests_per_second"`
+	AverageLatency float64        `json:"average_latency_ms"`
+	ServiceStats   []ServiceStats `json:"service_stats"`
+	RateLimitStats RateLimitStats `json:"rate_limit_stats"`
 }
 
 // ServiceStats represents per-service statistics
@@ -194,17 +194,22 @@ type Gateway struct {
 	workDir         string
 	httpClient      *http.Client
 	tlsConfig       *tls.Config
+	routeCache      map[string]*cachedRoute
+	routeCacheOrder []string
+	routeCacheLimit int
+	routeCacheTTL   time.Duration
+	routeCacheMu    sync.RWMutex
 }
 
 // gatewayStatsTracker tracks gateway statistics
 type gatewayStatsTracker struct {
-	mu             sync.RWMutex
-	startTime      time.Time
-	totalRequests  int64
-	totalErrors    int64
-	totalLatency   int64
-	serviceStats   map[string]*serviceStatsTracker
-	rateLimited    int64
+	mu            sync.RWMutex
+	startTime     time.Time
+	totalRequests int64
+	totalErrors   int64
+	totalLatency  int64
+	serviceStats  map[string]*serviceStatsTracker
+	rateLimited   int64
 }
 
 // serviceStatsTracker tracks per-service statistics
