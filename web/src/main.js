@@ -43,12 +43,13 @@ import { useDarkModeStore } from './stores/darkMode'
 
 const darkModeStore = useDarkModeStore(pinia)
 
-if (
-  (!localStorage['darkMode'] && window.matchMedia('(prefers-color-scheme: dark)').matches) ||
-  localStorage['darkMode'] === '1'
-) {
-  darkModeStore.set(true)
-}
+// if (
+//   (!localStorage['darkMode'] && window.matchMedia('(prefers-color-scheme: dark)').matches) ||
+//   localStorage['darkMode'] === '1'
+// ) {
+//   darkModeStore.set(true)
+// }
+darkModeStore.set(true)
 
 // Default title tag
 const defaultDocumentTitle = 'Redock'
