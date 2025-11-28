@@ -256,12 +256,93 @@ func UpdateServiceSettings(c *fiber.Ctx) error {
 func GetAllVHosts(c *fiber.Ctx) error {
 
 	manager := docker_manager.GetDockerManager()
-	list := manager.Virtualhost.VirtualHosts()
+	list, starred := manager.Virtualhost.VirtualHostsWithStarred()
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error":   false,
+		"msg":     nil,
+		"data":    list,
+		"starred": starred,
+	})
+}
+
+// StarVHost adds a virtual host to the starred list
+// @Description Star a virtual host to show it at the top of the list
+// @Summary Star a virtual host
+// @Tags VirtualHost
+// @Accept json
+// @Produce json
+// @Param path body string true "Path to virtual host configuration file"
+// @Success 200 {object} fiber.Map
+// @Router /v1/docker/star_vhost [post]
+func StarVHost(c *fiber.Ctx) error {
+	type Parameter struct {
+		Path string `json:"path"`
+	}
+
+	model := &Parameter{}
+	if err := c.BodyParser(model); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	manager := docker_manager.GetDockerManager()
+	err := manager.Virtualhost.StarVHost(model.Path)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"data":  list,
+		"data": fiber.Map{
+			"starred": true,
+		},
+	})
+}
+
+// UnstarVHost removes a virtual host from the starred list
+// @Description Unstar a virtual host
+// @Summary Unstar a virtual host
+// @Tags VirtualHost
+// @Accept json
+// @Produce json
+// @Param path body string true "Path to virtual host configuration file"
+// @Success 200 {object} fiber.Map
+// @Router /v1/docker/unstar_vhost [post]
+func UnstarVHost(c *fiber.Ctx) error {
+	type Parameter struct {
+		Path string `json:"path"`
+	}
+
+	model := &Parameter{}
+	if err := c.BodyParser(model); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	manager := docker_manager.GetDockerManager()
+	err := manager.Virtualhost.UnstarVHost(model.Path)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"starred": false,
+		},
 	})
 }
 

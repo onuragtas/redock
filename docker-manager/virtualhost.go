@@ -1,6 +1,7 @@
 package docker_manager
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -254,6 +255,105 @@ func (t *VirtualHost) VirtualHosts() []string {
 
 	return files
 
+}
+
+// VirtualHostsWithStarred returns virtual hosts sorted with starred ones first
+func (t *VirtualHost) VirtualHostsWithStarred() ([]string, []string) {
+	files := t.VirtualHosts()
+	starred := t.GetStarredVHosts()
+
+	// Create a map for quick lookup
+	starredMap := make(map[string]bool)
+	for _, s := range starred {
+		starredMap[s] = true
+	}
+
+	// Separate starred and unstarred
+	var starredFiles, unstarredFiles []string
+	for _, file := range files {
+		if starredMap[file] {
+			starredFiles = append(starredFiles, file)
+		} else {
+			unstarredFiles = append(unstarredFiles, file)
+		}
+	}
+
+	// Return starred first, then unstarred
+	result := append(starredFiles, unstarredFiles...)
+	return result, starred
+}
+
+// GetStarredVHosts returns the list of starred virtual hosts
+func (t *VirtualHost) GetStarredVHosts() []string {
+	starredPath := t.manager.GetWorkDir() + "/data/starred_vhosts.json"
+	file, err := ioutil.ReadFile(starredPath)
+	if err != nil {
+		return []string{}
+	}
+
+	var starred []string
+	if err := json.Unmarshal(file, &starred); err != nil {
+		return []string{}
+	}
+	return starred
+}
+
+// StarVHost adds a virtual host to the starred list
+func (t *VirtualHost) StarVHost(path string) error {
+	starred := t.GetStarredVHosts()
+
+	// Check if already starred
+	for _, s := range starred {
+		if s == path {
+			return nil // Already starred
+		}
+	}
+
+	starred = append(starred, path)
+	return t.saveStarredVHosts(starred)
+}
+
+// UnstarVHost removes a virtual host from the starred list
+func (t *VirtualHost) UnstarVHost(path string) error {
+	starred := t.GetStarredVHosts()
+
+	var newStarred []string
+	for _, s := range starred {
+		if s != path {
+			newStarred = append(newStarred, s)
+		}
+	}
+
+	return t.saveStarredVHosts(newStarred)
+}
+
+// IsStarred checks if a virtual host is starred
+func (t *VirtualHost) IsStarred(path string) bool {
+	starred := t.GetStarredVHosts()
+	for _, s := range starred {
+		if s == path {
+			return true
+		}
+	}
+	return false
+}
+
+// saveStarredVHosts saves the starred virtual hosts list to file
+func (t *VirtualHost) saveStarredVHosts(starred []string) error {
+	starredPath := t.manager.GetWorkDir() + "/data/starred_vhosts.json"
+
+	// Ensure the data directory exists
+	dataDir := t.manager.GetWorkDir() + "/data"
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return err
+	}
+
+	data, err := json.MarshalIndent(starred, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return ioutil.WriteFile(starredPath, data, 0644)
 }
 
 func NewVirtualHost(manager *DockerEnvironmentManager) *VirtualHost {
