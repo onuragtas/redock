@@ -159,6 +159,14 @@ class ApiService {
     return await this.get('/api/v1/docker/vhosts');
   }
 
+  static async starVHost(path) {
+    return await this.post('/api/v1/docker/star_vhost', { path: path });
+  }
+
+  static async unstarVHost(path) {
+    return await this.post('/api/v1/docker/unstar_vhost', { path: path });
+  }
+
   static async getVHostContent(path) {
     return await this.post('/api/v1/docker/get_vhost', { path: path });
   }

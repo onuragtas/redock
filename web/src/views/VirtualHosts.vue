@@ -27,6 +27,8 @@ import {
     mdiPlus,
     mdiRefresh,
     mdiServer,
+    mdiStar,
+    mdiStarOutline,
     mdiToggleSwitch,
     mdiToggleSwitchOff,
     mdiViewGridOutline,
@@ -37,6 +39,7 @@ import { computed, onMounted, ref } from "vue";
 
 // Reactive state
 const virtualHosts = ref([])
+const starredVHosts = ref([])
 const phpServices = ref([])
 const loading = ref(false)
 const isAddModalActive = ref(false)
@@ -46,6 +49,7 @@ const modalPath = ref('')
 const virtualhostContent = ref('')
 const envModes = ref({}) // Track env mode for each vhost path
 const togglingEnv = ref({}) // Track which vhosts are currently toggling
+const togglingStarred = ref({}) // Track which vhosts are currently toggling star
 
 // Form data
 const createVirtualHost = ref({
@@ -66,8 +70,9 @@ const vhostStats = computed(() => {
   const total = virtualHosts.value.length
   const nginx = virtualHosts.value.filter(vhost => vhost[0]?.includes('nginx')).length
   const apache = total - nginx
+  const starred = starredVHosts.value.length
   
-  return { total, nginx, apache }
+  return { total, nginx, apache, starred }
 })
 
 const {
@@ -107,6 +112,7 @@ const getAllVHosts = async () => {
   try {
     const response = await ApiService.getAllVHosts()
     virtualHosts.value = response.data.data.map(path => [path])
+    starredVHosts.value = response.data.starred || []
   } catch (error) {
     console.error('Failed to load virtual hosts:', error)
     // Mock data for demo
@@ -115,8 +121,34 @@ const getAllVHosts = async () => {
       ['/etc/nginx/sites-available/api.example.com'],
       ['/etc/apache2/sites-available/blog.example.com.conf']
     ]
+    starredVHosts.value = []
   } finally {
     loading.value = false
+  }
+}
+
+// Check if a vhost is starred
+const isStarred = (path) => {
+  return starredVHosts.value.includes(path)
+}
+
+// Toggle star status for a vhost
+const toggleStar = async (path) => {
+  togglingStarred.value[path] = true
+  try {
+    if (isStarred(path)) {
+      await ApiService.unstarVHost(path)
+      starredVHosts.value = starredVHosts.value.filter(p => p !== path)
+    } else {
+      await ApiService.starVHost(path)
+      starredVHosts.value = [...starredVHosts.value, path]
+    }
+    // Reload the list to get the sorted order from backend
+    await getAllVHosts()
+  } catch (error) {
+    console.error('Failed to toggle star for', path, error)
+  } finally {
+    togglingStarred.value[path] = false
   }
 }
 
@@ -332,7 +364,7 @@ onMounted(async () => {
       </div>
 
       <!-- Statistics -->
-      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div class="grid grid-cols-1 md:grid-cols-4 gap-6">
         <CardBox class="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border-green-200 dark:border-green-700">
           <div class="flex items-center justify-between">
             <div>
@@ -340,6 +372,16 @@ onMounted(async () => {
               <div class="text-sm text-green-600/70 dark:text-green-400/70">Total VHosts</div>
             </div>
             <BaseIcon :path="mdiWeb" size="48" class="text-green-500 opacity-20" />
+          </div>
+        </CardBox>
+
+        <CardBox class="bg-gradient-to-br from-yellow-50 to-yellow-100 dark:from-yellow-900/20 dark:to-yellow-800/20 border-yellow-200 dark:border-yellow-700">
+          <div class="flex items-center justify-between">
+            <div>
+              <div class="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{{ vhostStats.starred }}</div>
+              <div class="text-sm text-yellow-600/70 dark:text-yellow-400/70">Starred</div>
+            </div>
+            <BaseIcon :path="mdiStar" size="48" class="text-yellow-500 opacity-20" />
           </div>
         </CardBox>
 
@@ -434,6 +476,13 @@ onMounted(async () => {
                 <h3 class="font-semibold text-lg flex items-center">
                   <BaseIcon :path="mdiDomain" size="20" class="mr-2 text-blue-500" />
                   {{ extractDomain(vhost[0]) }}
+                  <BaseIcon 
+                    v-if="isStarred(vhost[0])"
+                    :path="mdiStar" 
+                    size="16" 
+                    class="ml-2 text-yellow-500" 
+                    title="Favorited"
+                  />
                 </h3>
                 <div class="flex flex-col gap-2 text-sm text-slate-500 dark:text-slate-400">
                   <div class="flex items-center">
@@ -461,6 +510,16 @@ onMounted(async () => {
             </div>
             
             <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
+              <!-- Star Button -->
+              <BaseButton 
+                :icon="isStarred(vhost[0]) ? mdiStar : mdiStarOutline"
+                :color="isStarred(vhost[0]) ? 'warning' : 'lightDark'"
+                small
+                :disabled="togglingStarred[vhost[0]]"
+                :title="isStarred(vhost[0]) ? 'Remove from favorites' : 'Add to favorites'"
+                @click="toggleStar(vhost[0])"
+              />
+              
               <!-- Dev/Prod Toggle Button -->
               <BaseButton 
                 v-if="hasEnvConfig(vhost[0])"
