@@ -16,6 +16,7 @@ import {
     mdiChevronLeft, mdiChevronRight,
     mdiClose,
     mdiCog,
+    mdiConsole,
     mdiDelete,
     mdiDomain,
     mdiEthernet,
@@ -322,6 +323,39 @@ const extractDomain = (path) => {
   return filename.replace('.conf', '').replace('sites-available/', '')
 }
 
+// Open terminal with PHP_IDE_CONFIG export command
+const openTerminal = async (vhostPath) => {
+  try {
+    const response = await ApiService.getVHostTerminalInfo(vhostPath)
+    if (response.data && response.data.data) {
+      const { container, domain } = response.data.data
+      
+      if (container && domain) {
+        // Create terminal with the container and send PHP_IDE_CONFIG command
+        window.dispatchEvent(new CustomEvent('create-terminal', {
+          detail: { 
+            containerId: container, 
+            name: `Terminal ${domain}`,
+            initialCommand: `export PHP_IDE_CONFIG="serverName=${domain}"\n`
+          }
+        }))
+      } else if (container) {
+        // Container found but no domain
+        window.dispatchEvent(new CustomEvent('create-terminal', {
+          detail: { 
+            containerId: container, 
+            name: `Terminal ${container}`
+          }
+        }))
+      } else {
+        console.error('No container found in virtualhost configuration')
+      }
+    }
+  } catch (error) {
+    console.error('Failed to get virtualhost terminal info:', error)
+  }
+}
+
 // Lifecycle
 onMounted(async () => {
   await getAllVHosts()
@@ -530,6 +564,15 @@ onMounted(async () => {
                 :disabled="togglingEnv[vhost[0]]"
                 :title="envModes[vhost[0]]?.mode === 'dev' ? 'Switch to Production Mode' : 'Switch to Development Mode'"
                 @click="toggleEnvMode(vhost[0])"
+              />
+              
+              <!-- Terminal Button -->
+              <BaseButton 
+                :icon="mdiConsole" 
+                color="success"
+                small
+                title="Open Terminal"
+                @click="openTerminal(vhost[0])"
               />
               
               <BaseButton 

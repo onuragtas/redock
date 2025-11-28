@@ -688,6 +688,111 @@ func toggleEnvMode(content string) (string, string) {
 	return strings.Join(newLines, "\n"), targetMode
 }
 
+// GetVHostTerminalInfo parses virtualhost file and extracts container and domain information.
+// @Description Parse virtualhost file and extract container and domain for terminal
+// @Summary Get virtual host terminal info
+// @Tags VirtualHost
+// @Accept json
+// @Produce json
+// @Param path body string true "Path to virtual host configuration file"
+// @Success 200 {object} fiber.Map
+// @Router /v1/docker/vhost_terminal_info [post]
+func GetVHostTerminalInfo(c *fiber.Ctx) error {
+	type Parameter struct {
+		Path string `json:"path"`
+	}
+
+	model := &Parameter{}
+	if err := c.BodyParser(model); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	content, err := os.ReadFile(model.Path)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	container, domain := parseVHostForTerminal(string(content))
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"container": container,
+			"domain":    domain,
+		},
+	})
+}
+
+// parseVHostForTerminal extracts container name and domain from virtualhost content.
+// For nginx: looks for fastcgi_pass and server_name
+// For apache/httpd: looks for ProxyPassMatch fcgi:// and ServerName
+func parseVHostForTerminal(content string) (container string, domain string) {
+	lines := strings.Split(content, "\n")
+
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+
+		// Skip comments
+		if strings.HasPrefix(trimmed, "#") {
+			continue
+		}
+
+		// Extract domain from server_name (nginx) or ServerName (httpd)
+		if domain == "" {
+			if strings.HasPrefix(trimmed, "server_name") {
+				// nginx: server_name example.com;
+				parts := strings.Fields(trimmed)
+				if len(parts) >= 2 {
+					domain = strings.TrimSuffix(parts[1], ";")
+				}
+			} else if strings.HasPrefix(trimmed, "ServerName") {
+				// httpd: ServerName example.com
+				parts := strings.Fields(trimmed)
+				if len(parts) >= 2 {
+					domain = parts[1]
+				}
+			}
+		}
+
+		// Extract container from fastcgi_pass (nginx) or ProxyPassMatch fcgi:// (httpd)
+		if container == "" {
+			if strings.Contains(trimmed, "fastcgi_pass") {
+				// nginx: fastcgi_pass php82:9000;
+				parts := strings.Fields(trimmed)
+				for _, part := range parts {
+					if strings.Contains(part, ":9000") {
+						container = strings.TrimSuffix(strings.Split(part, ":")[0], ";")
+						break
+					}
+				}
+			} else if strings.Contains(trimmed, "fcgi://") {
+				// httpd: ProxyPassMatch ^/(.*\.php(/.*)?)$ fcgi://php82:9000/var/www/html/folder/$1
+				idx := strings.Index(trimmed, "fcgi://")
+				if idx >= 0 {
+					rest := trimmed[idx+7:] // after "fcgi://"
+					if colonIdx := strings.Index(rest, ":"); colonIdx >= 0 {
+						container = rest[:colonIdx]
+					}
+				}
+			}
+		}
+
+		// If we found both, we can stop
+		if container != "" && domain != "" {
+			break
+		}
+	}
+
+	return container, domain
+}
+
 // DeleteVHost method to create a new user.
 // @Description Create a new user.
 // @Summary create a new user
