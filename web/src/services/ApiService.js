@@ -187,6 +187,10 @@ class ApiService {
     return await this.post('/api/v1/docker/toggle_vhost_env', { path: path });
   }
 
+  static async getVHostTerminalInfo(path) {
+    return await this.post('/api/v1/docker/vhost_terminal_info', { path: path });
+  }
+
   static async getPhpServices() {
     return await this.get('/api/v1/docker/php_services');
   }
