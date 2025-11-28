@@ -283,10 +283,19 @@ func (t *VirtualHost) VirtualHostsWithStarred() ([]string, []string) {
 	return result, starred
 }
 
+// getStarredVHostsPath returns the path to the starred vhosts file
+func (t *VirtualHost) getStarredVHostsPath() string {
+	return t.manager.GetWorkDir() + "/data/starred_vhosts.json"
+}
+
+// getDataDir returns the path to the data directory
+func (t *VirtualHost) getDataDir() string {
+	return t.manager.GetWorkDir() + "/data"
+}
+
 // GetStarredVHosts returns the list of starred virtual hosts
 func (t *VirtualHost) GetStarredVHosts() []string {
-	starredPath := t.manager.GetWorkDir() + "/data/starred_vhosts.json"
-	file, err := ioutil.ReadFile(starredPath)
+	file, err := os.ReadFile(t.getStarredVHostsPath())
 	if err != nil {
 		return []string{}
 	}
@@ -340,11 +349,8 @@ func (t *VirtualHost) IsStarred(path string) bool {
 
 // saveStarredVHosts saves the starred virtual hosts list to file
 func (t *VirtualHost) saveStarredVHosts(starred []string) error {
-	starredPath := t.manager.GetWorkDir() + "/data/starred_vhosts.json"
-
 	// Ensure the data directory exists
-	dataDir := t.manager.GetWorkDir() + "/data"
-	if err := os.MkdirAll(dataDir, 0755); err != nil {
+	if err := os.MkdirAll(t.getDataDir(), 0755); err != nil {
 		return err
 	}
 
@@ -353,7 +359,7 @@ func (t *VirtualHost) saveStarredVHosts(starred []string) error {
 		return err
 	}
 
-	return ioutil.WriteFile(starredPath, data, 0644)
+	return os.WriteFile(t.getStarredVHostsPath(), data, 0644)
 }
 
 func NewVirtualHost(manager *DockerEnvironmentManager) *VirtualHost {
