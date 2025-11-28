@@ -218,6 +218,7 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
               socket.send('docker exec -it ' + tab.containerId + ' bash\n');
               
               // Send initial command if provided (e.g., PHP_IDE_CONFIG export)
+              // Delay needed to allow container shell to initialize before sending command
               if (tab.initialCommand) {
                 setTimeout(() => {
                   if (socket.readyState === WebSocket.OPEN) {

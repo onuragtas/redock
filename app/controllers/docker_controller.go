@@ -734,6 +734,7 @@ func GetVHostTerminalInfo(c *fiber.Ctx) error {
 // For nginx: looks for fastcgi_pass and server_name
 // For apache/httpd: looks for ProxyPassMatch fcgi:// and ServerName
 func parseVHostForTerminal(content string) (container string, domain string) {
+	const fcgiPrefix = "fcgi://"
 	lines := strings.Split(content, "\n")
 
 	for _, line := range lines {
@@ -764,19 +765,19 @@ func parseVHostForTerminal(content string) (container string, domain string) {
 		// Extract container from fastcgi_pass (nginx) or ProxyPassMatch fcgi:// (httpd)
 		if container == "" {
 			if strings.Contains(trimmed, "fastcgi_pass") {
-				// nginx: fastcgi_pass php82:9000;
+				// nginx: fastcgi_pass php82:9000; (extracts container name before colon)
 				parts := strings.Fields(trimmed)
 				for _, part := range parts {
-					if strings.Contains(part, ":9000") {
-						container = strings.TrimSuffix(strings.Split(part, ":")[0], ";")
+					if colonIdx := strings.Index(part, ":"); colonIdx > 0 {
+						container = strings.TrimSuffix(part[:colonIdx], ";")
 						break
 					}
 				}
-			} else if strings.Contains(trimmed, "fcgi://") {
+			} else if strings.Contains(trimmed, fcgiPrefix) {
 				// httpd: ProxyPassMatch ^/(.*\.php(/.*)?)$ fcgi://php82:9000/var/www/html/folder/$1
-				idx := strings.Index(trimmed, "fcgi://")
+				idx := strings.Index(trimmed, fcgiPrefix)
 				if idx >= 0 {
-					rest := trimmed[idx+7:] // after "fcgi://"
+					rest := trimmed[idx+len(fcgiPrefix):]
 					if colonIdx := strings.Index(rest, ":"); colonIdx >= 0 {
 						container = rest[:colonIdx]
 					}
