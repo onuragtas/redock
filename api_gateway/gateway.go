@@ -348,13 +348,13 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		g.recordError()
 		http.Error(lw, "Invalid request body", http.StatusBadRequest)
-		g.logRequest(r, http.StatusBadRequest, startTime, "", "", "failed to read request body", reqInfo, lw.LogInfo())
+		g.logRequest(r, http.StatusBadRequest, startTime, "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
 		return
 	}
 
 	// Handle ACME challenges for Let's Encrypt
 	if HandleACMEChallenge(lw, r) {
-		g.logRequest(r, lw.StatusCode(), startTime, "", "", "", reqInfo, lw.LogInfo())
+		g.logRequest(r, lw.StatusCode(), startTime, "", "", "", "", true, "", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -371,7 +371,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordRateLimited()
 			status := http.StatusTooManyRequests
 			http.Error(lw, "Rate limit exceeded", status)
-			g.logRequest(r, status, startTime, "", "", "rate limit exceeded", reqInfo, lw.LogInfo())
+			g.logRequest(r, status, startTime, "", "", "", "", true, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -382,9 +382,12 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		g.recordError()
 		status := http.StatusNotFound
 		http.Error(lw, "Not Found", status)
-		g.logRequest(r, status, startTime, "", "", "no matching route", reqInfo, lw.LogInfo())
+		g.logRequest(r, status, startTime, "", "", "", "", true, "no matching route", reqInfo, lw.LogInfo())
 		return
 	}
+
+	routeName := route.Name
+	routeObservability := g.isRouteObservabilityEnabled(route)
 
 	// Check route-level rate limit
 	if route.RateLimitEnabled && route.RateLimitRequests > 0 {
@@ -399,7 +402,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordRateLimited()
 			status := http.StatusTooManyRequests
 			http.Error(lw, "Rate limit exceeded", status)
-			g.logRequest(r, status, startTime, route.ID, "", "rate limit exceeded", reqInfo, lw.LogInfo())
+			g.logRequest(r, status, startTime, route.ID, routeName, "", "", routeObservability, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -410,7 +413,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordError()
 			status := http.StatusUnauthorized
 			http.Error(lw, "Unauthorized", status)
-			g.logRequest(r, status, startTime, route.ID, "", "authentication failed", reqInfo, lw.LogInfo())
+			g.logRequest(r, status, startTime, route.ID, routeName, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -420,11 +423,16 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	service := g.services[route.ServiceID]
 	g.mu.RUnlock()
 
+	serviceName := ""
+	if service != nil {
+		serviceName = service.Name
+	}
+
 	if service == nil || !service.Enabled {
 		g.recordError()
 		status := http.StatusServiceUnavailable
 		http.Error(lw, "Service Unavailable", status)
-		g.logRequest(r, status, startTime, route.ID, route.ServiceID, "service not available", reqInfo, lw.LogInfo())
+		g.logRequest(r, status, startTime, route.ID, routeName, route.ServiceID, serviceName, routeObservability, "service not available", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -437,7 +445,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		g.recordError()
 		status := http.StatusServiceUnavailable
 		http.Error(lw, "Service Unavailable", status)
-		g.logRequest(r, status, startTime, route.ID, service.ID, "service unhealthy", reqInfo, lw.LogInfo())
+		g.logRequest(r, status, startTime, route.ID, routeName, service.ID, serviceName, routeObservability, "service unhealthy", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -454,9 +462,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	statusCode := lw.StatusCode()
 	if err != nil {
 		g.recordServiceError(service.ID)
-		g.logRequest(r, statusCode, startTime, route.ID, service.ID, err.Error(), reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, route.ID, routeName, service.ID, serviceName, routeObservability, err.Error(), reqInfo, lw.LogInfo())
 	} else {
-		g.logRequest(r, statusCode, startTime, route.ID, service.ID, "", reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, route.ID, routeName, service.ID, serviceName, routeObservability, "", reqInfo, lw.LogInfo())
 	}
 
 	// Record latency
@@ -959,7 +967,7 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 }
 
 // logRequest logs an access log entry
-func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, serviceID, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
+func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, routeName, serviceID, serviceName string, allowTelemetry bool, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
 	logEntry := RequestLog{
 		Timestamp:             startTime,
 		Method:                r.Method,
@@ -967,7 +975,9 @@ func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Tim
 		Host:                  r.Host,
 		RemoteAddr:            getClientIP(r),
 		RouteID:               routeID,
+		RouteName:             routeName,
 		ServiceID:             serviceID,
+		ServiceName:           serviceName,
 		StatusCode:            statusCode,
 		Duration:              time.Since(startTime).Milliseconds(),
 		BytesSent:             respInfo.size,
@@ -987,9 +997,16 @@ func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Tim
 	}
 
 	// Send to telemetry exporter if configured
-	if g.config.Observability != nil && g.config.Observability.Enabled {
+	if allowTelemetry && g.config.Observability != nil && g.config.Observability.Enabled {
 		GetTelemetryExporter().Record(logEntry)
 	}
+}
+
+func (g *Gateway) isRouteObservabilityEnabled(route *Route) bool {
+	if route == nil || route.ObservabilityEnabled == nil {
+		return true
+	}
+	return *route.ObservabilityEnabled
 }
 
 // getClientIP extracts the client IP from the request

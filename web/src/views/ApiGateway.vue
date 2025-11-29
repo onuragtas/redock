@@ -98,6 +98,7 @@ const newRoute = ref({
   rate_limit_window: 60,
   auth_required: false,
   auth_type: '',
+  observability_enabled: true,
   enabled: true
 })
 
@@ -358,6 +359,7 @@ const openAddRouteModal = () => {
     rate_limit_window: 60,
     auth_required: false,
     auth_type: '',
+    observability_enabled: true,
     enabled: true
   }
   isAddRouteModalActive.value = true
@@ -391,6 +393,7 @@ const openEditRouteModal = (route) => {
     paths: Array.isArray(route.paths) ? route.paths.join(', ') : route.paths || '',
     methods: Array.isArray(route.methods) ? route.methods.join(', ') : route.methods || '',
     hosts: Array.isArray(route.hosts) ? route.hosts.join(', ') : route.hosts || '',
+    observability_enabled: route.observability_enabled !== false,
     service_id: serviceMatch
       ? { value: serviceMatch.id, label: serviceMatch.name }
       : serviceId
@@ -1146,6 +1149,9 @@ onUnmounted(() => {
             <FormCheckRadio v-model="newRoute.rate_limit_enabled" label="Enable Rate Limiting" name="rate_limit" />
           </FormField>
         </div>
+        <FormField>
+          <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
+        </FormField>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
           <FormField label="Requests">
             <FormControl v-model="newRoute.rate_limit_requests" type="number" placeholder="100" />
@@ -1289,6 +1295,9 @@ onUnmounted(() => {
             <FormCheckRadio v-model="editingRoute.enabled" label="Enabled" name="edit_route_enabled" />
           </FormField>
         </div>
+        <FormField>
+          <FormCheckRadio v-model="editingRoute.observability_enabled" label="Send Observability Logs" name="edit_route_observability" />
+        </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
             <FormCheckRadio v-model="editingRoute.rate_limit_enabled" label="Enable Rate Limiting" name="edit_rate_limit" />

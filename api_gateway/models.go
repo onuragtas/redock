@@ -25,22 +25,23 @@ type Service struct {
 
 // Route represents a routing rule that maps incoming requests to services
 type Route struct {
-	ID                string            `json:"id"`
-	Name              string            `json:"name"`
-	ServiceID         string            `json:"service_id"`
-	Paths             []string          `json:"paths"`             // URL paths to match
-	Methods           []string          `json:"methods,omitempty"` // HTTP methods to match (empty = all)
-	Hosts             []string          `json:"hosts,omitempty"`   // Host headers to match (empty = all)
-	Headers           map[string]string `json:"headers,omitempty"` // Required headers to match
-	StripPath         bool              `json:"strip_path"`        // Strip the matched path before forwarding
-	PreserveHost      bool              `json:"preserve_host"`     // Forward original Host header
-	Priority          int               `json:"priority"`          // Higher priority routes are matched first
-	RateLimitEnabled  bool              `json:"rate_limit_enabled"`
-	RateLimitRequests int               `json:"rate_limit_requests"` // requests per window
-	RateLimitWindow   int               `json:"rate_limit_window"`   // window in seconds
-	AuthRequired      bool              `json:"auth_required"`
-	AuthType          string            `json:"auth_type,omitempty"` // basic, jwt, api-key
-	Enabled           bool              `json:"enabled"`
+	ID                   string            `json:"id"`
+	Name                 string            `json:"name"`
+	ServiceID            string            `json:"service_id"`
+	Paths                []string          `json:"paths"`             // URL paths to match
+	Methods              []string          `json:"methods,omitempty"` // HTTP methods to match (empty = all)
+	Hosts                []string          `json:"hosts,omitempty"`   // Host headers to match (empty = all)
+	Headers              map[string]string `json:"headers,omitempty"` // Required headers to match
+	StripPath            bool              `json:"strip_path"`        // Strip the matched path before forwarding
+	PreserveHost         bool              `json:"preserve_host"`     // Forward original Host header
+	Priority             int               `json:"priority"`          // Higher priority routes are matched first
+	RateLimitEnabled     bool              `json:"rate_limit_enabled"`
+	RateLimitRequests    int               `json:"rate_limit_requests"` // requests per window
+	RateLimitWindow      int               `json:"rate_limit_window"`   // window in seconds
+	AuthRequired         bool              `json:"auth_required"`
+	AuthType             string            `json:"auth_type,omitempty"` // basic, jwt, api-key
+	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
+	Enabled              bool              `json:"enabled"`
 }
 
 // HealthCheck represents health check configuration for a service
@@ -155,7 +156,9 @@ type RequestLog struct {
 	Host                  string    `json:"host"`
 	RemoteAddr            string    `json:"remote_addr"`
 	RouteID               string    `json:"route_id"`
+	RouteName             string    `json:"route_name,omitempty"`
 	ServiceID             string    `json:"service_id"`
+	ServiceName           string    `json:"service_name,omitempty"`
 	StatusCode            int       `json:"status_code"`
 	Duration              int64     `json:"duration_ms"`
 	BytesSent             int64     `json:"bytes_sent"`
