@@ -894,12 +894,16 @@ onUnmounted(() => {
           </h3>
           <div v-if="certificateInfo.cert_subject" class="space-y-3">
             <div class="flex justify-between">
-              <span class="text-slate-500">Subject</span>
-              <span class="font-medium">{{ certificateInfo.cert_subject }}</span>
+              <span class="text-slate-500">Common Name</span>
+              <span class="font-medium text-right break-all">{{ certificateInfo.cert_subject }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-slate-500">Issuer</span>
-              <span class="font-medium">{{ certificateInfo.cert_issuer }}</span>
+              <span class="font-medium text-right break-all">{{ certificateInfo.cert_issuer }}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500">Valid From</span>
+              <span class="font-medium">{{ certificateInfo.cert_not_before }}</span>
             </div>
             <div class="flex justify-between">
               <span class="text-slate-500">Valid Until</span>
@@ -910,6 +914,35 @@ onUnmounted(() => {
               <span :class="certificateInfo.cert_valid ? 'text-green-500' : 'text-red-500'">
                 {{ certificateInfo.cert_valid ? 'Valid' : 'Invalid/Expired' }}
               </span>
+            </div>
+            <div v-if="certificateInfo.cert_dns_names?.length" class="space-y-1">
+              <span class="text-slate-500">Subject Alternative Names</span>
+              <div class="flex flex-wrap gap-2 justify-end">
+                <span
+                  v-for="domain in certificateInfo.cert_dns_names"
+                  :key="domain"
+                  class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono"
+                >
+                  {{ domain }}
+                </span>
+              </div>
+            </div>
+            <div
+              v-if="certificateInfo.cert_file || certificateInfo.key_file"
+              class="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-1 text-xs"
+            >
+              <div class="flex justify-between">
+                <span class="text-slate-500">Cert File</span>
+                <span class="font-mono text-right break-all text-slate-700 dark:text-slate-200">
+                  {{ certificateInfo.cert_file || 'N/A' }}
+                </span>
+              </div>
+              <div class="flex justify-between">
+                <span class="text-slate-500">Key File</span>
+                <span class="font-mono text-right break-all text-slate-700 dark:text-slate-200">
+                  {{ certificateInfo.key_file || 'N/A' }}
+                </span>
+              </div>
             </div>
           </div>
           <div v-else class="text-center py-8 text-slate-500">
