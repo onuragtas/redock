@@ -1,6 +1,8 @@
 package api_gateway
 
 import (
+	"bufio"
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/json"
@@ -28,6 +30,7 @@ var (
 const (
 	defaultRouteCacheLimit = 2048
 	defaultRouteCacheTTL   = 30 * time.Second
+	maxLoggedBodyBytes     = 4096
 )
 
 type cachedRoute struct {
@@ -340,8 +343,18 @@ func (g *Gateway) IsRunning() bool {
 func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
+	lw := newLoggingResponseWriter(w, maxLoggedBodyBytes)
+	reqInfo, err := captureRequestBody(r, maxLoggedBodyBytes)
+	if err != nil {
+		g.recordError()
+		http.Error(lw, "Invalid request body", http.StatusBadRequest)
+		g.logRequest(r, http.StatusBadRequest, startTime, "", "", "failed to read request body", reqInfo, lw.LogInfo())
+		return
+	}
+
 	// Handle ACME challenges for Let's Encrypt
-	if HandleACMEChallenge(w, r) {
+	if HandleACMEChallenge(lw, r) {
+		g.logRequest(r, lw.StatusCode(), startTime, "", "", "", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -356,8 +369,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if !g.checkRateLimit(g.globalLimiter, clientIP) {
 			g.recordError()
 			g.recordRateLimited()
-			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			g.logRequest(r, http.StatusTooManyRequests, startTime, "", "", "rate limit exceeded")
+			status := http.StatusTooManyRequests
+			http.Error(lw, "Rate limit exceeded", status)
+			g.logRequest(r, status, startTime, "", "", "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -366,8 +380,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	route := g.matchRoute(r)
 	if route == nil {
 		g.recordError()
-		http.Error(w, "Not Found", http.StatusNotFound)
-		g.logRequest(r, http.StatusNotFound, startTime, "", "", "no matching route")
+		status := http.StatusNotFound
+		http.Error(lw, "Not Found", status)
+		g.logRequest(r, status, startTime, "", "", "no matching route", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -382,8 +397,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if !g.checkRateLimit(routeLimiter, clientIP) {
 			g.recordError()
 			g.recordRateLimited()
-			http.Error(w, "Rate limit exceeded", http.StatusTooManyRequests)
-			g.logRequest(r, http.StatusTooManyRequests, startTime, route.ID, "", "rate limit exceeded")
+			status := http.StatusTooManyRequests
+			http.Error(lw, "Rate limit exceeded", status)
+			g.logRequest(r, status, startTime, route.ID, "", "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -392,8 +408,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if route.AuthRequired {
 		if !g.checkAuth(r, route) {
 			g.recordError()
-			http.Error(w, "Unauthorized", http.StatusUnauthorized)
-			g.logRequest(r, http.StatusUnauthorized, startTime, route.ID, "", "authentication failed")
+			status := http.StatusUnauthorized
+			http.Error(lw, "Unauthorized", status)
+			g.logRequest(r, status, startTime, route.ID, "", "authentication failed", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -405,8 +422,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if service == nil || !service.Enabled {
 		g.recordError()
-		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-		g.logRequest(r, http.StatusServiceUnavailable, startTime, route.ID, route.ServiceID, "service not available")
+		status := http.StatusServiceUnavailable
+		http.Error(lw, "Service Unavailable", status)
+		g.logRequest(r, status, startTime, route.ID, route.ServiceID, "service not available", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -417,8 +435,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	if health != nil && !health.Healthy {
 		g.recordError()
-		http.Error(w, "Service Unavailable", http.StatusServiceUnavailable)
-		g.logRequest(r, http.StatusServiceUnavailable, startTime, route.ID, service.ID, "service unhealthy")
+		status := http.StatusServiceUnavailable
+		http.Error(lw, "Service Unavailable", status)
+		g.logRequest(r, status, startTime, route.ID, service.ID, "service unhealthy", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -431,12 +450,13 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	g.stats.mu.Unlock()
 
 	// Proxy the request
-	statusCode, err := g.proxyRequest(w, r, route, service)
+	err = g.proxyRequest(lw, r, route, service)
+	statusCode := lw.StatusCode()
 	if err != nil {
 		g.recordServiceError(service.ID)
-		g.logRequest(r, statusCode, startTime, route.ID, service.ID, err.Error())
+		g.logRequest(r, statusCode, startTime, route.ID, service.ID, err.Error(), reqInfo, lw.LogInfo())
 	} else {
-		g.logRequest(r, statusCode, startTime, route.ID, service.ID, "")
+		g.logRequest(r, statusCode, startTime, route.ID, service.ID, "", reqInfo, lw.LogInfo())
 	}
 
 	// Record latency
@@ -678,7 +698,7 @@ func matchWildcard(pattern, value string) bool {
 }
 
 // proxyRequest forwards the request to the upstream service
-func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service) (int, error) {
+func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service) error {
 	// Build target URL
 	protocol := service.Protocol
 	if protocol == "" {
@@ -689,7 +709,7 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	target, err := url.Parse(targetURL)
 	if err != nil {
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
-		return http.StatusBadGateway, err
+		return err
 	}
 
 	// Create reverse proxy
@@ -762,20 +782,14 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		req.Header.Set("X-Forwarded-Host", r.Host)
 	}
 
-	// Capture status code
-	statusCode := http.StatusOK
-	proxy.ModifyResponse = func(resp *http.Response) error {
-		statusCode = resp.StatusCode
-		return nil
-	}
-
+	var proxyErr error
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
-		statusCode = http.StatusBadGateway
+		proxyErr = fmt.Errorf("proxy error: %w", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	}
 
 	proxy.ServeHTTP(w, r)
-	return statusCode, nil
+	return proxyErr
 }
 
 // checkRateLimit checks if a client has exceeded the rate limit
@@ -945,19 +959,25 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 }
 
 // logRequest logs an access log entry
-func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, serviceID, errMsg string) {
+func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, serviceID, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
 	logEntry := RequestLog{
-		Timestamp:  startTime,
-		Method:     r.Method,
-		Path:       r.URL.Path,
-		Host:       r.Host,
-		RemoteAddr: getClientIP(r),
-		RouteID:    routeID,
-		ServiceID:  serviceID,
-		StatusCode: statusCode,
-		Duration:   time.Since(startTime).Milliseconds(),
-		UserAgent:  r.UserAgent(),
-		Error:      errMsg,
+		Timestamp:             startTime,
+		Method:                r.Method,
+		Path:                  r.URL.Path,
+		Host:                  r.Host,
+		RemoteAddr:            getClientIP(r),
+		RouteID:               routeID,
+		ServiceID:             serviceID,
+		StatusCode:            statusCode,
+		Duration:              time.Since(startTime).Milliseconds(),
+		BytesSent:             respInfo.size,
+		BytesReceived:         reqInfo.size,
+		RequestBody:           reqInfo.body,
+		ResponseBody:          respInfo.body,
+		RequestBodyTruncated:  reqInfo.truncated,
+		ResponseBodyTruncated: respInfo.truncated,
+		UserAgent:             r.UserAgent(),
+		Error:                 errMsg,
 	}
 
 	// Log to console if enabled
@@ -1286,4 +1306,121 @@ func (g *Gateway) TestUpstream(host string, port int, path string) (int, int64, 
 func (g *Gateway) GetAccessLogs(limit int) []RequestLog {
 	// In a real implementation, this would read from a log file or database
 	return []RequestLog{}
+}
+
+type bodyLogInfo struct {
+	body      string
+	truncated bool
+	size      int64
+}
+
+func captureRequestBody(r *http.Request, limit int) (bodyLogInfo, error) {
+	if r.Body == nil || r.Body == http.NoBody {
+		return bodyLogInfo{}, nil
+	}
+	bodyBytes, err := io.ReadAll(r.Body)
+	if err != nil {
+		return bodyLogInfo{}, err
+	}
+	_ = r.Body.Close()
+	r.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+	r.ContentLength = int64(len(bodyBytes))
+	if r.GetBody != nil {
+		copyBytes := append([]byte(nil), bodyBytes...)
+		r.GetBody = func() (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(copyBytes)), nil
+		}
+	}
+	return bodyLogInfoFromBytes(bodyBytes, limit), nil
+}
+
+func bodyLogInfoFromBytes(data []byte, limit int) bodyLogInfo {
+	if len(data) == 0 {
+		return bodyLogInfo{}
+	}
+	truncated := limit > 0 && len(data) > limit
+	snippet := data
+	if truncated {
+		snippet = data[:limit]
+	}
+	return bodyLogInfo{
+		body:      string(snippet),
+		truncated: truncated,
+		size:      int64(len(data)),
+	}
+}
+
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	body         bytes.Buffer
+	limit        int
+	statusCode   int
+	bytesWritten int64
+}
+
+func newLoggingResponseWriter(w http.ResponseWriter, limit int) *loggingResponseWriter {
+	return &loggingResponseWriter{ResponseWriter: w, limit: limit}
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
+func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
+	if lrw.statusCode == 0 {
+		lrw.statusCode = http.StatusOK
+	}
+	if lrw.limit <= 0 {
+		lrw.body.Write(b)
+	} else {
+		remaining := lrw.limit - lrw.body.Len()
+		if remaining > 0 {
+			copyLen := remaining
+			if copyLen > len(b) {
+				copyLen = len(b)
+			}
+			if copyLen > 0 {
+				lrw.body.Write(b[:copyLen])
+			}
+		}
+	}
+	lrw.bytesWritten += int64(len(b))
+	return lrw.ResponseWriter.Write(b)
+}
+
+func (lrw *loggingResponseWriter) StatusCode() int {
+	if lrw.statusCode == 0 {
+		return http.StatusOK
+	}
+	return lrw.statusCode
+}
+
+func (lrw *loggingResponseWriter) LogInfo() bodyLogInfo {
+	truncated := lrw.limit > 0 && lrw.body.Len() >= lrw.limit && lrw.bytesWritten > int64(lrw.limit)
+	return bodyLogInfo{
+		body:      lrw.body.String(),
+		truncated: truncated,
+		size:      lrw.bytesWritten,
+	}
+}
+
+func (lrw *loggingResponseWriter) Flush() {
+	if flusher, ok := lrw.ResponseWriter.(http.Flusher); ok {
+		flusher.Flush()
+	}
+}
+
+func (lrw *loggingResponseWriter) Hijack() (net.Conn, *bufio.ReadWriter, error) {
+	if hijacker, ok := lrw.ResponseWriter.(http.Hijacker); ok {
+		return hijacker.Hijack()
+	}
+	return nil, nil, fmt.Errorf("http.Hijacker not supported")
+}
+
+func (lrw *loggingResponseWriter) Push(target string, opts *http.PushOptions) error {
+	if pusher, ok := lrw.ResponseWriter.(http.Pusher); ok {
+		return pusher.Push(target, opts)
+	}
+	return http.ErrNotSupported
 }

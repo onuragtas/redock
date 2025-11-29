@@ -121,19 +121,23 @@ type ServiceHealth struct {
 
 // RequestLog represents an access log entry
 type RequestLog struct {
-	Timestamp     time.Time `json:"timestamp"`
-	Method        string    `json:"method"`
-	Path          string    `json:"path"`
-	Host          string    `json:"host"`
-	RemoteAddr    string    `json:"remote_addr"`
-	RouteID       string    `json:"route_id"`
-	ServiceID     string    `json:"service_id"`
-	StatusCode    int       `json:"status_code"`
-	Duration      int64     `json:"duration_ms"`
-	BytesSent     int64     `json:"bytes_sent"`
-	BytesReceived int64     `json:"bytes_received"`
-	UserAgent     string    `json:"user_agent"`
-	Error         string    `json:"error,omitempty"`
+	Timestamp             time.Time `json:"timestamp"`
+	Method                string    `json:"method"`
+	Path                  string    `json:"path"`
+	Host                  string    `json:"host"`
+	RemoteAddr            string    `json:"remote_addr"`
+	RouteID               string    `json:"route_id"`
+	ServiceID             string    `json:"service_id"`
+	StatusCode            int       `json:"status_code"`
+	Duration              int64     `json:"duration_ms"`
+	BytesSent             int64     `json:"bytes_sent"`
+	BytesReceived         int64     `json:"bytes_received"`
+	RequestBody           string    `json:"request_body,omitempty"`
+	ResponseBody          string    `json:"response_body,omitempty"`
+	RequestBodyTruncated  bool      `json:"request_body_truncated,omitempty"`
+	ResponseBodyTruncated bool      `json:"response_body_truncated,omitempty"`
+	UserAgent             string    `json:"user_agent"`
+	Error                 string    `json:"error,omitempty"`
 }
 
 // GatewayStats represents gateway statistics
