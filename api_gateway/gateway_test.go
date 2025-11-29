@@ -23,9 +23,9 @@ func TestMatchPath(t *testing.T) {
 		{"/api/*", "/api/users/123", true},
 		{"/api", "/other", false},
 		{"/api/users", "/api/products", false},
-		{"/grafana", "/grafana", true},
-		{"/grafana", "/grafana/dashboard", true},
-		{"/grafana/", "/grafana/api/v1", true},
+		{"/observability", "/observability", true},
+		{"/observability", "/observability/dashboard", true},
+		{"/observability/", "/observability/api/v1", true},
 	}
 
 	for _, test := range tests {
@@ -138,10 +138,10 @@ func TestGatewayMatchRoute(t *testing.T) {
 			},
 			{
 				ID:        "route2",
-				Name:      "Grafana Route",
+				Name:      "Observability Route",
 				ServiceID: "svc2",
-				Paths:     []string{"/grafana"},
-				Hosts:     []string{"monitoring.example.com"},
+				Paths:     []string{"/observability"},
+				Hosts:     []string{"metrics.example.com"},
 				Enabled:   true,
 				Priority:  50,
 			},
@@ -185,16 +185,16 @@ func TestGatewayMatchRoute(t *testing.T) {
 			expectedID: "",
 		},
 		{
-			name:       "Match Grafana route with host",
+			name:       "Match observability route with host",
 			method:     "GET",
-			path:       "/grafana/dashboard",
-			host:       "monitoring.example.com",
+			path:       "/observability/dashboard",
+			host:       "metrics.example.com",
 			expectedID: "route2",
 		},
 		{
-			name:       "No match for Grafana route with wrong host",
+			name:       "No match for observability route with wrong host",
 			method:     "GET",
-			path:       "/grafana/dashboard",
+			path:       "/observability/dashboard",
 			host:       "other.example.com",
 			expectedID: "",
 		},
@@ -391,12 +391,12 @@ func TestGatewayAddDeleteRoute(t *testing.T) {
 func TestGatewayStats(t *testing.T) {
 	g := &Gateway{
 		stats: &gatewayStatsTracker{
-			startTime:      time.Now().Add(-time.Hour), // Started 1 hour ago
-			totalRequests:  1000,
-			totalErrors:    50,
-			totalLatency:   5000, // 5000ms total
-			serviceStats:   make(map[string]*serviceStatsTracker),
-			rateLimited:    10,
+			startTime:     time.Now().Add(-time.Hour), // Started 1 hour ago
+			totalRequests: 1000,
+			totalErrors:   50,
+			totalLatency:  5000, // 5000ms total
+			serviceStats:  make(map[string]*serviceStatsTracker),
+			rateLimited:   10,
 		},
 	}
 

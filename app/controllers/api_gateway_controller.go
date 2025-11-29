@@ -852,8 +852,8 @@ func APIGatewayGetRenewerStatus(c *fiber.Ctx) error {
 		"error": false,
 		"msg":   nil,
 		"data": fiber.Map{
-			"running":           renewer.IsRunning(),
-			"auto_renew":        config.LetsEncrypt != nil && config.LetsEncrypt.AutoRenew,
+			"running":    renewer.IsRunning(),
+			"auto_renew": config.LetsEncrypt != nil && config.LetsEncrypt.AutoRenew,
 			"renew_before_days": func() int {
 				if config.LetsEncrypt != nil {
 					return config.LetsEncrypt.RenewBeforeDays
@@ -947,7 +947,7 @@ func APIGatewayGetObservabilityStatus(c *fiber.Ctx) error {
 }
 
 // APIGatewayConfigureObservability configures the observability/telemetry settings
-// @Description Configure observability/telemetry settings for sending data to Grafana, OpenTelemetry, or ClickHouse
+// @Description Configure observability/telemetry settings for sending data to Loki, InfluxDB, Graylog, OpenTelemetry, or ClickHouse
 // @Summary configure observability
 // @Tags API Gateway
 // @Accept json

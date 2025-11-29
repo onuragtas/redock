@@ -6,18 +6,20 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"sync"
 	"time"
 )
 
 // TelemetryExporter handles exporting request/response data to external systems
 type TelemetryExporter struct {
-	config      *ObservabilityConfig
-	buffer      []RequestLog
-	mu          sync.Mutex
-	stopChan    chan struct{}
-	running     bool
-	httpClient  *http.Client
+	config     *ObservabilityConfig
+	buffer     []RequestLog
+	mu         sync.Mutex
+	stopChan   chan struct{}
+	running    bool
+	httpClient *http.Client
 }
 
 var (
@@ -107,7 +109,7 @@ func (e *TelemetryExporter) Record(logEntry RequestLog) {
 		copy(data, e.buffer)
 		e.buffer = e.buffer[:0]
 		config := e.config
-		
+
 		// Release lock before sending to avoid blocking
 		e.mu.Unlock()
 		e.sendToEndpoints(data, config)
@@ -117,8 +119,20 @@ func (e *TelemetryExporter) Record(logEntry RequestLog) {
 
 // sendToEndpoints sends data to all configured endpoints
 func (e *TelemetryExporter) sendToEndpoints(data []RequestLog, config *ObservabilityConfig) {
-	if config.GrafanaEnabled && config.GrafanaEndpoint != "" {
-		go e.sendToGrafana(data, config)
+	if config == nil {
+		return
+	}
+
+	if lokiCfg := e.resolveLokiConfig(config); lokiCfg != nil {
+		go e.sendToLoki(lokiCfg, data)
+	}
+
+	if influxCfg := e.resolveInfluxConfig(config); influxCfg != nil {
+		go e.sendToInfluxDB(influxCfg, data)
+	}
+
+	if graylogCfg := e.resolveGraylogConfig(config); graylogCfg != nil {
+		go e.sendToGraylog(graylogCfg, data)
 	}
 
 	if config.OTLPEnabled && config.OTLPEndpoint != "" {
@@ -128,6 +142,36 @@ func (e *TelemetryExporter) sendToEndpoints(data []RequestLog, config *Observabi
 	if config.ClickHouseEnabled && config.ClickHouseEndpoint != "" {
 		go e.sendToClickHouse(data, config)
 	}
+}
+
+func (e *TelemetryExporter) resolveLokiConfig(config *ObservabilityConfig) *LokiDatasourceConfig {
+	if config == nil {
+		return nil
+	}
+	if config.LokiEnabled && config.Loki != nil && config.Loki.URL != "" {
+		return config.Loki
+	}
+	return nil
+}
+
+func (e *TelemetryExporter) resolveInfluxConfig(config *ObservabilityConfig) *InfluxDBDatasourceConfig {
+	if config == nil {
+		return nil
+	}
+	if config.InfluxEnabled && config.InfluxDB != nil && config.InfluxDB.URL != "" {
+		return config.InfluxDB
+	}
+	return nil
+}
+
+func (e *TelemetryExporter) resolveGraylogConfig(config *ObservabilityConfig) *GraylogConfig {
+	if config == nil {
+		return nil
+	}
+	if config.GraylogEnabled && config.Graylog != nil && config.Graylog.Endpoint != "" {
+		return config.Graylog
+	}
+	return nil
 }
 
 // flushLoop periodically flushes the buffer
@@ -170,26 +214,36 @@ func (e *TelemetryExporter) flush() {
 	e.sendToEndpoints(data, config)
 }
 
-// sendToGrafana sends data to Grafana Loki/Prometheus
-func (e *TelemetryExporter) sendToGrafana(data []RequestLog, config *ObservabilityConfig) {
+// sendToLoki sends data to a Loki datasource
+func (e *TelemetryExporter) sendToLoki(lokiCfg *LokiDatasourceConfig, data []RequestLog) {
+	endpoint := strings.TrimSpace(lokiCfg.URL)
+	if endpoint == "" {
+		log.Printf("API Gateway Telemetry: Loki endpoint missing")
+		return
+	}
+
 	// Convert to Loki format
 	streams := make([]map[string]interface{}, 0)
-	
+
 	for _, entry := range data {
 		values := [][]interface{}{
 			{
 				fmt.Sprintf("%d", entry.Timestamp.UnixNano()),
-				fmt.Sprintf("method=%s path=%s status=%d duration=%dms service=%s", 
+				fmt.Sprintf("method=%s path=%s status=%d duration=%dms service=%s",
 					entry.Method, entry.Path, entry.StatusCode, entry.Duration, entry.ServiceID),
 			},
 		}
 
+		labels := map[string]string{
+			"job":        "api_gateway",
+			"service_id": entry.ServiceID,
+			"route_id":   entry.RouteID,
+		}
+		for k, v := range lokiCfg.Labels {
+			labels[k] = v
+		}
 		stream := map[string]interface{}{
-			"stream": map[string]string{
-				"job":        "api_gateway",
-				"service_id": entry.ServiceID,
-				"route_id":   entry.RouteID,
-			},
+			"stream": labels,
 			"values": values,
 		}
 		streams = append(streams, stream)
@@ -201,31 +255,185 @@ func (e *TelemetryExporter) sendToGrafana(data []RequestLog, config *Observabili
 
 	jsonData, err := json.Marshal(payload)
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to marshal Grafana data: %v", err)
+		log.Printf("API Gateway Telemetry: Failed to marshal Loki data: %v", err)
 		return
 	}
 
-	req, err := http.NewRequest("POST", config.GrafanaEndpoint+"/loki/api/v1/push", bytes.NewBuffer(jsonData))
+	req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to create Grafana request: %v", err)
+		log.Printf("API Gateway Telemetry: Failed to create Loki request: %v", err)
 		return
 	}
 
 	req.Header.Set("Content-Type", "application/json")
-	if config.GrafanaAPIKey != "" {
-		req.Header.Set("Authorization", "Bearer "+config.GrafanaAPIKey)
+	if lokiCfg.APIKey != "" {
+		req.Header.Set("Authorization", "Bearer "+lokiCfg.APIKey)
+	}
+	if lokiCfg.TenantID != "" {
+		req.Header.Set("X-Scope-OrgID", lokiCfg.TenantID)
 	}
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to send to Grafana: %v", err)
+		log.Printf("API Gateway Telemetry: Failed to send to Loki: %v", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
-		log.Printf("API Gateway Telemetry: Grafana returned status %d", resp.StatusCode)
+		log.Printf("API Gateway Telemetry: Loki returned status %d", resp.StatusCode)
 	}
+}
+
+func (e *TelemetryExporter) sendToInfluxDB(influxCfg *InfluxDBDatasourceConfig, data []RequestLog) {
+	if influxCfg.URL == "" || influxCfg.Org == "" || influxCfg.Bucket == "" || influxCfg.Token == "" {
+		log.Printf("API Gateway Telemetry: InfluxDB config missing url/org/bucket/token")
+		return
+	}
+
+	var builder strings.Builder
+	for _, entry := range data {
+		builder.WriteString("api_gateway")
+		builder.WriteString(",route_id=")
+		builder.WriteString(escapeInfluxTag(entry.RouteID))
+		builder.WriteString(",service_id=")
+		builder.WriteString(escapeInfluxTag(entry.ServiceID))
+
+		builder.WriteString(" status_code=")
+		builder.WriteString(fmt.Sprintf("%di", entry.StatusCode))
+		builder.WriteString(",duration_ms=")
+		builder.WriteString(fmt.Sprintf("%di", entry.Duration))
+		builder.WriteString(",bytes_sent=")
+		builder.WriteString(fmt.Sprintf("%di", entry.BytesSent))
+		builder.WriteString(",bytes_received=")
+		builder.WriteString(fmt.Sprintf("%di", entry.BytesReceived))
+		builder.WriteString(",success=")
+		if entry.StatusCode < 400 {
+			builder.WriteString("true")
+		} else {
+			builder.WriteString("false")
+		}
+		if entry.Error != "" {
+			builder.WriteString(",error_message=")
+			builder.WriteString(escapeInfluxStringField(entry.Error))
+		}
+		builder.WriteString(",method=")
+		builder.WriteString(escapeInfluxStringField(entry.Method))
+		builder.WriteString(",path=")
+		builder.WriteString(escapeInfluxStringField(entry.Path))
+		builder.WriteString(" ")
+		builder.WriteString(fmt.Sprintf("%d", entry.Timestamp.UnixNano()))
+		builder.WriteString("\n")
+	}
+
+	query := fmt.Sprintf("%s/api/v2/write?org=%s&bucket=%s&precision=ns",
+		strings.TrimRight(influxCfg.URL, "/"), url.QueryEscape(influxCfg.Org), url.QueryEscape(influxCfg.Bucket))
+	req, err := http.NewRequest("POST", query, strings.NewReader(builder.String()))
+	if err != nil {
+		log.Printf("API Gateway Telemetry: Failed to create InfluxDB request: %v", err)
+		return
+	}
+	req.Header.Set("Authorization", "Token "+influxCfg.Token)
+	req.Header.Set("Content-Type", "text/plain; charset=utf-8")
+
+	resp, err := e.httpClient.Do(req)
+	if err != nil {
+		log.Printf("API Gateway Telemetry: Failed to send to InfluxDB: %v", err)
+		return
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		log.Printf("API Gateway Telemetry: InfluxDB returned status %d", resp.StatusCode)
+	}
+}
+
+func (e *TelemetryExporter) sendToGraylog(graylogCfg *GraylogConfig, data []RequestLog) {
+	endpoint := strings.TrimSpace(graylogCfg.Endpoint)
+	if endpoint == "" {
+		log.Printf("API Gateway Telemetry: Graylog endpoint missing")
+		return
+	}
+
+	headerName := strings.TrimSpace(graylogCfg.APIKeyHeader)
+	if headerName == "" {
+		headerName = "Authorization"
+	}
+
+	for _, entry := range data {
+		payload := map[string]interface{}{
+			"version":       "1.1",
+			"host":          entry.Host,
+			"short_message": fmt.Sprintf("%s %s -> %d", entry.Method, entry.Path, entry.StatusCode),
+			"timestamp":     float64(entry.Timestamp.UnixNano()) / float64(time.Second),
+			"level":         graylogLevelForStatus(entry.StatusCode),
+			"_route_id":     entry.RouteID,
+			"_service_id":   entry.ServiceID,
+			"_duration_ms":  entry.Duration,
+			"_bytes_sent":   entry.BytesSent,
+			"_bytes_recv":   entry.BytesReceived,
+			"_client_ip":    entry.RemoteAddr,
+			"_user_agent":   entry.UserAgent,
+		}
+		if entry.Error != "" {
+			payload["_error"] = entry.Error
+		}
+		if graylogCfg.StreamID != "" {
+			payload["_stream_id"] = graylogCfg.StreamID
+		}
+		for key, value := range graylogCfg.ExtraFields {
+			if key == "" {
+				continue
+			}
+			payload["_"+key] = value
+		}
+
+		jsonData, err := json.Marshal(payload)
+		if err != nil {
+			log.Printf("API Gateway Telemetry: Failed to marshal Graylog data: %v", err)
+			continue
+		}
+
+		req, err := http.NewRequest("POST", endpoint, bytes.NewBuffer(jsonData))
+		if err != nil {
+			log.Printf("API Gateway Telemetry: Failed to create Graylog request: %v", err)
+			continue
+		}
+		req.Header.Set("Content-Type", "application/json")
+		if graylogCfg.APIKey != "" {
+			req.Header.Set(headerName, graylogCfg.APIKey)
+		}
+
+		resp, err := e.httpClient.Do(req)
+		if err != nil {
+			log.Printf("API Gateway Telemetry: Failed to send to Graylog: %v", err)
+			continue
+		}
+		resp.Body.Close()
+		if resp.StatusCode >= 400 {
+			log.Printf("API Gateway Telemetry: Graylog returned status %d", resp.StatusCode)
+		}
+	}
+}
+
+func graylogLevelForStatus(status int) int {
+	switch {
+	case status >= 500:
+		return 3 // Error
+	case status >= 400:
+		return 4 // Warning
+	default:
+		return 6 // Informational
+	}
+}
+
+func escapeInfluxTag(value string) string {
+	escaped := strings.NewReplacer(",", "\\,", " ", "\\ ", "=", "\\=").Replace(value)
+	return escaped
+}
+
+func escapeInfluxStringField(value string) string {
+	escaped := strings.ReplaceAll(value, "\"", "\\\"")
+	return fmt.Sprintf("\"%s\"", escaped)
 }
 
 // sendToOTLP sends data to OpenTelemetry collector
@@ -381,13 +589,15 @@ func (e *TelemetryExporter) GetStatus() map[string]interface{} {
 	defer e.mu.Unlock()
 
 	status := map[string]interface{}{
-		"running":      e.running,
-		"buffer_size":  len(e.buffer),
+		"running":     e.running,
+		"buffer_size": len(e.buffer),
 	}
 
 	if e.config != nil {
 		status["enabled"] = e.config.Enabled
-		status["grafana_enabled"] = e.config.GrafanaEnabled
+		status["loki_enabled"] = e.config.LokiEnabled
+		status["influx_enabled"] = e.config.InfluxEnabled
+		status["graylog_enabled"] = e.config.GraylogEnabled
 		status["otlp_enabled"] = e.config.OTLPEnabled
 		status["clickhouse_enabled"] = e.config.ClickHouseEnabled
 	}

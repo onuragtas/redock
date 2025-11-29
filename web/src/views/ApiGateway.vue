@@ -10,24 +10,26 @@ import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.
 
 import ApiService from "@/services/ApiService";
 import {
-    mdiCertificate,
-    mdiChartLine,
-    mdiCog,
-    mdiDelete,
-    mdiHeart,
-    mdiHeartPulse,
-    mdiLock,
-    mdiPencil,
-    mdiPlay,
-    mdiPlus,
-    mdiRefresh,
-    mdiRouter,
-    mdiServer,
-    mdiShield,
-    mdiSpeedometer,
-    mdiStop,
-    mdiSync,
-    mdiWeb
+  mdiCertificate,
+  mdiChartLine,
+  mdiCog,
+  mdiDatabase,
+  mdiDelete,
+  mdiMessageText,
+  mdiHeart,
+  mdiHeartPulse,
+  mdiLock,
+  mdiPencil,
+  mdiPlay,
+  mdiPlus,
+  mdiRefresh,
+  mdiRouter,
+  mdiServer,
+  mdiShield,
+  mdiSpeedometer,
+  mdiStop,
+  mdiSync,
+  mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
 
@@ -108,13 +110,38 @@ const letsEncryptConfig = ref({
   renew_before_days: 30
 })
 
-const observabilityConfig = ref({
+const createDefaultLokiConfig = () => ({
+  url: '',
+  tenant_id: '',
+  api_key: '',
+  labels: {}
+})
+
+const createDefaultInfluxConfig = () => ({
+  url: '',
+  org: '',
+  bucket: '',
+  token: ''
+})
+
+const createDefaultGraylogConfig = () => ({
+  endpoint: '',
+  api_key: '',
+  api_key_header: 'Authorization',
+  stream_id: ''
+})
+
+const createDefaultObservabilityConfig = () => ({
   enabled: false,
-  grafana_enabled: false,
-  grafana_endpoint: '',
-  grafana_api_key: '',
+  loki_enabled: false,
+  loki: createDefaultLokiConfig(),
+  influx_enabled: false,
+  influx: createDefaultInfluxConfig(),
+  graylog_enabled: false,
+  graylog: createDefaultGraylogConfig(),
   otlp_enabled: false,
   otlp_endpoint: '',
+  otlp_headers: {},
   clickhouse_enabled: false,
   clickhouse_endpoint: '',
   clickhouse_database: 'default',
@@ -124,6 +151,43 @@ const observabilityConfig = ref({
   batch_size: 100,
   flush_interval: 30
 })
+
+const normalizeObservabilityConfig = (cfg = {}) => {
+  const base = createDefaultObservabilityConfig()
+  return {
+    ...base,
+    enabled: cfg.enabled ?? base.enabled,
+    loki_enabled: cfg.loki_enabled ?? base.loki_enabled,
+    loki: {
+      ...base.loki,
+      ...(cfg.loki || cfg.loki_datasource || {}),
+      labels: { ...(((cfg.loki || cfg.loki_datasource || {}).labels) || {}) }
+    },
+    influx_enabled: cfg.influx_enabled ?? base.influx_enabled,
+    influx: {
+      ...base.influx,
+      ...(cfg.influx || cfg.influxdb || {})
+    },
+    graylog_enabled: cfg.graylog_enabled ?? base.graylog_enabled,
+    graylog: {
+      ...base.graylog,
+      ...(cfg.graylog || {})
+    },
+    otlp_enabled: cfg.otlp_enabled ?? base.otlp_enabled,
+    otlp_endpoint: cfg.otlp_endpoint ?? base.otlp_endpoint,
+    otlp_headers: { ...(cfg.otlp_headers || {}) },
+    clickhouse_enabled: cfg.clickhouse_enabled ?? base.clickhouse_enabled,
+    clickhouse_endpoint: cfg.clickhouse_endpoint ?? base.clickhouse_endpoint,
+    clickhouse_database: cfg.clickhouse_database ?? base.clickhouse_database,
+    clickhouse_table: cfg.clickhouse_table ?? base.clickhouse_table,
+    clickhouse_username: cfg.clickhouse_username ?? base.clickhouse_username,
+    clickhouse_password: cfg.clickhouse_password ?? base.clickhouse_password,
+    batch_size: cfg.batch_size ?? base.batch_size,
+    flush_interval: cfg.flush_interval ?? base.flush_interval
+  }
+}
+
+const observabilityConfig = ref(createDefaultObservabilityConfig())
 
 const gatewayConfig = ref({
   http_port: 80,
@@ -459,22 +523,7 @@ const openObservabilityModal = async () => {
   try {
     const res = await ApiService.apiGatewayGetObservabilityStatus()
     const cfg = res.data.data?.config || {}
-    observabilityConfig.value = {
-      enabled: cfg.enabled || false,
-      grafana_enabled: cfg.grafana_enabled || false,
-      grafana_endpoint: cfg.grafana_endpoint || '',
-      grafana_api_key: cfg.grafana_api_key || '',
-      otlp_enabled: cfg.otlp_enabled || false,
-      otlp_endpoint: cfg.otlp_endpoint || '',
-      clickhouse_enabled: cfg.clickhouse_enabled || false,
-      clickhouse_endpoint: cfg.clickhouse_endpoint || '',
-      clickhouse_database: cfg.clickhouse_database || 'default',
-      clickhouse_table: cfg.clickhouse_table || 'api_gateway_logs',
-      clickhouse_username: cfg.clickhouse_username || '',
-      clickhouse_password: cfg.clickhouse_password || '',
-      batch_size: cfg.batch_size || 100,
-      flush_interval: cfg.flush_interval || 30
-    }
+    observabilityConfig.value = normalizeObservabilityConfig(cfg)
     isObservabilityModalActive.value = true
   } catch (error) {
     console.error('Failed to load observability config:', error)
@@ -483,7 +532,8 @@ const openObservabilityModal = async () => {
 
 const saveObservability = async () => {
   try {
-    await ApiService.apiGatewayConfigureObservability(observabilityConfig.value)
+    const payload = JSON.parse(JSON.stringify(observabilityConfig.value))
+    await ApiService.apiGatewayConfigureObservability(payload)
     isObservabilityModalActive.value = false
     await loadData()
   } catch (error) {
@@ -920,22 +970,60 @@ onUnmounted(() => {
         />
       </SectionTitleLineWithButton>
 
-      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mt-4">
-        <!-- Grafana Status -->
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mt-4">
+        <!-- Loki Status -->
         <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
           <h3 class="font-semibold mb-4 flex items-center gap-2">
             <BaseIcon :path="mdiChartLine" size="20" />
-            Grafana / Loki
+            Loki
           </h3>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
               <span class="text-slate-500">Status</span>
-              <span :class="observabilityConfig.grafana_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ observabilityConfig.grafana_enabled ? 'Enabled' : 'Disabled' }}
+              <span :class="observabilityConfig.loki_enabled ? 'text-green-500' : 'text-gray-500'">
+                {{ observabilityConfig.loki_enabled ? 'Enabled' : 'Disabled' }}
               </span>
             </div>
-            <div v-if="observabilityConfig.grafana_endpoint" class="text-sm text-slate-500 truncate">
-              {{ observabilityConfig.grafana_endpoint }}
+            <div v-if="observabilityConfig.loki?.url" class="text-sm text-slate-500 truncate">
+              {{ observabilityConfig.loki?.url }}
+            </div>
+          </div>
+        </div>
+
+        <!-- InfluxDB Status -->
+        <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+          <h3 class="font-semibold mb-4 flex items-center gap-2">
+            <BaseIcon :path="mdiDatabase" size="20" />
+            InfluxDB
+          </h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Status</span>
+              <span :class="observabilityConfig.influx_enabled ? 'text-green-500' : 'text-gray-500'">
+                {{ observabilityConfig.influx_enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+            </div>
+            <div v-if="observabilityConfig.influx?.url" class="text-sm text-slate-500 truncate">
+              {{ observabilityConfig.influx?.url }}
+            </div>
+          </div>
+        </div>
+
+        <!-- Graylog Status -->
+        <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
+          <h3 class="font-semibold mb-4 flex items-center gap-2">
+            <BaseIcon :path="mdiMessageText" size="20" />
+            Graylog
+          </h3>
+          <div class="space-y-3">
+            <div class="flex items-center justify-between">
+              <span class="text-slate-500">Status</span>
+              <span :class="observabilityConfig.graylog_enabled ? 'text-green-500' : 'text-gray-500'">
+                {{ observabilityConfig.graylog_enabled ? 'Enabled' : 'Disabled' }}
+              </span>
+            </div>
+            <div v-if="observabilityConfig.graylog?.endpoint" class="text-sm text-slate-500 truncate">
+              {{ observabilityConfig.graylog?.endpoint }}
             </div>
           </div>
         </div>
@@ -1235,16 +1323,61 @@ onUnmounted(() => {
         </FormField>
         
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Grafana / Loki</h4>
+          <h4 class="font-semibold mb-3">Loki</h4>
           <FormField>
-            <FormCheckRadio v-model="observabilityConfig.grafana_enabled" label="Enable Grafana" name="grafana_enabled" />
+            <FormCheckRadio v-model="observabilityConfig.loki_enabled" label="Enable Loki" name="loki_enabled" />
           </FormField>
-          <FormField label="Grafana Endpoint">
-            <FormControl v-model="observabilityConfig.grafana_endpoint" placeholder="http://grafana:3000" />
+          <FormField label="Loki Endpoint">
+            <FormControl v-model="observabilityConfig.loki.url" placeholder="http://loki:3100/loki/api/v1/push" />
+          </FormField>
+          <FormField label="Tenant ID (optional)">
+            <FormControl v-model="observabilityConfig.loki.tenant_id" placeholder="acme-org" />
           </FormField>
           <FormField label="API Key (optional)">
-            <FormControl v-model="observabilityConfig.grafana_api_key" type="password" placeholder="API Key" />
+            <FormControl v-model="observabilityConfig.loki.api_key" type="password" placeholder="API Key" />
           </FormField>
+        </div>
+
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">InfluxDB</h4>
+          <FormField>
+            <FormCheckRadio v-model="observabilityConfig.influx_enabled" label="Enable InfluxDB" name="influx_enabled" />
+          </FormField>
+          <FormField label="InfluxDB URL">
+            <FormControl v-model="observabilityConfig.influx.url" placeholder="http://influxdb:8086" />
+          </FormField>
+          <div class="grid grid-cols-2 gap-4">
+            <FormField label="Organization">
+              <FormControl v-model="observabilityConfig.influx.org" placeholder="my-org" />
+            </FormField>
+            <FormField label="Bucket">
+              <FormControl v-model="observabilityConfig.influx.bucket" placeholder="api_gateway" />
+            </FormField>
+          </div>
+          <FormField label="Access Token">
+            <FormControl v-model="observabilityConfig.influx.token" type="password" placeholder="Token" />
+          </FormField>
+        </div>
+
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Graylog</h4>
+          <FormField>
+            <FormCheckRadio v-model="observabilityConfig.graylog_enabled" label="Enable Graylog" name="graylog_enabled" />
+          </FormField>
+          <FormField label="Graylog Endpoint">
+            <FormControl v-model="observabilityConfig.graylog.endpoint" placeholder="http://graylog:12201/gelf" />
+          </FormField>
+          <FormField label="Stream ID (optional)">
+            <FormControl v-model="observabilityConfig.graylog.stream_id" placeholder="graylog-stream-id" />
+          </FormField>
+          <div class="grid grid-cols-2 gap-4">
+            <FormField label="API Key (optional)">
+              <FormControl v-model="observabilityConfig.graylog.api_key" type="password" placeholder="API Key" />
+            </FormField>
+            <FormField label="API Key Header">
+              <FormControl v-model="observabilityConfig.graylog.api_key_header" placeholder="Authorization" />
+            </FormField>
+          </div>
         </div>
 
         <div class="border-t pt-4 mt-4">

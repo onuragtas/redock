@@ -71,21 +71,49 @@ type GatewayConfig struct {
 
 // ObservabilityConfig represents configuration for sending telemetry data
 type ObservabilityConfig struct {
-	Enabled            bool              `json:"enabled"`
-	GrafanaEnabled     bool              `json:"grafana_enabled"`
-	GrafanaEndpoint    string            `json:"grafana_endpoint,omitempty"`
-	GrafanaAPIKey      string            `json:"grafana_api_key,omitempty"`
-	OTLPEnabled        bool              `json:"otlp_enabled"`
-	OTLPEndpoint       string            `json:"otlp_endpoint,omitempty"`
-	OTLPHeaders        map[string]string `json:"otlp_headers,omitempty"`
-	ClickHouseEnabled  bool              `json:"clickhouse_enabled"`
-	ClickHouseEndpoint string            `json:"clickhouse_endpoint,omitempty"`
-	ClickHouseDatabase string            `json:"clickhouse_database,omitempty"`
-	ClickHouseTable    string            `json:"clickhouse_table,omitempty"`
-	ClickHouseUsername string            `json:"clickhouse_username,omitempty"`
-	ClickHousePassword string            `json:"clickhouse_password,omitempty"`
-	BatchSize          int               `json:"batch_size"`
-	FlushInterval      int               `json:"flush_interval"` // in seconds
+	Enabled            bool                      `json:"enabled"`
+	LokiEnabled        bool                      `json:"loki_enabled"`
+	Loki               *LokiDatasourceConfig     `json:"loki,omitempty"`
+	InfluxEnabled      bool                      `json:"influx_enabled"`
+	InfluxDB           *InfluxDBDatasourceConfig `json:"influx,omitempty"`
+	GraylogEnabled     bool                      `json:"graylog_enabled"`
+	Graylog            *GraylogConfig            `json:"graylog,omitempty"`
+	OTLPEnabled        bool                      `json:"otlp_enabled"`
+	OTLPEndpoint       string                    `json:"otlp_endpoint,omitempty"`
+	OTLPHeaders        map[string]string         `json:"otlp_headers,omitempty"`
+	ClickHouseEnabled  bool                      `json:"clickhouse_enabled"`
+	ClickHouseEndpoint string                    `json:"clickhouse_endpoint,omitempty"`
+	ClickHouseDatabase string                    `json:"clickhouse_database,omitempty"`
+	ClickHouseTable    string                    `json:"clickhouse_table,omitempty"`
+	ClickHouseUsername string                    `json:"clickhouse_username,omitempty"`
+	ClickHousePassword string                    `json:"clickhouse_password,omitempty"`
+	BatchSize          int                       `json:"batch_size"`
+	FlushInterval      int                       `json:"flush_interval"` // in seconds
+}
+
+// LokiDatasourceConfig holds Loki datasource details
+type LokiDatasourceConfig struct {
+	URL      string            `json:"url"`
+	TenantID string            `json:"tenant_id,omitempty"`
+	APIKey   string            `json:"api_key,omitempty"`
+	Labels   map[string]string `json:"labels,omitempty"`
+}
+
+// InfluxDBDatasourceConfig holds InfluxDB datasource details
+type InfluxDBDatasourceConfig struct {
+	URL    string `json:"url"`
+	Org    string `json:"org"`
+	Bucket string `json:"bucket"`
+	Token  string `json:"token"`
+}
+
+// GraylogConfig holds Graylog endpoint details
+type GraylogConfig struct {
+	Endpoint     string            `json:"endpoint"`
+	APIKey       string            `json:"api_key,omitempty"`
+	APIKeyHeader string            `json:"api_key_header,omitempty"`
+	StreamID     string            `json:"stream_id,omitempty"`
+	ExtraFields  map[string]string `json:"extra_fields,omitempty"`
 }
 
 // LetsEncryptConfig represents Let's Encrypt certificate configuration
