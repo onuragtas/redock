@@ -107,7 +107,7 @@ const closeMenus = () => {
 
 // Terminal Functions
 let isCreatingTerminal = false
-const createNewTerminal = async (containerId, name = null) => {
+const createNewTerminal = async (containerId, name = null, initialCommand = null) => {
   // Prevent duplicate creation
   if (isCreatingTerminal) {
     return
@@ -122,6 +122,8 @@ const createNewTerminal = async (containerId, name = null) => {
 
   try {
     const tab = terminalStore.addTab(containerId, name)
+    // Store initial command in tab for later use
+    tab.initialCommand = initialCommand
 
     // Ensure terminal is visible and persistent
     terminalStore.showTerminal()
@@ -214,6 +216,16 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
 
             if (tab.containerId) {
               socket.send('docker exec -it ' + tab.containerId + ' bash\n');
+              
+              // Send initial command if provided (e.g., PHP_IDE_CONFIG export)
+              // Delay needed to allow container shell to initialize before sending command
+              if (tab.initialCommand) {
+                setTimeout(() => {
+                  if (socket.readyState === WebSocket.OPEN) {
+                    socket.send(tab.initialCommand);
+                  }
+                }, 500)
+              }
             }
           }
         }, 100)
@@ -445,8 +457,8 @@ onMounted(() => {
 
   // Handle terminal creation from TerminalView
   const handleCreateTerminal = (event) => {
-    const { containerId, name } = event.detail
-    createNewTerminal(containerId, name)
+    const { containerId, name, initialCommand } = event.detail
+    createNewTerminal(containerId, name, initialCommand)
   }
 
   window.addEventListener('create-terminal', handleCreateTerminal)
