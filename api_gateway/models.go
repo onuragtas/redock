@@ -55,19 +55,38 @@ type HealthCheck struct {
 
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
-	HTTPPort         int                  `json:"http_port"`
-	HTTPSPort        int                  `json:"https_port"`
-	HTTPSEnabled     bool                 `json:"https_enabled"`
-	TLSCertFile      string               `json:"tls_cert_file,omitempty"`
-	TLSKeyFile       string               `json:"tls_key_file,omitempty"`
-	LetsEncrypt      *LetsEncryptConfig   `json:"lets_encrypt,omitempty"`
-	Services         []Service            `json:"services"`
-	Routes           []Route              `json:"routes"`
-	GlobalRateLimit  *RateLimitConfig     `json:"global_rate_limit,omitempty"`
-	LogLevel         string               `json:"log_level"`
-	AccessLogEnabled bool                 `json:"access_log_enabled"`
-	Observability    *ObservabilityConfig `json:"observability,omitempty"`
-	Enabled          bool                 `json:"enabled"`
+	HTTPPort         int                   `json:"http_port"`
+	HTTPSPort        int                   `json:"https_port"`
+	HTTPSEnabled     bool                  `json:"https_enabled"`
+	TLSCertFile      string                `json:"tls_cert_file,omitempty"`
+	TLSKeyFile       string                `json:"tls_key_file,omitempty"`
+	LetsEncrypt      *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
+	Services         []Service             `json:"services"`
+	Routes           []Route               `json:"routes"`
+	GlobalRateLimit  *RateLimitConfig      `json:"global_rate_limit,omitempty"`
+	LogLevel         string                `json:"log_level"`
+	AccessLogEnabled bool                  `json:"access_log_enabled"`
+	Observability    *ObservabilityConfig  `json:"observability,omitempty"`
+	ClientSecurity   *ClientSecurityConfig `json:"client_security,omitempty"`
+	Enabled          bool                  `json:"enabled"`
+}
+
+// ClientSecurityConfig toggles request tracking and auto-blocking behaviour
+type ClientSecurityConfig struct {
+	TrackingEnabled      bool                `json:"tracking_enabled"`
+	TopClientLimit       int                 `json:"top_client_limit"`
+	AutoBlockEnabled     bool                `json:"auto_block_enabled"`
+	NoRouteThreshold     int                 `json:"no_route_threshold"`
+	AutoBlockDurationSec int                 `json:"auto_block_duration_seconds"`
+	ManualBlocks         []ManualBlockConfig `json:"manual_blocks,omitempty"`
+}
+
+// ManualBlockConfig persists manually blocked clients in configuration
+type ManualBlockConfig struct {
+	IP        string `json:"ip"`
+	Reason    string `json:"reason,omitempty"`
+	BlockedAt string `json:"blocked_at"`
+	ExpiresAt string `json:"expires_at,omitempty"`
 }
 
 // ObservabilityConfig represents configuration for sending telemetry data
@@ -173,13 +192,15 @@ type RequestLog struct {
 
 // GatewayStats represents gateway statistics
 type GatewayStats struct {
-	TotalRequests  int64          `json:"total_requests"`
-	TotalErrors    int64          `json:"total_errors"`
-	Uptime         int64          `json:"uptime_seconds"`
-	RequestsPerSec float64        `json:"requests_per_second"`
-	AverageLatency float64        `json:"average_latency_ms"`
-	ServiceStats   []ServiceStats `json:"service_stats"`
-	RateLimitStats RateLimitStats `json:"rate_limit_stats"`
+	TotalRequests  int64           `json:"total_requests"`
+	TotalErrors    int64           `json:"total_errors"`
+	Uptime         int64           `json:"uptime_seconds"`
+	RequestsPerSec float64         `json:"requests_per_second"`
+	AverageLatency float64         `json:"average_latency_ms"`
+	ServiceStats   []ServiceStats  `json:"service_stats"`
+	RateLimitStats RateLimitStats  `json:"rate_limit_stats"`
+	TopClients     []ClientStats   `json:"top_clients,omitempty"`
+	BlockedClients []BlockedClient `json:"blocked_clients,omitempty"`
 }
 
 // ServiceStats represents per-service statistics
@@ -194,6 +215,31 @@ type ServiceStats struct {
 type RateLimitStats struct {
 	TotalLimited int64 `json:"total_limited"`
 	CurrentUsage int   `json:"current_usage"`
+}
+
+// ClientStats represents tracked metrics for an individual client IP
+type ClientStats struct {
+	IP                string    `json:"ip"`
+	RequestCount      int64     `json:"request_count"`
+	LastSeen          time.Time `json:"last_seen"`
+	LastPath          string    `json:"last_path"`
+	LastRouteID       string    `json:"last_route_id"`
+	LastStatus        int       `json:"last_status"`
+	ConsecutiveMisses int       `json:"consecutive_misses"`
+	TotalMisses       int64     `json:"total_misses"`
+	Blocked           bool      `json:"blocked"`
+	BlockedUntil      time.Time `json:"blocked_until,omitempty"`
+	BlockedReason     string    `json:"blocked_reason,omitempty"`
+	ManualBlock       bool      `json:"manual_block"`
+}
+
+// BlockedClient describes a client currently blocked
+type BlockedClient struct {
+	IP           string    `json:"ip"`
+	Manual       bool      `json:"manual"`
+	BlockedAt    time.Time `json:"blocked_at"`
+	BlockedUntil time.Time `json:"blocked_until,omitempty"`
+	Reason       string    `json:"reason"`
 }
 
 // rateLimiter manages rate limiting for clients
@@ -212,28 +258,33 @@ type clientRateLimit struct {
 
 // Gateway represents the API gateway server
 type Gateway struct {
-	config          *GatewayConfig
-	httpServer      *http.Server
-	httpsServer     *http.Server
-	httpListener    net.Listener
-	httpsListener   net.Listener
-	services        map[string]*Service
-	routes          []*Route
-	serviceHealth   map[string]*ServiceHealth
-	rateLimiter     *rateLimiter
-	globalLimiter   *rateLimiter
-	stats           *gatewayStatsTracker
-	mu              sync.RWMutex
-	running         bool
-	stopChan        chan struct{}
-	workDir         string
-	httpClient      *http.Client
-	tlsConfig       *tls.Config
-	routeCache      map[string]*cachedRoute
-	routeCacheOrder []string
-	routeCacheLimit int
-	routeCacheTTL   time.Duration
-	routeCacheMu    sync.RWMutex
+	config           *GatewayConfig
+	httpServer       *http.Server
+	httpsServer      *http.Server
+	httpListener     net.Listener
+	httpsListener    net.Listener
+	services         map[string]*Service
+	routes           []*Route
+	serviceHealth    map[string]*ServiceHealth
+	rateLimiter      *rateLimiter
+	globalLimiter    *rateLimiter
+	stats            *gatewayStatsTracker
+	mu               sync.RWMutex
+	running          bool
+	stopChan         chan struct{}
+	workDir          string
+	httpClient       *http.Client
+	tlsConfig        *tls.Config
+	routeCache       map[string]*cachedRoute
+	routeCacheOrder  []string
+	routeCacheLimit  int
+	routeCacheTTL    time.Duration
+	routeCacheMu     sync.RWMutex
+	clientStats      map[string]*clientStatsTracker
+	clientStatsLimit int
+	clientStatsMu    sync.RWMutex
+	persistentBlocks map[string]BlockedClient
+	blockListMu      sync.Mutex
 }
 
 // gatewayStatsTracker tracks gateway statistics
@@ -252,4 +303,20 @@ type serviceStatsTracker struct {
 	requests     int64
 	errors       int64
 	totalLatency int64
+}
+
+// clientStatsTracker keeps in-memory metrics per client IP
+type clientStatsTracker struct {
+	ip                string
+	requests          int64
+	lastSeen          time.Time
+	lastPath          string
+	lastRouteID       string
+	lastStatus        int
+	consecutiveMisses int
+	totalMisses       int64
+	blockedUntil      time.Time
+	blockedAt         time.Time
+	manualBlocked     bool
+	blockReason       string
 }

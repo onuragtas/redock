@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"redock/api_gateway"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/google/uuid"
@@ -374,6 +375,89 @@ func APIGatewayDeleteService(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "Service deleted successfully",
+	})
+}
+
+type clientBlockRequest struct {
+	IP              string `json:"ip"`
+	DurationSeconds int    `json:"duration_seconds"`
+	Reason          string `json:"reason"`
+}
+
+// APIGatewayBlockClient manually blocks a client IP
+// @Router /v1/api_gateway/clients/block [post]
+func APIGatewayBlockClient(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+
+	req := &clientBlockRequest{}
+	if err := c.BodyParser(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	if req.IP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "ip is required",
+		})
+	}
+	duration := time.Duration(req.DurationSeconds) * time.Second
+	if err := gw.ManualBlockClient(req.IP, duration, req.Reason); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "client blocked",
+	})
+}
+
+type clientUnblockRequest struct {
+	IP string `json:"ip"`
+}
+
+// APIGatewayUnblockClient removes a manual block for a client IP
+// @Router /v1/api_gateway/clients/unblock [post]
+func APIGatewayUnblockClient(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	req := &clientUnblockRequest{}
+	if err := c.BodyParser(req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	if req.IP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "ip is required",
+		})
+	}
+	if err := gw.ManualUnblockClient(req.IP); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "client unblocked",
 	})
 }
 

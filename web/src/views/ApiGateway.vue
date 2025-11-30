@@ -51,6 +51,11 @@ const routes = ref([])
 const serviceHealth = ref([])
 const certificateInfo = ref({})
 const renewerStatus = ref({ running: false })
+const manualBlockForm = ref({
+  ip: '',
+  duration_seconds: 300,
+  reason: ''
+})
 
 // Modal states
 const activeTab = ref('overview')
@@ -229,6 +234,9 @@ const serviceNameMap = computed(() => {
   })
   return map
 })
+
+const topClients = computed(() => stats.value.top_clients || [])
+const blockedClients = computed(() => stats.value.blocked_clients || [])
 
 // Methods
 const formatUptime = (seconds) => {
@@ -559,6 +567,55 @@ const getHealthColor = (healthy) => {
   return healthy ? 'text-green-500' : 'text-red-500'
 }
 
+const formatDateTime = (value) => {
+  if (!value) return '-'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '-'
+  return date.toLocaleString()
+}
+
+const submitManualBlock = async () => {
+  if (!manualBlockForm.value.ip) {
+    return
+  }
+  try {
+    await ApiService.apiGatewayBlockClient({
+      ip: manualBlockForm.value.ip.trim(),
+      duration_seconds: Number(manualBlockForm.value.duration_seconds) || 0,
+      reason: manualBlockForm.value.reason
+    })
+    manualBlockForm.value.ip = ''
+    manualBlockForm.value.reason = ''
+    await loadData()
+  } catch (error) {
+    console.error('Failed to block client:', error)
+  }
+}
+
+const unblockClient = async (ip) => {
+  if (!ip) return
+  try {
+    await ApiService.apiGatewayUnblockClient({ ip })
+    await loadData()
+  } catch (error) {
+    console.error('Failed to unblock client:', error)
+  }
+}
+
+const quickBlockClient = async (ip) => {
+  if (!ip) return
+  try {
+    await ApiService.apiGatewayBlockClient({
+      ip,
+      duration_seconds: Number(manualBlockForm.value.duration_seconds) || 0,
+      reason: 'Blocked from dashboard'
+    })
+    await loadData()
+  } catch (error) {
+    console.error('Failed to quick block client:', error)
+  }
+}
+
 // Auto-refresh
 let refreshInterval = null
 
@@ -687,7 +744,7 @@ onUnmounted(() => {
     <!-- Tabs -->
     <div class="flex border-b border-gray-200 dark:border-gray-700">
       <button
-        v-for="tab in ['overview', 'services', 'routes', 'certificates', 'observability']"
+        v-for="tab in ['overview', 'services', 'routes', 'clients', 'certificates', 'observability']"
         :key="tab"
         :class="[
           'px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
@@ -810,6 +867,119 @@ onUnmounted(() => {
         </div>
       </div>
     </CardBox>
+
+    <!-- Clients Tab -->
+    <div v-if="activeTab === 'clients'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <CardBox class="lg:col-span-2">
+        <SectionTitleLineWithButton :icon="mdiShield" title="Top Clients" main />
+        <div v-if="topClients.length === 0" class="text-center py-10 text-slate-500">
+          No client traffic recorded yet
+        </div>
+        <div v-else class="overflow-x-auto">
+          <table class="min-w-full text-sm">
+            <thead>
+              <tr class="text-left text-slate-500 border-b border-slate-100 dark:border-slate-700">
+                <th class="py-3">Client IP</th>
+                <th class="py-3">Requests</th>
+                <th class="py-3">Last Seen</th>
+                <th class="py-3">Last Path</th>
+                <th class="py-3">Status</th>
+                <th class="py-3 text-right">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="client in topClients" :key="client.ip" class="border-b border-slate-100 dark:border-slate-800">
+                <td class="py-3 font-medium">{{ client.ip }}</td>
+                <td class="py-3">{{ client.request_count }}</td>
+                <td class="py-3">{{ formatDateTime(client.last_seen) }}</td>
+                <td class="py-3 truncate max-w-xs">{{ client.last_path || '-' }}</td>
+                <td class="py-3">
+                  <span
+                    :class="[
+                      'px-2 py-1 text-xs rounded-full font-semibold',
+                      client.blocked
+                        ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200'
+                        : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200'
+                    ]"
+                  >
+                    {{ client.blocked ? 'Blocked' : 'Active' }}
+                  </span>
+                </td>
+                <td class="py-3 text-right">
+                  <BaseButton
+                    v-if="client.blocked"
+                    label="Unblock"
+                    color="warning"
+                    small
+                    outline
+                    @click="unblockClient(client.ip)"
+                  />
+                  <BaseButton
+                    v-else
+                    label="Block"
+                    color="danger"
+                    small
+                    outline
+                    @click="quickBlockClient(client.ip)"
+                  />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </CardBox>
+
+      <CardBox>
+        <SectionTitleLineWithButton :icon="mdiShield" title="Blocked Clients" main />
+        <div v-if="blockedClients.length === 0" class="text-center py-10 text-slate-500">
+          No blocked clients
+        </div>
+        <div v-else class="space-y-3 mt-4">
+          <div
+            v-for="client in blockedClients"
+            :key="client.ip"
+            class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-center justify-between"
+          >
+            <div>
+              <div class="font-semibold">{{ client.ip }}</div>
+              <div class="text-xs text-slate-500">
+                Reason: {{ client.reason || 'N/A' }}
+              </div>
+              <div class="text-xs text-slate-400">
+                {{ client.manual ? 'Manual block' : 'Auto block' }} •
+                {{ client.blocked_until ? 'Until ' + formatDateTime(client.blocked_until) : 'Indefinite' }}
+              </div>
+            </div>
+            <BaseButton label="Unblock" color="warning" small outline @click="unblockClient(client.ip)" />
+          </div>
+        </div>
+      </CardBox>
+
+      <CardBox>
+        <SectionTitleLineWithButton :icon="mdiShield" title="Manual Block" main />
+        <form class="space-y-4 mt-4" @submit.prevent="submitManualBlock">
+          <FormField label="Client IP">
+            <FormControl
+              v-model="manualBlockForm.ip"
+              placeholder="e.g. 192.168.1.10"
+              required
+            />
+          </FormField>
+          <FormField label="Duration (seconds)">
+            <FormControl
+              v-model.number="manualBlockForm.duration_seconds"
+              type="number"
+              min="0"
+              placeholder="0 for indefinite"
+            />
+          </FormField>
+          <FormField label="Reason">
+            <FormControl v-model="manualBlockForm.reason" placeholder="Reason for blocking" />
+          </FormField>
+          <BaseButton type="submit" label="Block Client" color="danger" :icon="mdiShield" />
+        </form>
+      </CardBox>
+    </div>
 
     <!-- Routes Tab -->
     <CardBox v-if="activeTab === 'routes'">

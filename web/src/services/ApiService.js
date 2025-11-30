@@ -380,6 +380,14 @@ class ApiService {
     return await this.get('/api/v1/api_gateway/health');
   }
 
+  static async apiGatewayBlockClient(data) {
+    return await this.post('/api/v1/api_gateway/clients/block', data);
+  }
+
+  static async apiGatewayUnblockClient(data) {
+    return await this.post('/api/v1/api_gateway/clients/unblock', data);
+  }
+
   static async apiGatewayListServices() {
     return await this.get('/api/v1/api_gateway/services');
   }

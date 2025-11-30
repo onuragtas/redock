@@ -14,6 +14,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -28,10 +29,250 @@ var (
 )
 
 const (
-	defaultRouteCacheLimit = 2048
-	defaultRouteCacheTTL   = 30 * time.Second
-	maxLoggedBodyBytes     = 4096
+	defaultRouteCacheLimit   = 2048
+	defaultRouteCacheTTL     = 30 * time.Second
+	maxLoggedBodyBytes       = 4096
+	defaultClientStatsLimit  = 2048
+	defaultTopClientLimit    = 10
+	defaultNoRouteThreshold  = 5
+	defaultAutoBlockDuration = 5 * time.Minute
 )
+
+func defaultClientSecurityConfig() *ClientSecurityConfig {
+	return &ClientSecurityConfig{
+		TrackingEnabled:      true,
+		TopClientLimit:       defaultTopClientLimit,
+		AutoBlockEnabled:     true,
+		NoRouteThreshold:     defaultNoRouteThreshold,
+		AutoBlockDurationSec: int(defaultAutoBlockDuration / time.Second),
+	}
+}
+
+func (g *Gateway) ensureClientSecurityDefaults() {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	g.ensureClientSecurityDefaultsLocked()
+}
+
+func (g *Gateway) ensureClientSecurityDefaultsLocked() {
+	if g.config == nil {
+		return
+	}
+	if g.config.ClientSecurity == nil {
+		g.config.ClientSecurity = defaultClientSecurityConfig()
+	}
+	cfg := g.config.ClientSecurity
+	if cfg.TopClientLimit <= 0 {
+		cfg.TopClientLimit = defaultTopClientLimit
+	}
+	if cfg.NoRouteThreshold <= 0 {
+		cfg.NoRouteThreshold = defaultNoRouteThreshold
+	}
+	if cfg.AutoBlockDurationSec <= 0 {
+		cfg.AutoBlockDurationSec = int(defaultAutoBlockDuration / time.Second)
+	}
+}
+
+func (g *Gateway) refreshClientSecurity() {
+	g.ensureClientSecurityDefaults()
+	g.applyManualBlocks()
+}
+
+func (g *Gateway) applyManualBlocks() {
+	g.mu.RLock()
+	var manualBlocks []ManualBlockConfig
+	if g.config != nil && g.config.ClientSecurity != nil {
+		manualBlocks = append(manualBlocks, g.config.ClientSecurity.ManualBlocks...)
+	}
+	g.mu.RUnlock()
+
+	g.clientStatsMu.Lock()
+	now := time.Now()
+	for _, tracker := range g.clientStats {
+		if tracker.manualBlocked {
+			tracker.manualBlocked = false
+			if tracker.blockedUntil.IsZero() || tracker.blockedUntil.Before(now) {
+				tracker.blockedUntil = time.Time{}
+				tracker.blockReason = ""
+				tracker.blockedAt = time.Time{}
+			}
+		}
+	}
+
+	applied := make([]BlockedClient, 0, len(manualBlocks))
+	for _, entry := range manualBlocks {
+		if entry.IP == "" {
+			continue
+		}
+		tracker := g.getOrCreateClientTrackerLocked(entry.IP)
+		tracker.manualBlocked = true
+		tracker.blockReason = entry.Reason
+		if tracker.blockReason == "" {
+			tracker.blockReason = "manually blocked"
+		}
+		tracker.blockedAt = parseTimeOrNow(entry.BlockedAt)
+		if entry.ExpiresAt != "" {
+			tracker.blockedUntil = parseTime(entry.ExpiresAt)
+		} else {
+			tracker.blockedUntil = time.Time{}
+		}
+		applied = append(applied, BlockedClient{
+			IP:           entry.IP,
+			Manual:       true,
+			BlockedAt:    tracker.blockedAt,
+			BlockedUntil: tracker.blockedUntil,
+			Reason:       tracker.blockReason,
+		})
+	}
+	g.clientStatsMu.Unlock()
+
+	for _, entry := range applied {
+		g.persistBlockEntry(entry)
+	}
+}
+
+func parseTimeOrNow(value string) time.Time {
+	if t := parseTime(value); !t.IsZero() {
+		return t
+	}
+	return time.Now()
+}
+
+func parseTime(value string) time.Time {
+	if value == "" {
+		return time.Time{}
+	}
+	t, err := time.Parse(time.RFC3339, value)
+	if err != nil {
+		return time.Time{}
+	}
+	return t
+}
+
+func (g *Gateway) blockListFilePath() string {
+	return filepath.Join(g.workDir, "data", "api_gateway_blocks.json")
+}
+
+func (g *Gateway) loadBlockList() {
+	path := g.blockListFilePath()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			g.blockListMu.Lock()
+			g.persistentBlocks = make(map[string]BlockedClient)
+			g.blockListMu.Unlock()
+		}
+		return
+	}
+
+	var entries []BlockedClient
+	if err := json.Unmarshal(data, &entries); err != nil {
+		log.Printf("API Gateway: failed to parse block list: %v", err)
+		return
+	}
+
+	now := time.Now()
+	valid := make([]BlockedClient, 0, len(entries))
+	for _, entry := range entries {
+		if entry.IP == "" {
+			continue
+		}
+		if !entry.BlockedUntil.IsZero() && entry.BlockedUntil.Before(now) && !entry.Manual {
+			continue
+		}
+		valid = append(valid, entry)
+	}
+
+	g.blockListMu.Lock()
+	g.persistentBlocks = make(map[string]BlockedClient, len(valid))
+	for _, entry := range valid {
+		g.persistentBlocks[entry.IP] = entry
+	}
+	g.blockListMu.Unlock()
+
+	g.applyPersistentBlocks(valid)
+	if len(valid) != len(entries) {
+		g.writeBlockList(valid)
+	}
+}
+
+func (g *Gateway) applyPersistentBlocks(entries []BlockedClient) {
+	if len(entries) == 0 {
+		return
+	}
+	g.clientStatsMu.Lock()
+	defer g.clientStatsMu.Unlock()
+	for _, entry := range entries {
+		tracker := g.getOrCreateClientTrackerLocked(entry.IP)
+		tracker.blockedAt = entry.BlockedAt
+		tracker.blockedUntil = entry.BlockedUntil
+		tracker.blockReason = entry.Reason
+		tracker.manualBlocked = entry.Manual
+	}
+}
+
+func (g *Gateway) persistBlockEntry(entry BlockedClient) {
+	if entry.IP == "" {
+		return
+	}
+	g.blockListMu.Lock()
+	if g.persistentBlocks == nil {
+		g.persistentBlocks = make(map[string]BlockedClient)
+	}
+	g.persistentBlocks[entry.IP] = entry
+	entries := g.blockMapToSliceLocked()
+	g.blockListMu.Unlock()
+	g.writeBlockList(entries)
+}
+
+func (g *Gateway) removePersistentBlock(ip string) {
+	if ip == "" {
+		return
+	}
+	g.blockListMu.Lock()
+	if g.persistentBlocks == nil {
+		g.blockListMu.Unlock()
+		return
+	}
+	if _, ok := g.persistentBlocks[ip]; !ok {
+		g.blockListMu.Unlock()
+		return
+	}
+	delete(g.persistentBlocks, ip)
+	entries := g.blockMapToSliceLocked()
+	g.blockListMu.Unlock()
+	g.writeBlockList(entries)
+}
+
+func (g *Gateway) blockMapToSliceLocked() []BlockedClient {
+	entries := make([]BlockedClient, 0, len(g.persistentBlocks))
+	for _, entry := range g.persistentBlocks {
+		entries = append(entries, entry)
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		if entries[i].Manual == entries[j].Manual {
+			return entries[i].IP < entries[j].IP
+		}
+		return entries[i].Manual && !entries[j].Manual
+	})
+	return entries
+}
+
+func (g *Gateway) writeBlockList(entries []BlockedClient) {
+	path := g.blockListFilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		log.Printf("API Gateway: failed to create block list directory: %v", err)
+		return
+	}
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		log.Printf("API Gateway: failed to encode block list: %v", err)
+		return
+	}
+	if err := os.WriteFile(path, data, 0644); err != nil {
+		log.Printf("API Gateway: failed to write block list: %v", err)
+	}
+}
 
 type cachedRoute struct {
 	route     *Route
@@ -67,9 +308,12 @@ func NewGateway(workDir string) *Gateway {
 			startTime:    time.Now(),
 			serviceStats: make(map[string]*serviceStatsTracker),
 		},
-		routeCache:      make(map[string]*cachedRoute),
-		routeCacheLimit: defaultRouteCacheLimit,
-		routeCacheTTL:   defaultRouteCacheTTL,
+		routeCache:       make(map[string]*cachedRoute),
+		routeCacheLimit:  defaultRouteCacheLimit,
+		routeCacheTTL:    defaultRouteCacheTTL,
+		clientStats:      make(map[string]*clientStatsTracker),
+		clientStatsLimit: defaultClientStatsLimit,
+		persistentBlocks: make(map[string]BlockedClient),
 	}
 	g.loadConfig()
 	return g
@@ -90,7 +334,10 @@ func (g *Gateway) loadConfig() {
 			Enabled:          false,
 			Services:         []Service{},
 			Routes:           []Route{},
+			ClientSecurity:   defaultClientSecurityConfig(),
 		}
+		g.refreshClientSecurity()
+		g.loadBlockList()
 		return
 	}
 
@@ -107,10 +354,14 @@ func (g *Gateway) loadConfig() {
 			Services:         []Service{},
 			Routes:           []Route{},
 		}
+		g.refreshClientSecurity()
+		g.loadBlockList()
 		return
 	}
 
 	g.config = &config
+	g.refreshClientSecurity()
+	g.loadBlockList()
 	g.refreshServicesAndRoutes()
 }
 
@@ -196,6 +447,7 @@ func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 	g.mu.Unlock()
 
 	g.refreshServicesAndRoutes()
+	g.refreshClientSecurity()
 
 	if err := g.SaveConfig(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
@@ -347,14 +599,44 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	reqInfo, err := captureRequestBody(r, maxLoggedBodyBytes)
 	if err != nil {
 		g.recordError()
-		http.Error(lw, "Invalid request body", http.StatusBadRequest)
-		g.logRequest(r, http.StatusBadRequest, startTime, "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
+		status := http.StatusBadRequest
+		http.Error(lw, "Invalid request body", status)
+		g.logRequest(r, status, startTime, "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
+		return
+	}
+
+	clientIP := getClientIP(r)
+	trackClient := clientIP != ""
+	statusCode := http.StatusOK
+	routeID := ""
+	routeName := ""
+	serviceID := ""
+	serviceName := ""
+	matchedRoute := false
+
+	defer func() {
+		if trackClient {
+			g.trackClientActivity(clientIP, r.URL.Path, routeID, statusCode, matchedRoute)
+		}
+	}()
+
+	if blocked, reason := g.isClientBlocked(clientIP); blocked {
+		statusCode = http.StatusForbidden
+		message := reason
+		if message == "" {
+			message = "Client blocked"
+		}
+		http.Error(lw, message, statusCode)
+		g.logRequest(r, statusCode, startTime, "", "", "", "", true, message, reqInfo, lw.LogInfo())
+		trackClient = false
 		return
 	}
 
 	// Handle ACME challenges for Let's Encrypt
 	if HandleACMEChallenge(lw, r) {
-		g.logRequest(r, lw.StatusCode(), startTime, "", "", "", "", true, "", reqInfo, lw.LogInfo())
+		statusCode = lw.StatusCode()
+		g.logRequest(r, statusCode, startTime, "", "", "", "", true, "", reqInfo, lw.LogInfo())
+		trackClient = false
 		return
 	}
 
@@ -365,13 +647,12 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Check global rate limit
 	if g.globalLimiter != nil {
-		clientIP := getClientIP(r)
 		if !g.checkRateLimit(g.globalLimiter, clientIP) {
 			g.recordError()
 			g.recordRateLimited()
-			status := http.StatusTooManyRequests
-			http.Error(lw, "Rate limit exceeded", status)
-			g.logRequest(r, status, startTime, "", "", "", "", true, "rate limit exceeded", reqInfo, lw.LogInfo())
+			statusCode = http.StatusTooManyRequests
+			http.Error(lw, "Rate limit exceeded", statusCode)
+			g.logRequest(r, statusCode, startTime, "", "", "", "", true, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -380,18 +661,19 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	route := g.matchRoute(r)
 	if route == nil {
 		g.recordError()
-		status := http.StatusNotFound
-		http.Error(lw, "Not Found", status)
-		g.logRequest(r, status, startTime, "", "", "", "", true, "no matching route", reqInfo, lw.LogInfo())
+		statusCode = http.StatusNotFound
+		http.Error(lw, "Not Found", statusCode)
+		g.logRequest(r, statusCode, startTime, "", "", "", "", true, "no matching route", reqInfo, lw.LogInfo())
 		return
 	}
+	matchedRoute = true
+	routeID = route.ID
+	routeName = route.Name
 
-	routeName := route.Name
 	routeObservability := g.isRouteObservabilityEnabled(route)
 
 	// Check route-level rate limit
 	if route.RateLimitEnabled && route.RateLimitRequests > 0 {
-		clientIP := getClientIP(r)
 		routeLimiter := &rateLimiter{
 			clients:  make(map[string]*clientRateLimit),
 			requests: route.RateLimitRequests,
@@ -400,9 +682,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if !g.checkRateLimit(routeLimiter, clientIP) {
 			g.recordError()
 			g.recordRateLimited()
-			status := http.StatusTooManyRequests
-			http.Error(lw, "Rate limit exceeded", status)
-			g.logRequest(r, status, startTime, route.ID, routeName, "", "", routeObservability, "rate limit exceeded", reqInfo, lw.LogInfo())
+			statusCode = http.StatusTooManyRequests
+			http.Error(lw, "Rate limit exceeded", statusCode)
+			g.logRequest(r, statusCode, startTime, routeID, routeName, "", "", routeObservability, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -411,9 +693,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if route.AuthRequired {
 		if !g.checkAuth(r, route) {
 			g.recordError()
-			status := http.StatusUnauthorized
-			http.Error(lw, "Unauthorized", status)
-			g.logRequest(r, status, startTime, route.ID, routeName, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
+			statusCode = http.StatusUnauthorized
+			http.Error(lw, "Unauthorized", statusCode)
+			g.logRequest(r, statusCode, startTime, routeID, routeName, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -423,29 +705,26 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	service := g.services[route.ServiceID]
 	g.mu.RUnlock()
 
-	serviceName := ""
-	if service != nil {
-		serviceName = service.Name
-	}
-
 	if service == nil || !service.Enabled {
 		g.recordError()
-		status := http.StatusServiceUnavailable
-		http.Error(lw, "Service Unavailable", status)
-		g.logRequest(r, status, startTime, route.ID, routeName, route.ServiceID, serviceName, routeObservability, "service not available", reqInfo, lw.LogInfo())
+		statusCode = http.StatusServiceUnavailable
+		http.Error(lw, "Service Unavailable", statusCode)
+		g.logRequest(r, statusCode, startTime, routeID, routeName, route.ServiceID, serviceName, routeObservability, "service not available", reqInfo, lw.LogInfo())
 		return
 	}
+	serviceID = service.ID
+	serviceName = service.Name
 
 	// Check service health
 	g.mu.RLock()
-	health := g.serviceHealth[service.ID]
+	health := g.serviceHealth[serviceID]
 	g.mu.RUnlock()
 
 	if health != nil && !health.Healthy {
 		g.recordError()
-		status := http.StatusServiceUnavailable
-		http.Error(lw, "Service Unavailable", status)
-		g.logRequest(r, status, startTime, route.ID, routeName, service.ID, serviceName, routeObservability, "service unhealthy", reqInfo, lw.LogInfo())
+		statusCode = http.StatusServiceUnavailable
+		http.Error(lw, "Service Unavailable", statusCode)
+		g.logRequest(r, statusCode, startTime, routeID, routeName, serviceID, serviceName, routeObservability, "service unhealthy", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -459,20 +738,20 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Proxy the request
 	err = g.proxyRequest(lw, r, route, service)
-	statusCode := lw.StatusCode()
+	statusCode = lw.StatusCode()
 	if err != nil {
-		g.recordServiceError(service.ID)
-		g.logRequest(r, statusCode, startTime, route.ID, routeName, service.ID, serviceName, routeObservability, err.Error(), reqInfo, lw.LogInfo())
+		g.recordServiceError(serviceID)
+		g.logRequest(r, statusCode, startTime, routeID, routeName, serviceID, serviceName, routeObservability, err.Error(), reqInfo, lw.LogInfo())
 	} else {
-		g.logRequest(r, statusCode, startTime, route.ID, routeName, service.ID, serviceName, routeObservability, "", reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, routeID, routeName, serviceID, serviceName, routeObservability, "", reqInfo, lw.LogInfo())
 	}
 
 	// Record latency
 	latency := time.Since(startTime).Milliseconds()
 	g.stats.mu.Lock()
 	g.stats.totalLatency += latency
-	if g.stats.serviceStats[service.ID] != nil {
-		g.stats.serviceStats[service.ID].totalLatency += latency
+	if g.stats.serviceStats[serviceID] != nil {
+		g.stats.serviceStats[serviceID].totalLatency += latency
 	}
 	g.stats.mu.Unlock()
 }
@@ -1056,6 +1335,286 @@ func (g *Gateway) recordRateLimited() {
 	g.stats.mu.Unlock()
 }
 
+func (g *Gateway) getClientSecurityConfig() *ClientSecurityConfig {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil {
+		return nil
+	}
+	if g.config.ClientSecurity == nil {
+		return nil
+	}
+	cfg := *g.config.ClientSecurity
+	return &cfg
+}
+
+func (g *Gateway) trackClientActivity(ip, path, routeID string, statusCode int, matchedRoute bool) {
+	cfg := g.getClientSecurityConfig()
+	if cfg == nil || !cfg.TrackingEnabled || ip == "" {
+		return
+	}
+	now := time.Now()
+	g.clientStatsMu.Lock()
+	tracker := g.getOrCreateClientTrackerLocked(ip)
+	tracker.requests++
+	tracker.lastSeen = now
+	tracker.lastPath = path
+	tracker.lastRouteID = routeID
+	tracker.lastStatus = statusCode
+	if matchedRoute {
+		tracker.consecutiveMisses = 0
+	} else {
+		tracker.consecutiveMisses++
+		tracker.totalMisses++
+	}
+	var autoBlockReason string
+	if !matchedRoute && cfg.AutoBlockEnabled && cfg.NoRouteThreshold > 0 && tracker.consecutiveMisses >= cfg.NoRouteThreshold {
+		duration := defaultAutoBlockDuration
+		if cfg.AutoBlockDurationSec > 0 {
+			duration = time.Duration(cfg.AutoBlockDurationSec) * time.Second
+		}
+		autoBlockReason = fmt.Sprintf("blocked after %d unmatched requests", tracker.consecutiveMisses)
+		if !g.autoBlockClientLocked(tracker, duration, autoBlockReason) {
+			autoBlockReason = ""
+		}
+	}
+	g.clientStatsMu.Unlock()
+	if autoBlockReason != "" {
+		log.Printf("API Gateway: Auto-blocked client %s (%s)", ip, autoBlockReason)
+	}
+}
+
+func (g *Gateway) getOrCreateClientTrackerLocked(ip string) *clientStatsTracker {
+	if tracker, ok := g.clientStats[ip]; ok {
+		return tracker
+	}
+	if g.clientStatsLimit > 0 && len(g.clientStats) >= g.clientStatsLimit {
+		g.evictOldestClientLocked()
+	}
+	tracker := &clientStatsTracker{ip: ip}
+	g.clientStats[ip] = tracker
+	return tracker
+}
+
+func (g *Gateway) evictOldestClientLocked() {
+	var oldestKey string
+	var oldestTime time.Time
+	first := true
+	for key, tracker := range g.clientStats {
+		if first || tracker.lastSeen.Before(oldestTime) {
+			oldestKey = key
+			oldestTime = tracker.lastSeen
+			first = false
+		}
+	}
+	if oldestKey != "" {
+		delete(g.clientStats, oldestKey)
+	}
+}
+
+func (g *Gateway) autoBlockClientLocked(tracker *clientStatsTracker, duration time.Duration, reason string) bool {
+	now := time.Now()
+	if tracker.manualBlocked {
+		return false
+	}
+	if !tracker.blockedUntil.IsZero() && tracker.blockedUntil.After(now) {
+		return false
+	}
+	if duration <= 0 {
+		duration = defaultAutoBlockDuration
+	}
+	tracker.blockedAt = now
+	tracker.blockedUntil = now.Add(duration)
+	tracker.blockReason = reason
+	tracker.consecutiveMisses = 0
+	return true
+}
+
+func (g *Gateway) isClientBlocked(ip string) (bool, string) {
+	if ip == "" {
+		return false, ""
+	}
+	g.clientStatsMu.Lock()
+	defer g.clientStatsMu.Unlock()
+	tracker, ok := g.clientStats[ip]
+	if !ok {
+		return false, ""
+	}
+	now := time.Now()
+	if tracker.manualBlocked {
+		if tracker.blockedUntil.IsZero() || tracker.blockedUntil.After(now) {
+			return true, tracker.blockReason
+		}
+		tracker.manualBlocked = false
+		if tracker.blockedUntil.Before(now) {
+			tracker.blockedUntil = time.Time{}
+		}
+		tracker.blockReason = ""
+	}
+	if !tracker.blockedUntil.IsZero() && tracker.blockedUntil.After(now) {
+		return true, tracker.blockReason
+	}
+	if !tracker.blockedUntil.IsZero() && tracker.blockedUntil.Before(now) {
+		tracker.blockedUntil = time.Time{}
+		tracker.blockReason = ""
+	}
+	return false, ""
+}
+
+func (g *Gateway) ManualBlockClient(ip string, duration time.Duration, reason string) error {
+	if ip == "" {
+		return fmt.Errorf("ip is required")
+	}
+	blockedAt := time.Now()
+	expiresAt := ""
+	if duration > 0 {
+		expiresAt = blockedAt.Add(duration).Format(time.RFC3339)
+	}
+	entry := ManualBlockConfig{
+		IP:        ip,
+		Reason:    reason,
+		BlockedAt: blockedAt.Format(time.RFC3339),
+		ExpiresAt: expiresAt,
+	}
+	g.mu.Lock()
+	g.ensureClientSecurityDefaultsLocked()
+	cfg := g.config.ClientSecurity
+	filtered := make([]ManualBlockConfig, 0, len(cfg.ManualBlocks))
+	for _, mb := range cfg.ManualBlocks {
+		if mb.IP != ip {
+			filtered = append(filtered, mb)
+		}
+	}
+	cfg.ManualBlocks = append(filtered, entry)
+	err := g.saveConfigLocked()
+	g.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	g.applyManualBlocks()
+	return nil
+}
+
+func (g *Gateway) ManualUnblockClient(ip string) error {
+	if ip == "" {
+		return fmt.Errorf("ip is required")
+	}
+	g.mu.Lock()
+	if g.config == nil || g.config.ClientSecurity == nil {
+		g.mu.Unlock()
+		return fmt.Errorf("client security not configured")
+	}
+	cfg := g.config.ClientSecurity
+	changed := false
+	filtered := make([]ManualBlockConfig, 0, len(cfg.ManualBlocks))
+	for _, mb := range cfg.ManualBlocks {
+		if mb.IP == ip {
+			changed = true
+			continue
+		}
+		filtered = append(filtered, mb)
+	}
+	cfg.ManualBlocks = filtered
+	var err error
+	if changed {
+		err = g.saveConfigLocked()
+	}
+	g.mu.Unlock()
+	if err != nil {
+		return err
+	}
+	if changed {
+		g.applyManualBlocks()
+	}
+	g.clientStatsMu.Lock()
+	if tracker, ok := g.clientStats[ip]; ok {
+		tracker.manualBlocked = false
+		tracker.blockReason = ""
+		tracker.blockedUntil = time.Time{}
+		tracker.blockedAt = time.Time{}
+		tracker.consecutiveMisses = 0
+	}
+	g.clientStatsMu.Unlock()
+	return nil
+}
+
+func (g *Gateway) getTopClients(limit int) []ClientStats {
+	if limit <= 0 {
+		return nil
+	}
+	g.clientStatsMu.RLock()
+	defer g.clientStatsMu.RUnlock()
+	if len(g.clientStats) == 0 {
+		return nil
+	}
+	results := make([]ClientStats, 0, len(g.clientStats))
+	now := time.Now()
+	for _, tracker := range g.clientStats {
+		blocked, manual := tracker.snapshotBlocked(now)
+		results = append(results, ClientStats{
+			IP:                tracker.ip,
+			RequestCount:      tracker.requests,
+			LastSeen:          tracker.lastSeen,
+			LastPath:          tracker.lastPath,
+			LastRouteID:       tracker.lastRouteID,
+			LastStatus:        tracker.lastStatus,
+			ConsecutiveMisses: tracker.consecutiveMisses,
+			TotalMisses:       tracker.totalMisses,
+			Blocked:           blocked,
+			BlockedUntil:      tracker.blockedUntil,
+			BlockedReason:     tracker.blockReason,
+			ManualBlock:       manual,
+		})
+	}
+	sort.Slice(results, func(i, j int) bool {
+		if results[i].RequestCount == results[j].RequestCount {
+			return results[i].LastSeen.After(results[j].LastSeen)
+		}
+		return results[i].RequestCount > results[j].RequestCount
+	})
+	if len(results) > limit {
+		results = results[:limit]
+	}
+	return results
+}
+
+func (g *Gateway) getBlockedClients() []BlockedClient {
+	g.clientStatsMu.RLock()
+	defer g.clientStatsMu.RUnlock()
+	blocked := make([]BlockedClient, 0)
+	now := time.Now()
+	for _, tracker := range g.clientStats {
+		isBlocked, manual := tracker.snapshotBlocked(now)
+		if !isBlocked {
+			continue
+		}
+		blocked = append(blocked, BlockedClient{
+			IP:           tracker.ip,
+			Manual:       manual,
+			BlockedAt:    tracker.blockedAt,
+			BlockedUntil: tracker.blockedUntil,
+			Reason:       tracker.blockReason,
+		})
+	}
+	sort.Slice(blocked, func(i, j int) bool {
+		return blocked[i].BlockedAt.After(blocked[j].BlockedAt)
+	})
+	return blocked
+}
+
+func (t *clientStatsTracker) snapshotBlocked(now time.Time) (bool, bool) {
+	manual := false
+	blocked := false
+	if t.manualBlocked {
+		manual = t.blockedUntil.IsZero() || t.blockedUntil.After(now)
+		blocked = manual
+	}
+	if !blocked && !t.blockedUntil.IsZero() && t.blockedUntil.After(now) {
+		blocked = true
+	}
+	return blocked, manual && blocked
+}
+
 // GetStats returns the current gateway statistics
 func (g *Gateway) GetStats() GatewayStats {
 	g.stats.mu.RLock()
@@ -1087,7 +1646,7 @@ func (g *Gateway) GetStats() GatewayStats {
 		})
 	}
 
-	return GatewayStats{
+	stats := GatewayStats{
 		TotalRequests:  g.stats.totalRequests,
 		TotalErrors:    g.stats.totalErrors,
 		Uptime:         int64(uptime),
@@ -1098,6 +1657,11 @@ func (g *Gateway) GetStats() GatewayStats {
 			TotalLimited: g.stats.rateLimited,
 		},
 	}
+	if cfg := g.getClientSecurityConfig(); cfg != nil && cfg.TrackingEnabled {
+		stats.TopClients = g.getTopClients(cfg.TopClientLimit)
+		stats.BlockedClients = g.getBlockedClients()
+	}
+	return stats
 }
 
 // GetServiceHealth returns the health status of all services
