@@ -158,6 +158,15 @@ const createDefaultObservabilityConfig = () => ({
   flush_interval: 30
 })
 
+const createDefaultClientSecurityConfig = () => ({
+  tracking_enabled: true,
+  top_client_limit: 1000,
+  auto_block_enabled: true,
+  no_route_threshold: 5,
+  auto_block_duration_seconds: 300,
+  manual_blocks: []
+})
+
 const normalizeObservabilityConfig = (cfg = {}) => {
   const base = createDefaultObservabilityConfig()
   return {
@@ -199,7 +208,8 @@ const gatewayConfig = ref({
   http_port: 80,
   https_port: 443,
   https_enabled: false,
-  access_log_enabled: true
+  access_log_enabled: true,
+  client_security: createDefaultClientSecurityConfig()
 })
 
 const isSuccessfulResponse = (response) => {
@@ -234,8 +244,10 @@ const serviceNameMap = computed(() => {
   })
   return map
 })
-
-const topClients = computed(() => stats.value.top_clients || [])
+const topClientDisplayOptions = [10, 20, 50, 100, 250, 500, 1000]
+const topClientDisplayLimit = ref(10)
+const allTopClients = computed(() => stats.value.top_clients || [])
+const topClients = computed(() => allTopClients.value.slice(0, topClientDisplayLimit.value))
 const blockedClients = computed(() => stats.value.blocked_clients || [])
 
 // Methods
@@ -503,11 +515,19 @@ const openConfigModal = async () => {
   try {
     const res = await ApiService.apiGatewayGetConfig()
     const cfg = res.data.data || {}
+    const clientSecurity = {
+      ...createDefaultClientSecurityConfig(),
+      ...(cfg.client_security || {})
+    }
+    if (!clientSecurity.top_client_limit || clientSecurity.top_client_limit < 1) {
+      clientSecurity.top_client_limit = 1000
+    }
     gatewayConfig.value = {
       http_port: cfg.http_port || 80,
       https_port: cfg.https_port || 443,
       https_enabled: cfg.https_enabled || false,
-      access_log_enabled: cfg.access_log_enabled !== false
+      access_log_enabled: cfg.access_log_enabled !== false,
+      client_security: clientSecurity
     }
     isConfigModalActive.value = true
   } catch (error) {
@@ -518,9 +538,17 @@ const openConfigModal = async () => {
 const saveConfig = async () => {
   try {
     const currentConfig = (await ApiService.apiGatewayGetConfig()).data.data || {}
+    const clientSecurityPayload = {
+      ...(currentConfig.client_security || {}),
+      ...((gatewayConfig.value && gatewayConfig.value.client_security) || {})
+    }
+    const rawLimit = Number(clientSecurityPayload.top_client_limit)
+    const boundedLimit = Math.min(1000, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 1000))
+    clientSecurityPayload.top_client_limit = Math.round(boundedLimit)
     const updatedConfig = {
       ...currentConfig,
-      ...gatewayConfig.value
+      ...gatewayConfig.value,
+      client_security: clientSecurityPayload
     }
     await ApiService.apiGatewayUpdateConfig(updatedConfig)
     isConfigModalActive.value = false
@@ -870,8 +898,79 @@ onUnmounted(() => {
 
     <!-- Clients Tab -->
     <div v-if="activeTab === 'clients'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <CardBox>
+        <SectionTitleLineWithButton :icon="mdiShield" title="Blocked Clients" main />
+        <div v-if="blockedClients.length === 0" class="text-center py-10 text-slate-500">
+          No blocked clients
+        </div>
+        <div v-else class="space-y-3 mt-4">
+          <div
+            v-for="client in blockedClients"
+            :key="client.ip"
+            class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-center justify-between"
+          >
+            <div>
+              <div class="font-semibold">{{ client.ip }}</div>
+              <div class="text-xs text-slate-500">
+                Reason: {{ client.reason || 'N/A' }}
+              </div>
+              <div class="text-xs text-slate-400">
+                {{ client.manual ? 'Manual block' : 'Auto block' }} •
+                {{ client.blocked_until ? 'Until ' + formatDateTime(client.blocked_until) : 'Indefinite' }}
+              </div>
+            </div>
+            <BaseButton label="Unblock" color="warning" small outline @click="unblockClient(client.ip)" />
+          </div>
+        </div>
+      </CardBox>
+
+      <CardBox>
+        <SectionTitleLineWithButton :icon="mdiShield" title="Manual Block" main />
+        <form class="space-y-4 mt-4" @submit.prevent="submitManualBlock">
+          <FormField label="Client IP">
+            <FormControl
+              v-model="manualBlockForm.ip"
+              placeholder="e.g. 192.168.1.10"
+              required
+            />
+          </FormField>
+          <FormField label="Duration (seconds)">
+            <FormControl
+              v-model.number="manualBlockForm.duration_seconds"
+              type="number"
+              min="0"
+              placeholder="0 for indefinite"
+            />
+          </FormField>
+          <FormField label="Reason">
+            <FormControl v-model="manualBlockForm.reason" placeholder="Reason for blocking" />
+          </FormField>
+          <BaseButton type="submit" label="Block Client" color="danger" :icon="mdiShield" />
+        </form>
+      </CardBox>
+
       <CardBox class="lg:col-span-2">
         <SectionTitleLineWithButton :icon="mdiShield" title="Top Clients" main />
+        <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mt-4">
+          <p class="text-sm text-slate-500">
+            Showing {{ topClients.length }} of {{ allTopClients.length }} clients
+          </p>
+          <label class="text-sm text-slate-500 flex items-center gap-2">
+            <span>Show</span>
+            <select
+              v-model.number="topClientDisplayLimit"
+              class="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
+            >
+              <option
+                v-for="option in topClientDisplayOptions"
+                :key="option"
+                :value="option"
+              >
+                {{ option }}
+              </option>
+            </select>
+          </label>
+        </div>
         <div v-if="topClients.length === 0" class="text-center py-10 text-slate-500">
           No client traffic recorded yet
         </div>
@@ -927,57 +1026,6 @@ onUnmounted(() => {
             </tbody>
           </table>
         </div>
-      </CardBox>
-
-      <CardBox>
-        <SectionTitleLineWithButton :icon="mdiShield" title="Blocked Clients" main />
-        <div v-if="blockedClients.length === 0" class="text-center py-10 text-slate-500">
-          No blocked clients
-        </div>
-        <div v-else class="space-y-3 mt-4">
-          <div
-            v-for="client in blockedClients"
-            :key="client.ip"
-            class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg flex items-center justify-between"
-          >
-            <div>
-              <div class="font-semibold">{{ client.ip }}</div>
-              <div class="text-xs text-slate-500">
-                Reason: {{ client.reason || 'N/A' }}
-              </div>
-              <div class="text-xs text-slate-400">
-                {{ client.manual ? 'Manual block' : 'Auto block' }} •
-                {{ client.blocked_until ? 'Until ' + formatDateTime(client.blocked_until) : 'Indefinite' }}
-              </div>
-            </div>
-            <BaseButton label="Unblock" color="warning" small outline @click="unblockClient(client.ip)" />
-          </div>
-        </div>
-      </CardBox>
-
-      <CardBox>
-        <SectionTitleLineWithButton :icon="mdiShield" title="Manual Block" main />
-        <form class="space-y-4 mt-4" @submit.prevent="submitManualBlock">
-          <FormField label="Client IP">
-            <FormControl
-              v-model="manualBlockForm.ip"
-              placeholder="e.g. 192.168.1.10"
-              required
-            />
-          </FormField>
-          <FormField label="Duration (seconds)">
-            <FormControl
-              v-model.number="manualBlockForm.duration_seconds"
-              type="number"
-              min="0"
-              placeholder="0 for indefinite"
-            />
-          </FormField>
-          <FormField label="Reason">
-            <FormControl v-model="manualBlockForm.reason" placeholder="Reason for blocking" />
-          </FormField>
-          <BaseButton type="submit" label="Block Client" color="danger" :icon="mdiShield" />
-        </form>
       </CardBox>
     </div>
 
@@ -1421,6 +1469,29 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="gatewayConfig.access_log_enabled" label="Enable Access Logging" name="access_log" />
         </FormField>
+        <div class="border-t pt-4 mt-4">
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <FormField label="Top Client Limit">
+              <FormControl
+                v-model.number="gatewayConfig.client_security.top_client_limit"
+                type="number"
+                min="1"
+                max="1000"
+                placeholder="1000"
+              />
+            </FormField>
+            <FormField>
+              <FormCheckRadio
+                v-model="gatewayConfig.client_security.tracking_enabled"
+                label="Enable Client Tracking"
+                name="client_tracking_enabled"
+              />
+            </FormField>
+          </div>
+          <p class="text-xs text-slate-500 mt-2">
+            Controls how many clients are stored for analytics and manual blocking (up to 1000).
+          </p>
+        </div>
       </div>
     </CardBoxModal>
 
