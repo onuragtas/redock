@@ -33,7 +33,7 @@ const (
 	defaultRouteCacheTTL     = 30 * time.Second
 	maxLoggedBodyBytes       = 4096
 	defaultClientStatsLimit  = 2048
-	defaultTopClientLimit    = 10
+	defaultTopClientLimit    = 200
 	defaultNoRouteThreshold  = 5
 	defaultAutoBlockDuration = 5 * time.Minute
 )
