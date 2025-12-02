@@ -244,6 +244,16 @@ const serviceNameMap = computed(() => {
   })
   return map
 })
+
+const routeMap = computed(() => {
+  const map = {}
+  routes.value.forEach(route => {
+    if (route?.id) {
+      map[route.id] = route
+    }
+  })
+  return map
+})
 const topClientDisplayOptions = [10, 20, 50, 100, 250, 500, 1000]
 const topClientDisplayLimit = ref(10)
 const allTopClients = computed(() => stats.value.top_clients || [])
@@ -589,6 +599,17 @@ const getServiceHealth = (serviceId) => {
 const getServiceName = (serviceId) => {
   if (!serviceId) return 'Unknown Service'
   return serviceNameMap.value[serviceId] || serviceId
+}
+
+const getRouteName = (routeId) => {
+  if (!routeId) return '-'
+  return routeMap.value[routeId]?.name || routeId
+}
+
+const getRouteServiceName = (routeId) => {
+  const route = routeMap.value[routeId]
+  if (!route) return '-'
+  return getServiceName(route.service_id)
 }
 
 const getHealthColor = (healthy) => {
@@ -975,57 +996,124 @@ onUnmounted(() => {
         <div v-if="topClients.length === 0" class="text-center py-10 text-slate-500">
           No client traffic recorded yet
         </div>
-        <div v-else class="overflow-x-auto">
-          <table class="min-w-full text-sm">
-            <thead>
-              <tr class="text-left text-slate-500 border-b border-slate-100 dark:border-slate-700">
-                <th class="py-3">Client IP</th>
-                <th class="py-3">Requests</th>
-                <th class="py-3">Last Seen</th>
-                <th class="py-3">Last Path</th>
-                <th class="py-3">Status</th>
-                <th class="py-3 text-right">Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="client in topClients" :key="client.ip" class="border-b border-slate-100 dark:border-slate-800">
-                <td class="py-3 font-medium">{{ client.ip }}</td>
-                <td class="py-3">{{ client.request_count }}</td>
-                <td class="py-3">{{ formatDateTime(client.last_seen) }}</td>
-                <td class="py-3 truncate max-w-xs">{{ client.last_path || '-' }}</td>
-                <td class="py-3">
-                  <span
-                    :class="[
-                      'px-2 py-1 text-xs rounded-full font-semibold',
-                      client.blocked
-                        ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200'
-                        : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200'
-                    ]"
-                  >
-                    {{ client.blocked ? 'Blocked' : 'Active' }}
-                  </span>
-                </td>
-                <td class="py-3 text-right">
-                  <BaseButton
-                    v-if="client.blocked"
-                    label="Unblock"
-                    color="warning"
-                    small
-                    outline
-                    @click="unblockClient(client.ip)"
-                  />
-                  <BaseButton
-                    v-else
-                    label="Block"
-                    color="danger"
-                    small
-                    outline
-                    @click="quickBlockClient(client.ip)"
-                  />
-                </td>
-              </tr>
-            </tbody>
-          </table>
+        <div v-else class="mt-4 space-y-4">
+          <div class="grid gap-3 md:hidden">
+            <div
+              v-for="client in topClients"
+              :key="`mobile-${client.ip}`"
+              class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl shadow-sm"
+            >
+              <div class="flex items-start justify-between gap-3">
+                <div>
+                  <div class="font-semibold text-slate-800 dark:text-slate-100">{{ client.ip }}</div>
+                  <div class="text-xs text-slate-500">Last seen {{ formatDateTime(client.last_seen) }}</div>
+                </div>
+                <span
+                  :class="[
+                    'px-2 py-1 text-xs rounded-full font-semibold',
+                    client.blocked
+                      ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200'
+                      : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200'
+                  ]"
+                >
+                  {{ client.blocked ? 'Blocked' : 'Active' }}
+                </span>
+              </div>
+              <div class="grid grid-cols-2 gap-3 mt-4 text-sm text-slate-600 dark:text-slate-300">
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">Requests</p>
+                  <p class="font-semibold">{{ client.request_count }}</p>
+                </div>
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">Last Path</p>
+                  <p class="truncate">{{ client.last_path || '-' }}</p>
+                </div>
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">Route</p>
+                  <p class="font-medium">{{ getRouteName(client.last_route_id) }}</p>
+                </div>
+                <div>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">Service</p>
+                  <p class="font-medium">{{ getRouteServiceName(client.last_route_id) }}</p>
+                </div>
+              </div>
+              <div class="mt-4 flex justify-end">
+                <BaseButton
+                  v-if="client.blocked"
+                  label="Unblock"
+                  color="warning"
+                  small
+                  outline
+                  @click="unblockClient(client.ip)"
+                />
+                <BaseButton
+                  v-else
+                  label="Block"
+                  color="danger"
+                  small
+                  outline
+                  @click="quickBlockClient(client.ip)"
+                />
+              </div>
+            </div>
+          </div>
+
+          <div class="hidden md:block overflow-x-auto">
+            <table class="min-w-full text-sm">
+              <thead>
+                <tr class="text-left text-slate-500 border-b border-slate-100 dark:border-slate-700">
+                  <th class="py-3">Client IP</th>
+                  <th class="py-3">Requests</th>
+                  <th class="py-3">Last Seen</th>
+                  <th class="py-3">Last Path</th>
+                  <th class="py-3">Route</th>
+                  <th class="py-3">Service</th>
+                  <th class="py-3">Status</th>
+                  <th class="py-3 text-right">Action</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="client in topClients" :key="client.ip" class="border-b border-slate-100 dark:border-slate-800">
+                  <td class="py-3 font-medium">{{ client.ip }}</td>
+                  <td class="py-3">{{ client.request_count }}</td>
+                  <td class="py-3">{{ formatDateTime(client.last_seen) }}</td>
+                  <td class="py-3 truncate max-w-xs">{{ client.last_path || '-' }}</td>
+                  <td class="py-3">{{ getRouteName(client.last_route_id) }}</td>
+                  <td class="py-3">{{ getRouteServiceName(client.last_route_id) }}</td>
+                  <td class="py-3">
+                    <span
+                      :class="[
+                        'px-2 py-1 text-xs rounded-full font-semibold',
+                        client.blocked
+                          ? 'bg-red-100 text-red-700 dark:bg-red-500/20 dark:text-red-200'
+                          : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200'
+                      ]"
+                    >
+                      {{ client.blocked ? 'Blocked' : 'Active' }}
+                    </span>
+                  </td>
+                  <td class="py-3 text-right">
+                    <BaseButton
+                      v-if="client.blocked"
+                      label="Unblock"
+                      color="warning"
+                      small
+                      outline
+                      @click="unblockClient(client.ip)"
+                    />
+                    <BaseButton
+                      v-else
+                      label="Block"
+                      color="danger"
+                      small
+                      outline
+                      @click="quickBlockClient(client.ip)"
+                    />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
         </div>
       </CardBox>
     </div>
