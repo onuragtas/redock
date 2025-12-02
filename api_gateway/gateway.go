@@ -434,10 +434,8 @@ func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 	defer gatewayLock.Unlock()
 
 	wasRunning := g.running
-
-	// Stop if running
 	if wasRunning {
-		if err := g.Stop(); err != nil {
+		if err := g.stopLocked(); err != nil {
 			return fmt.Errorf("failed to stop gateway: %w", err)
 		}
 	}
@@ -453,9 +451,8 @@ func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	// Restart if was running
 	if wasRunning && config.Enabled {
-		if err := g.Start(); err != nil {
+		if err := g.startLocked(); err != nil {
 			return fmt.Errorf("failed to restart gateway: %w", err)
 		}
 	}
@@ -468,11 +465,16 @@ func (g *Gateway) Start() error {
 	gatewayLock.Lock()
 	defer gatewayLock.Unlock()
 
+	return g.startLocked()
+}
+
+func (g *Gateway) startLocked() error {
 	if g.running {
 		return fmt.Errorf("gateway is already running")
 	}
 
 	g.refreshServicesAndRoutes()
+	g.refreshClientSecurity()
 	g.stopChan = make(chan struct{})
 
 	// Create HTTP server
@@ -553,6 +555,10 @@ func (g *Gateway) Stop() error {
 	gatewayLock.Lock()
 	defer gatewayLock.Unlock()
 
+	return g.stopLocked()
+}
+
+func (g *Gateway) stopLocked() error {
 	if !g.running {
 		return nil
 	}
