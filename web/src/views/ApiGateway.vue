@@ -413,6 +413,7 @@ const openEditRouteModal = (route) => {
     paths: Array.isArray(route.paths) ? route.paths.join(', ') : route.paths || '',
     methods: Array.isArray(route.methods) ? route.methods.join(', ') : route.methods || '',
     hosts: Array.isArray(route.hosts) ? route.hosts.join(', ') : route.hosts || '',
+    preserve_host: route.preserve_host === true,
     observability_enabled: route.observability_enabled !== false,
     service_id: serviceMatch
       ? { value: serviceMatch.id, label: serviceMatch.name }
@@ -1401,6 +1402,9 @@ onUnmounted(() => {
           </FormField>
         </div>
         <FormField>
+          <FormCheckRadio v-model="newRoute.preserve_host" label="Preserve Host Header" name="preserve_host" />
+        </FormField>
+        <FormField>
           <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
         </FormField>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
@@ -1569,6 +1573,9 @@ onUnmounted(() => {
             <FormCheckRadio v-model="editingRoute.enabled" label="Enabled" name="edit_route_enabled" />
           </FormField>
         </div>
+        <FormField>
+          <FormCheckRadio v-model="editingRoute.preserve_host" label="Preserve Host Header" name="edit_preserve_host" />
+        </FormField>
         <FormField>
           <FormCheckRadio v-model="editingRoute.observability_enabled" label="Send Observability Logs" name="edit_route_observability" />
         </FormField>
