@@ -28,13 +28,14 @@ type Route struct {
 	ID                   string            `json:"id"`
 	Name                 string            `json:"name"`
 	ServiceID            string            `json:"service_id"`
-	Paths                []string          `json:"paths"`             // URL paths to match
-	Methods              []string          `json:"methods,omitempty"` // HTTP methods to match (empty = all)
-	Hosts                []string          `json:"hosts,omitempty"`   // Host headers to match (empty = all)
-	Headers              map[string]string `json:"headers,omitempty"` // Required headers to match
-	StripPath            bool              `json:"strip_path"`        // Strip the matched path before forwarding
-	PreserveHost         bool              `json:"preserve_host"`     // Forward original Host header
-	Priority             int               `json:"priority"`          // Higher priority routes are matched first
+	Paths                []string          `json:"paths"`                  // URL paths to match
+	Methods              []string          `json:"methods,omitempty"`      // HTTP methods to match (empty = all)
+	Hosts                []string          `json:"hosts,omitempty"`        // Host headers to match (empty = all)
+	Headers              map[string]string `json:"headers,omitempty"`      // Required headers to match
+	StripPath            bool              `json:"strip_path"`             // Strip the matched path before forwarding
+	PreserveHost         bool              `json:"preserve_host"`          // Forward original Host header
+	HostRewrite          string            `json:"host_rewrite,omitempty"` // Override Host header when proxying
+	Priority             int               `json:"priority"`               // Higher priority routes are matched first
 	RateLimitEnabled     bool              `json:"rate_limit_enabled"`
 	RateLimitRequests    int               `json:"rate_limit_requests"` // requests per window
 	RateLimitWindow      int               `json:"rate_limit_window"`   // window in seconds

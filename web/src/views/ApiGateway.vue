@@ -97,6 +97,7 @@ const newRoute = ref({
   hosts: '',
   strip_path: true,
   preserve_host: false,
+  host_rewrite: '',
   priority: 0,
   rate_limit_enabled: false,
   rate_limit_requests: 100,
@@ -383,6 +384,7 @@ const openAddRouteModal = () => {
     hosts: '',
     strip_path: true,
     preserve_host: false,
+    host_rewrite: '',
     priority: 0,
     rate_limit_enabled: false,
     rate_limit_requests: 100,
@@ -423,6 +425,7 @@ const openEditRouteModal = (route) => {
     paths: Array.isArray(route.paths) ? route.paths.join(', ') : route.paths || '',
     methods: Array.isArray(route.methods) ? route.methods.join(', ') : route.methods || '',
     hosts: Array.isArray(route.hosts) ? route.hosts.join(', ') : route.hosts || '',
+    host_rewrite: route.host_rewrite || '',
     preserve_host: route.preserve_host === true,
     observability_enabled: route.observability_enabled !== false,
     service_id: serviceMatch
@@ -1478,6 +1481,9 @@ onUnmounted(() => {
         <FormField label="Hosts (comma-separated, optional)">
           <FormControl v-model="newRoute.hosts" placeholder="api.example.com" />
         </FormField>
+        <FormField label="Host Rewrite (optional)">
+          <FormControl v-model="newRoute.host_rewrite" placeholder="order.test.com" />
+        </FormField>
         <FormField label="Methods (comma-separated, optional)">
           <FormControl v-model="newRoute.methods" placeholder="GET, POST, PUT" />
         </FormField>
@@ -1649,6 +1655,9 @@ onUnmounted(() => {
         </FormField>
         <FormField label="Hosts (comma-separated, optional)">
           <FormControl v-model="editingRoute.hosts" placeholder="api.example.com" />
+        </FormField>
+        <FormField label="Host Rewrite (optional)">
+          <FormControl v-model="editingRoute.host_rewrite" placeholder="order.test.com" />
         </FormField>
         <FormField label="Methods (comma-separated, optional)">
           <FormControl v-model="editingRoute.methods" placeholder="GET, POST, PUT" />

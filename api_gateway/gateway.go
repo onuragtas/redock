@@ -1058,8 +1058,12 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		}
 
 		// Set host header
+		targetHost := target.Host
+		if route.HostRewrite != "" {
+			targetHost = route.HostRewrite
+		}
 		if !route.PreserveHost {
-			req.Host = target.Host
+			req.Host = targetHost
 		}
 
 		// Add service headers
