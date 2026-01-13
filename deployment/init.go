@@ -31,6 +31,8 @@ type Project struct {
 	Branch       string    `yaml:"branch" json:"branch"`
 	Check        string    `yaml:"check" json:"check"`
 	Script       string    `yaml:"script" json:"script"`
+	Username     string    `yaml:"username,omitempty" json:"username,omitempty"`
+	Token        string    `yaml:"token,omitempty" json:"token,omitempty"`
 	LastDeployed time.Time `yaml:"last_deployed" json:"last_deployed"`
 	LastChecked  time.Time `yaml:"last_checked" json:"last_checked"`
 	Enabled      bool      `yaml:"enabled" json:"enabled"`
@@ -45,6 +47,7 @@ type Deployment struct {
 	Auth          *http.BasicAuth
 	Cmd           command.Command
 	dockerManager *docker_manager.DockerEnvironmentManager
+	configMutex   sync.RWMutex // dosya okuma/yazma için mutex
 }
 
 var deployment *Deployment
@@ -60,7 +63,8 @@ func GetDeployment() *Deployment {
 	return deployment
 }
 
-func (d *Deployment) LoadConfig() error {
+// LoadConfigUnsafe mutex kullanmadan config yükler (internal use only)
+func (d *Deployment) LoadConfigUnsafe() error {
 	byteArray, err1 := os.ReadFile(d.dockerManager.GetWorkDir() + "/data/deployment.json")
 	err := yaml.Unmarshal(byteArray, &d.Config)
 
@@ -88,6 +92,12 @@ func (d *Deployment) LoadConfig() error {
 	return nil
 }
 
+func (d *Deployment) LoadConfig() error {
+	d.configMutex.Lock()
+	defer d.configMutex.Unlock()
+	return d.LoadConfigUnsafe()
+}
+
 func (d *Deployment) Run() {
 	var wg sync.WaitGroup
 	for {
@@ -110,9 +120,13 @@ func (d *Deployment) Run() {
 }
 
 func (d *Deployment) Deploy(project Project) {
+	// Proje bazlı auth kullan, yoksa global auth
+	auth := d.getAuthForProject(project)
+	username, token := d.getCredentialsForProject(project)
+
 	_, err := git.PlainClone(project.Path, false, &git.CloneOptions{
 		ReferenceName: plumbing.NewBranchReferenceName(project.Branch),
-		Auth:          d.Auth,
+		Auth:          auth,
 		URL:           project.Url,
 	})
 
@@ -122,13 +136,13 @@ func (d *Deployment) Deploy(project Project) {
 		return
 	}
 
-	d.Cmd.RunCommand(project.Path, "git", "remote", "set-url", "origin", "https://"+d.Config.Username+":"+d.Config.Token+"@"+strings.ReplaceAll(project.Url, "https://", ""))
+	d.Cmd.RunCommand(project.Path, "git", "remote", "set-url", "origin", "https://"+username+":"+token+"@"+strings.ReplaceAll(project.Url, "https://", ""))
 
 	spec := "refs/heads/" + project.Branch + ":refs/remotes/origin/" + project.Branch
 
 	err = repo.Fetch(&git.FetchOptions{
 		RefSpecs: []config2.RefSpec{config2.RefSpec(spec)},
-		Auth:     d.Auth,
+		Auth:     auth,
 	})
 	// if err != nil && err != git.NoErrAlreadyUpToDate {
 	// 	log.Println(project, err)
@@ -223,7 +237,10 @@ func (d *Deployment) Checkout(project Project) {
 }
 
 func (d *Deployment) GetList() []Project {
-	d.LoadConfig()
+	d.configMutex.RLock()
+	defer d.configMutex.RUnlock()
+
+	d.LoadConfigUnsafe()
 	if d.Config.Projects == nil {
 		return []Project{}
 	}
@@ -231,12 +248,19 @@ func (d *Deployment) GetList() []Project {
 }
 
 func (d *Deployment) GetConfig() Config {
-	d.LoadConfig()
+	d.configMutex.RLock()
+	defer d.configMutex.RUnlock()
+
+	d.LoadConfigUnsafe()
 	return d.Config
 }
 
 // update check time
 func (d *Deployment) UpdateCheckTime(checkTime int) error {
+	d.configMutex.Lock()
+	defer d.configMutex.Unlock()
+
+	d.LoadConfigUnsafe()
 	d.Config.Settings.CheckTime = checkTime
 	data, err := yaml.Marshal(d.Config)
 	if err != nil {
@@ -251,7 +275,10 @@ func (d *Deployment) UpdateCheckTime(checkTime int) error {
 
 // add project
 func (d *Deployment) AddProject(project Project) error {
-	d.LoadConfig()
+	d.configMutex.Lock()
+	defer d.configMutex.Unlock()
+
+	d.LoadConfigUnsafe()
 	d.Config.Projects = append(d.Config.Projects, project)
 	data, err := yaml.Marshal(d.Config)
 	if err != nil {
@@ -266,7 +293,10 @@ func (d *Deployment) AddProject(project Project) error {
 
 // delete project
 func (d *Deployment) DeleteProject(projectPath string) error {
-	d.LoadConfig()
+	d.configMutex.Lock()
+	defer d.configMutex.Unlock()
+
+	d.LoadConfigUnsafe()
 	for i, project := range d.Config.Projects {
 		if project.Path == projectPath {
 			d.Config.Projects = append(d.Config.Projects[:i], d.Config.Projects[i+1:]...)
@@ -286,7 +316,10 @@ func (d *Deployment) DeleteProject(projectPath string) error {
 
 // update project
 func (d *Deployment) UpdateProject(project Project) error {
-	d.LoadConfig()
+	d.configMutex.Lock()
+	defer d.configMutex.Unlock()
+
+	d.LoadConfigUnsafe()
 	for i, p := range d.Config.Projects {
 		if p.Path == project.Path {
 			d.Config.Projects[i] = project
@@ -306,7 +339,10 @@ func (d *Deployment) UpdateProject(project Project) error {
 
 // GetProjectByPath returns a project by its path.
 func (d *Deployment) GetProjectByPath(path string) (*Project, error) {
-	d.LoadConfig()
+	d.configMutex.RLock()
+	defer d.configMutex.RUnlock()
+
+	d.LoadConfigUnsafe()
 	for _, project := range d.Config.Projects {
 		if project.Path == path {
 			return &project, nil
@@ -317,7 +353,10 @@ func (d *Deployment) GetProjectByPath(path string) (*Project, error) {
 
 // SetCredentials sets the username, token, and checkTime for deployment config and saves it.
 func (d *Deployment) SetCredentials(username, token string, checkTime *int) error {
-	d.LoadConfig()
+	d.configMutex.Lock()
+	defer d.configMutex.Unlock()
+
+	d.LoadConfigUnsafe()
 	d.Config.Username = username
 	d.Config.Token = token
 	if checkTime != nil {
@@ -356,4 +395,29 @@ func (d *Deployment) CreateScript(projectPath, scriptContent string) (string, er
 	}
 
 	return scriptPath, nil
+}
+
+// getAuthForProject returns auth for project, falls back to global if project auth is empty
+func (d *Deployment) getAuthForProject(project Project) *http.BasicAuth {
+	username, token := d.getCredentialsForProject(project)
+	return &http.BasicAuth{
+		Username: username,
+		Password: token,
+	}
+}
+
+// getCredentialsForProject returns username and token for project, falls back to global if empty
+func (d *Deployment) getCredentialsForProject(project Project) (string, string) {
+	username := project.Username
+	token := project.Token
+
+	// Eğer proje seviyesinde username/token yoksa global olanı kullan
+	if username == "" {
+		username = d.Config.Username
+	}
+	if token == "" {
+		token = d.Config.Token
+	}
+
+	return username, token
 }
