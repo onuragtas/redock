@@ -25,7 +25,7 @@ func initialize() {
 	checkSelfUpdate()
 
 	go func() {
-		for range time.Tick(time.Minute * 5) {
+		for range time.Tick(time.Minute * 2) {
 			checkSelfUpdate()
 		}
 	}()

@@ -50,7 +50,9 @@ const create = ref({
   url: '',
   branch: '',
   check: '',
-  script: ''
+  script: '',
+  username: '',
+  token: ''
 })
 
 const edit = ref({})
@@ -152,7 +154,9 @@ const addSubmit = async () => {
       url: '',
       branch: '',
       check: '',
-      script: ''
+      script: '',
+      username: '',
+      token: ''
     }
     await getList()
   } catch (error) {
@@ -440,6 +444,13 @@ onMounted(() => {
                       </span>
                     </div>
                   </div>
+                  
+                  <div v-if="deployment.username" class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
+                    <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
+                      <BaseIcon :path="mdiCog" size="14" class="text-blue-500" />
+                      <span>Using custom credentials: <span class="font-semibold text-slate-700 dark:text-slate-300">{{ deployment.username }}</span></span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -532,6 +543,34 @@ onMounted(() => {
           />
         </FormField>
 
+        <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg my-6">
+          <h4 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center">
+            <BaseIcon :path="mdiCog" size="20" class="mr-2" />
+            Git Credentials (Optional)
+          </h4>
+          <p class="text-sm text-yellow-600 dark:text-yellow-300">
+            Override global credentials for this project. Leave empty to use global settings.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <FormField label="Username" help="Leave empty to use global username">
+            <FormControl 
+              v-model="create.username" 
+              type="input" 
+              placeholder="Git username (optional)"
+            />
+          </FormField>
+          
+          <FormField label="Access Token" help="Leave empty to use global token">
+            <FormControl 
+              v-model="create.token" 
+              type="password" 
+              placeholder="Personal access token (optional)"
+            />
+          </FormField>
+        </div>
+
         <FormField 
           label="Pre-deployment Check" 
           help="Command to run before deployment. Output must contain 'start_deployment' to proceed."
@@ -594,6 +633,34 @@ onMounted(() => {
             required
           />
         </FormField>
+
+        <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg my-6">
+          <h4 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center">
+            <BaseIcon :path="mdiCog" size="20" class="mr-2" />
+            Git Credentials (Optional)
+          </h4>
+          <p class="text-sm text-yellow-600 dark:text-yellow-300">
+            Override global credentials for this project. Leave empty to use global settings.
+          </p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <FormField label="Username" help="Leave empty to use global username">
+            <FormControl 
+              v-model="edit.username" 
+              type="input" 
+              placeholder="Git username (optional)"
+            />
+          </FormField>
+          
+          <FormField label="Access Token" help="Leave empty to use global token">
+            <FormControl 
+              v-model="edit.token" 
+              type="password" 
+              placeholder="Personal access token (optional)"
+            />
+          </FormField>
+        </div>
 
         <FormField 
           label="Pre-deployment Check" 
