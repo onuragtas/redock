@@ -18,6 +18,50 @@
 | **Observability** | Built-in stats dashboard, telemetry exporters (Loki, InfluxDB, Graylog, OTLP, ClickHouse), and configurable batch/flush policies |
 | **Modern Web UI** | Vue 3 + Tailwind dashboard with route/service editors, certificate manager, client insights, and modal-driven workflows |
 
+---
+
+## Screenshots
+
+<div align="center">
+
+### Dashboard Overview
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_56_48.png" alt="Dashboard Overview" width="800"/>
+
+### API Gateway Management
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_57_02.png" alt="API Gateway Management" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_57_09.png" alt="API Gateway Configuration" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_57_22.png" alt="API Gateway Routes" width="800"/>
+
+### Client Management & Security
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_58_10.png" alt="Client Management" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_58_37.png" alt="Client Security Settings" width="800"/>
+
+### Deployment & Container Management
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_59_09.png" alt="Deployment Management" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_59_24.png" alt="Container Management" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_59_38.png" alt="Container Settings" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-21_59_57.png" alt="Container Configuration" width="800"/>
+
+### Advanced Features
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-22_00_06.png" alt="Advanced Features" width="800"/>
+
+<img src="images/screencapture-192-168-36-240-6001-2026-01-21-22_00_17.png" alt="Feature Configuration" width="800"/>
+
+</div>
+
+---
+
 ## Detailed Capabilities
 
 ### API Gateway & Traffic Management
@@ -246,10 +290,6 @@ redock > redock.log 2>&1
 
 ---
 
-## Demo
-![Demo](https://user-images.githubusercontent.com/10091460/151700639-d8af1fff-d88b-4e33-a9ae-3b6a4622d5ec.mov)
-
----
 
 ## License
 This project is licensed under the MIT License. See the `LICENSE` file for more details.
