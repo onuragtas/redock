@@ -1,0 +1,25 @@
+# GitHub Pages Jekyll Configuration
+
+title: Redock DevStation
+description: All-in-one local development environment manager
+theme: jekyll-theme-minimal
+
+# GitHub Pages ayarları
+plugins:
+  - jekyll-relative-links
+  - jekyll-readme-index
+
+# Markdown ayarları
+markdown: kramdown
+kramdown:
+  input: GFM
+  hard_wrap: false
+
+# Site ayarları
+baseurl: "/redock"
+url: "https://onuragtas.github.io"
+
+# Exclude dosyalar
+exclude:
+  - README.md
+  - docs.go
