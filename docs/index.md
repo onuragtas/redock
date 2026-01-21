@@ -1,3 +1,9 @@
+---
+layout: default
+title: Redock DevStation
+description: All-in-one local development environment manager
+---
+
 # Redock DevStation
 
 `Redock DevStation` is your all-in-one local development environment manager. It's a lightweight service application that brings together container management, development tools, and productivity features in a single, easy-to-use platform.
@@ -21,41 +27,85 @@
 
 ## Screenshots
 
-<div align="center">
+<div class="screenshots-section">
 
-### Dashboard Overview
+<div class="screenshot-category">
+<h3>Dashboard Overview</h3>
+<div class="screenshots-grid">
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_56_48.png" alt="Dashboard Overview"/>
+<h3>Main Dashboard</h3>
+</div>
+</div>
+</div>
 
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_56_48.png" alt="Dashboard Overview" width="800"/>
+<div class="screenshot-category">
+<h3>API Gateway Management</h3>
+<div class="screenshots-grid">
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_57_02.png" alt="API Gateway Management"/>
+<h3>Gateway Overview</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_57_09.png" alt="API Gateway Configuration"/>
+<h3>Configuration Panel</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_57_22.png" alt="API Gateway Routes"/>
+<h3>Route Management</h3>
+</div>
+</div>
+</div>
 
-### API Gateway Management
+<div class="screenshot-category">
+<h3>Client Management & Security</h3>
+<div class="screenshots-grid">
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_58_10.png" alt="Client Management"/>
+<h3>Client Analytics</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_58_37.png" alt="Client Security Settings"/>
+<h3>Security Settings</h3>
+</div>
+</div>
+</div>
 
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_57_02.png" alt="API Gateway Management" width="800"/>
+<div class="screenshot-category">
+<h3>Deployment & Container Management</h3>
+<div class="screenshots-grid">
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_09.png" alt="Deployment Management"/>
+<h3>Deployment Dashboard</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_24.png" alt="Container Management"/>
+<h3>Container Overview</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_38.png" alt="Container Settings"/>
+<h3>Container Settings</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_57.png" alt="Container Configuration"/>
+<h3>Configuration Editor</h3>
+</div>
+</div>
+</div>
 
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_57_09.png" alt="API Gateway Configuration" width="800"/>
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_57_22.png" alt="API Gateway Routes" width="800"/>
-
-### Client Management & Security
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_58_10.png" alt="Client Management" width="800"/>
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_58_37.png" alt="Client Security Settings" width="800"/>
-
-### Deployment & Container Management
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_09.png" alt="Deployment Management" width="800"/>
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_24.png" alt="Container Management" width="800"/>
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_38.png" alt="Container Settings" width="800"/>
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-21_59_57.png" alt="Container Configuration" width="800"/>
-
-### Advanced Features
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-22_00_06.png" alt="Advanced Features" width="800"/>
-
-<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-22_00_17.png" alt="Feature Configuration" width="800"/>
+<div class="screenshot-category">
+<h3>Advanced Features</h3>
+<div class="screenshots-grid">
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-22_00_06.png" alt="Advanced Features"/>
+<h3>Feature Panel</h3>
+</div>
+<div class="screenshot-item">
+<img src="../images/screencapture-192-168-36-240-6001-2026-01-21-22_00_17.png" alt="Feature Configuration"/>
+<h3>Advanced Configuration</h3>
+</div>
+</div>
+</div>
 
 </div>
 

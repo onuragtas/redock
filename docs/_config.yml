@@ -2,7 +2,7 @@
 
 title: Redock DevStation
 description: All-in-one local development environment manager
-theme: jekyll-theme-minimal
+theme: jekyll-theme-cayman
 
 # GitHub Pages ayarları
 plugins:
@@ -23,3 +23,10 @@ url: "https://onuragtas.github.io"
 exclude:
   - README.md
   - docs.go
+
+# Layout ayarları
+defaults:
+  - scope:
+      path: ""
+    values:
+      layout: default
