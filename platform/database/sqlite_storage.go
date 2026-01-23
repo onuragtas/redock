@@ -9,6 +9,9 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	// Use modernc.org/sqlite driver (pure Go, no CGO required)
+	_ "modernc.org/sqlite"
 )
 
 var (
@@ -24,8 +27,11 @@ func InitSQLiteStorage(workDir string) error {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
-	// Open database connection
-	db, err := gorm.Open(sqlite.Open(dbPath), &gorm.Config{
+	// Open database connection using modernc.org/sqlite (pure Go, no CGO)
+	db, err := gorm.Open(sqlite.Dialector{
+		DriverName: "sqlite",
+		DSN:        dbPath,
+	}, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
 	})
 	if err != nil {
