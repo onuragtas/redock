@@ -90,12 +90,12 @@ const getAllSavedCommands = async () => {
     console.error('Failed to load saved commands:', error)
     // Mock data for demo
     savedCommands.value = [
-      { command: 'docker ps -a' },
-      { command: 'docker-compose up -d' },
-      { command: 'npm install && npm run build' },
-      { command: 'git status && git add . && git commit -m "update"' },
-      { command: 'sudo systemctl restart nginx' },
-      { command: 'tail -f /var/log/nginx/error.log' }
+      { id: 1, command: 'docker ps -a', path: '/app' },
+      { id: 2, command: 'docker-compose up -d', path: '/app' },
+      { id: 3, command: 'npm install && npm run build', path: '/frontend' },
+      { id: 4, command: 'git status && git add . && git commit -m "update"', path: '/app' },
+      { id: 5, command: 'sudo systemctl restart nginx', path: '/etc/nginx' },
+      { id: 6, command: 'tail -f /var/log/nginx/error.log', path: '/var/log' }
     ]
   } finally {
     loading.value = false
@@ -109,7 +109,7 @@ const deleteSavedCommand = (data) => {
 
 const deleteSubmit = async () => {
   try {
-    await ApiService.deleteSavedCommand({ command: modalCommand.value.command })
+    await ApiService.deleteSavedCommand(modalCommand.value.id)
     isDeleteModalActive.value = false
     await getAllSavedCommands()
   } catch (error) {

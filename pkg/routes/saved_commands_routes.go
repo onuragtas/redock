@@ -6,12 +6,15 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// PHPXDebugAdapterRoutes func for describe group of private routes.
+// SavedCommandRoutes func for describe group of private routes.
 func SavedCommandRoutes(a *fiber.App) {
 	// Create routes group.
-	route := a.Group("/api/v1")
+	route := a.Group("/api/v1/saved_commands")
 
-	route.Get("/saved_commands/list", controllers.GetSavedCommands)
-	route.Post("/saved_commands/add", controllers.AddCommand)
-	route.Post("/saved_commands/remove", controllers.RemoveCommand)
+	// RESTful routes
+	route.Get("/", controllers.GetSavedCommands)        // GET /api/v1/saved_commands
+	route.Post("/", controllers.AddCommand)             // POST /api/v1/saved_commands
+	route.Get("/:id", controllers.GetCommandByID)       // GET /api/v1/saved_commands/:id
+	route.Put("/:id", controllers.UpdateCommandByID)    // PUT /api/v1/saved_commands/:id
+	route.Delete("/:id", controllers.RemoveCommandByID) // DELETE /api/v1/saved_commands/:id
 }

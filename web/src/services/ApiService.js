@@ -78,15 +78,23 @@ class ApiService {
   }
 
   static async getAllSavedCommands() {
-    return await this.get('/api/v1/saved_commands/list');
+    return await this.get('/api/v1/saved_commands');
+  }
+
+  static async getSavedCommandById(id) {
+    return await this.get(`/api/v1/saved_commands/${id}`);
   }
 
   static async addSavedCommand(data) {
-    return await this.post('/api/v1/saved_commands/add', data);
+    return await this.post('/api/v1/saved_commands', data);
   }
 
-  static async deleteSavedCommand(data) {
-    return await this.post('/api/v1/saved_commands/remove', data);
+  static async updateSavedCommand(id, data) {
+    return await this.put(`/api/v1/saved_commands/${id}`, data);
+  }
+
+  static async deleteSavedCommand(id) {
+    return await this.delete(`/api/v1/saved_commands/${id}`);
   }
 
   static async login(login, pass) {

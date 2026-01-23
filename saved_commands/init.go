@@ -1,24 +1,29 @@
 package saved_commands
 
 import (
-	"encoding/json"
 	"log"
-	"os"
 	docker_manager "redock/docker-manager"
+	"redock/platform/database"
 )
 
 type Model struct {
+	ID      uint   `json:"id"`
 	Command string `json:"command"`
+	Path    string `json:"path"`
 }
 
 type Manager struct {
 	dockerEnvironmentManager *docker_manager.DockerEnvironmentManager
+	repo                     *database.SavedCommandRepository
 }
 
 var manager Manager
 
 func Init(dockerEnvironmentManager *docker_manager.DockerEnvironmentManager) {
-	manager = Manager{dockerEnvironmentManager: dockerEnvironmentManager}
+	manager = Manager{
+		dockerEnvironmentManager: dockerEnvironmentManager,
+		repo:                     database.NewSavedCommandRepository(),
+	}
 }
 
 func GetManager() *Manager {
@@ -26,66 +31,69 @@ func GetManager() *Manager {
 }
 
 func (t *Manager) Delete(model Model) {
-	file, err := os.ReadFile(t.dockerEnvironmentManager.GetWorkDir() + "/saved_commands.json")
-	if err != nil {
-		log.Println(err)
+	if err := t.repo.Delete(model.Command); err != nil {
+		log.Printf("Failed to delete saved command: %v", err)
 	}
-
-	var list []Model
-	json.Unmarshal(file, &list)
-
-	for i, item := range list {
-		if item.Command == model.Command {
-			list = append(list[:i], list[i+1:]...)
-		}
-	}
-	marshal, err := json.Marshal(list)
-
-	if err != nil {
-		log.Println(err)
-	}
-
-	os.WriteFile(t.dockerEnvironmentManager.GetWorkDir()+"/saved_commands.json", marshal, 0777)
 }
 
 func (t *Manager) Add(model *Model) bool {
-
-	manager := t.dockerEnvironmentManager
-
-	file, err := os.ReadFile(manager.GetWorkDir() + "/saved_commands.json")
-	if err != nil {
-		log.Println(err)
+	// Check if command already exists
+	if existing, _ := t.repo.FindByCommand(model.Command); existing != nil {
+		return false
 	}
 
-	var list []Model
-
-	json.Unmarshal(file, &list)
-
-	for _, item := range list {
-		if item.Command == model.Command {
-			return false
-		}
+	// Use current working directory if path is empty
+	if model.Path == "" {
+		model.Path = t.dockerEnvironmentManager.GetWorkDir()
 	}
 
-	list = append(list, *model)
-
-	marshal, err := json.Marshal(list)
-	if err != nil {
-		log.Println(err)
+	if err := t.repo.Add(model.Command, model.Path); err != nil {
+		log.Printf("Failed to add saved command: %v", err)
+		return false
 	}
-
-	os.WriteFile(manager.GetWorkDir()+"/saved_commands.json", marshal, 0777)
 
 	return true
 }
 
 func (t *Manager) GetList() []Model {
-	file, err := os.ReadFile(t.dockerEnvironmentManager.GetWorkDir() + "/saved_commands.json")
+	commands, err := t.repo.GetAll()
 	if err != nil {
-		log.Println(err)
+		log.Printf("Failed to get saved commands: %v", err)
+		return []Model{}
 	}
 
-	var list []Model
-	json.Unmarshal(file, &list)
+	// Convert database models to API models
+	list := make([]Model, len(commands))
+	for i, cmd := range commands {
+		list[i] = Model{
+			ID:      cmd.ID,
+			Command: cmd.Command,
+			Path:    cmd.Path,
+		}
+	}
+
 	return list
+}
+
+// DeleteByID deletes a saved command by ID
+func (t *Manager) DeleteByID(id uint) error {
+	return t.repo.DeleteByID(id)
+}
+
+// UpdateByID updates a saved command by ID
+func (t *Manager) UpdateByID(id uint, command, path string) error {
+	return t.repo.Update(id, command, path)
+}
+
+// GetByID gets a saved command by ID
+func (t *Manager) GetByID(id uint) (*Model, error) {
+	cmd, err := t.repo.FindByID(id)
+	if err != nil {
+		return nil, err
+	}
+	return &Model{
+		ID:      cmd.ID,
+		Command: cmd.Command,
+		Path:    cmd.Path,
+	}, nil
 }

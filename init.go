@@ -8,6 +8,8 @@ import (
 	"redock/devenv"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
+	"redock/platform/database"
+	_ "redock/platform/database/migrations" // Import migrations to register them
 	"redock/saved_commands"
 	"redock/tunnel_proxy"
 	"time"
@@ -37,6 +39,11 @@ func initialize() {
 
 	log.Println("initialize....")
 	dockerEnvironmentManager := dockermanager.GetDockerManager()
+
+	// Initialize SQLite storage
+	if err := database.InitSQLiteStorage(dockerEnvironmentManager.GetWorkDir()); err != nil {
+		log.Fatalf("Failed to initialize SQLite storage: %v", err)
+	}
 
 	go dockerEnvironmentManager.UpdateDocker()
 
