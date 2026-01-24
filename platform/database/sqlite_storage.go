@@ -2,9 +2,9 @@ package database
 
 import (
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
+	"time"
 
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -27,16 +27,37 @@ func InitSQLiteStorage(workDir string) error {
 		return fmt.Errorf("failed to create data directory: %w", err)
 	}
 
+	// DSN with SQLite optimizations for concurrent access
+	// WAL mode: Allows concurrent reads and writes
+	// Busy timeout: Wait up to 5 seconds before returning SQLITE_BUSY
+	// Cache size: Larger cache for better performance
+	dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=1000000000"
+
 	// Open database connection using modernc.org/sqlite (pure Go, no CGO)
 	db, err := gorm.Open(sqlite.Dialector{
 		DriverName: "sqlite",
-		DSN:        dbPath,
+		DSN:        dsn,
 	}, &gorm.Config{
 		Logger: logger.Default.LogMode(logger.Silent),
+		// Prepare statements for better performance
+		PrepareStmt: true,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to open database: %w", err)
 	}
+
+	// Configure connection pool
+	sqlDB, err := db.DB()
+	if err != nil {
+		return fmt.Errorf("failed to get database instance: %w", err)
+	}
+
+	// SQLite with WAL mode supports concurrent reads + single writer
+	// For high-traffic applications (DNS server, API Gateway), we need more connections
+	sqlDB.SetMaxOpenConns(25)                   // Max 25 concurrent connections (good for WAL mode)
+	sqlDB.SetMaxIdleConns(10)                   // Keep 10 idle connections ready
+	sqlDB.SetConnMaxLifetime(time.Hour * 1)     // Recycle connections every 1 hour (prevents stale connections)
+	sqlDB.SetConnMaxIdleTime(time.Minute * 10)  // Close idle connections after 10 minutes
 
 	globalDB = db
 
@@ -45,7 +66,6 @@ func InitSQLiteStorage(workDir string) error {
 		return fmt.Errorf("failed to run migrations: %w", err)
 	}
 
-	log.Printf("✅ SQLite database initialized at: %s", dbPath)
 	return nil
 }
 

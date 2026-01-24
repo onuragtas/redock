@@ -10,6 +10,7 @@
 | Area | Highlights |
 |------|------------|
 | **API Gateway** | HTTP/HTTPS routing, priority-based matching, per-route auth, rate limiting, health checks, observability exporters, automatic TLS, and hot reloads |
+| **DNS Server** | Full-featured DNS server with UDP/TCP/DoH/DoT support, automatic blocklist management, client-specific rules, IP banning, custom filters, query logging, and real-time statistics |
 | **Client Protection** | Real-time client tracking, auto-blocking based on configurable thresholds, manual block list with persistence, and top-client analytics |
 | **Container & Dev Environments** | Docker lifecycle manager, service templates, environment bootstrap scripts, and redeploy helpers for consistent developer machines |
 | **Networking Toolkit** | Local HTTP proxy, tunnel proxy, embedded SSH server, and secure remote access helpers for on-prem or cloud workloads |
@@ -64,6 +65,18 @@
 
 ## Detailed Capabilities
 
+### DNS Server & Domain Filtering
+- Full-featured DNS server with UDP (port 53), TCP (port 53), DNS-over-HTTPS (DoH), and DNS-over-TLS (DoT) support.
+- Automatic blocklist management with format auto-detection (hosts, domains, adblock) and configurable update intervals.
+- Three-tier filtering system: IP banning, client-specific rules (per-client domain allow/block), and global domain filtering (blacklist/whitelist).
+- Advanced filter types: exact match, wildcard patterns, and regex support for flexible domain matching.
+- Custom rule management with real-time status checks and toggle-based UI for easy rule modification.
+- Query logging with 24-hour statistics, top queried/blocked domains, active clients tracking, and response time metrics.
+- DNS query caching with configurable TTL, upstream DNS forwarding (Cloudflare, Google, Quad9), and rate limiting per client.
+- Per-client settings including custom upstream DNS, safe browsing, parental controls, and tagging system.
+- Default blocklists included: AdGuard DNS filter (adblock format) and AdAway Default Blocklist (hosts format).
+- Web UI with real-time dropdown actions for logs, bulk rule management, and visual client ban indicators.
+
 ### API Gateway & Traffic Management
 - HTTP and HTTPS listeners with automatic TLS cert loading plus optional Let's Encrypt provisioning and renewal scheduler.
 - Route engine with priority sorting, host/path matching, method filtering, header rules, path stripping, and per-route observability toggles.
@@ -103,6 +116,7 @@
 
 ### Core Runtime Services
 - `api_gateway/` – primary reverse proxy with routing, TLS termination, rate limiting, auth, health checks, observability exporters, and configuration persistence.
+- `dns_server/` – full-featured DNS server with UDP/TCP/DoH/DoT support, blocklist management, client-specific rules, IP banning, custom filters (blacklist/whitelist/regex/wildcard), query logging, caching, and real-time statistics dashboard.
 - `local_proxy/` – persistent TCP/HTTP proxy list with per-port bridging between localhost and remote hosts/ports plus JSON-backed auto-start state.
 - `tunnel_proxy/` – secure remote tunnel client with domain management, login/registration, renewals, and fine-grained tunnel lifecycle commands.
 - `docker-manager/` – shared Docker environment manager that tracks workdir state, service metadata, and provides helpers for every module interacting with containers.
@@ -123,11 +137,11 @@
 - `platform/migrations/` – SQL up/down migrations for bootstrapping Redock metadata tables.
 
 ### Application Layer (REST & WebSockets)
-- `app/controllers/` – Fiber controllers for auth, Docker ops, deployments, proxies, tunnels, saved commands, PHP debugger, local proxy management, WebSockets, and token minting.
+- `app/controllers/` – Fiber controllers for auth, DNS server management, Docker ops, deployments, proxies, tunnels, saved commands, PHP debugger, local proxy management, WebSockets, and token minting.
 - `app/models/` – request/response schema definitions for auth, tokens, docker actions, and user entities.
 - `app/queries/` – user persistence queries and helpers.
 - `pkg/middleware/` – Fiber HTTP middleware (CORS, logging, JWT guards) plus telemetry injection.
-- `pkg/routes/` – router definitions for public/private APIs, Swagger docs, tunnel, deployment, proxy, saved commands, and WebSocket endpoints.
+- `pkg/routes/` – router definitions for public/private APIs, Swagger docs, DNS endpoints, tunnel, deployment, proxy, saved commands, and WebSocket endpoints.
 - `pkg/utils/` – credential builders, JWT generator/parser, password generator, URL builders, validator helpers, and server bootstrap utilities.
 
 ### Networking, Proxying & Remote Access
@@ -137,8 +151,9 @@
 - `websocket_controller.go` – multiplexed websocket support for real-time dashboard updates.
 
 ### Frontend & UX
-- `web/` – Vue 3 + Tailwind single-page app providing dashboards for services, routes, clients, certificates, observability, deployments, tunnels, saved commands, and logs.
+- `web/` – Vue 3 + Tailwind single-page app providing dashboards for services, routes, clients, certificates, observability, deployments, tunnels, saved commands, DNS server management, and logs.
 - `web/src/views/ApiGateway.vue` – rich UI for everything in the API Gateway (client analytics, block lists, TLS, observability, route/service CRUD, manual blocks, certificates).
+- `web/src/views/DNSServer.vue` – comprehensive DNS management interface with real-time statistics, blocklist management, custom rules (global/client-specific/IP bans), query logs with action dropdowns, top domains analytics, and active clients monitoring.
 - `docs/` – generated Swagger/OpenAPI artifacts plus documentation portal scaffolding.
 
 ### Documentation & Specs

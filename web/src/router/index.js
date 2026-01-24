@@ -196,6 +196,22 @@ const routes = [
       },
       {
         meta: {
+          title: 'DNS Server'
+        },
+        path: 'dns_server',
+        name: 'dns_server',
+        component: () => import('@/views/DNSServer.vue')
+      },
+      {
+        meta: {
+          title: 'DNS Server'
+        },
+        path: 'dns-server',
+        name: 'dns-server',
+        component: () => import('@/views/DNSServer.vue')
+      },
+      {
+        meta: {
           title: 'Forms'
         },
         path: 'forms',

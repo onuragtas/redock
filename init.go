@@ -6,6 +6,7 @@ import (
 	"redock/api_gateway"
 	"redock/deployment"
 	"redock/devenv"
+	"redock/dns_server"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
 	"redock/platform/database"
@@ -58,6 +59,7 @@ func initialize() {
 	saved_commands.Init(dockerEnvironmentManager)
 	deployment.Init(dockerEnvironmentManager)
 	api_gateway.Init(dockerEnvironmentManager)
+	dns_server.Init(dockerEnvironmentManager)
 	go deployment.GetDeployment().Run()
 	localproxy.GetLocalProxyManager().StartAll()
 	api_gateway.GetGateway().StartAll()

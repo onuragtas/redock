@@ -45,7 +45,6 @@ func RunMigrations(db *gorm.DB) error {
 		db.Model(&MigrationHistory{}).Where("name = ?", migration.Version).Count(&count)
 
 		if count > 0 {
-			log.Printf("⏭️  Migration %s already applied, skipping", migration.Version)
 			continue
 		}
 
@@ -67,7 +66,7 @@ func RunMigrations(db *gorm.DB) error {
 			return err
 		}
 
-		log.Printf("✅ Migration %s completed successfully", migration.Version)
+		log.Printf("Migration %s completed successfully", migration.Version)
 	}
 
 	return nil
@@ -113,7 +112,7 @@ func RollbackMigration(db *gorm.DB) error {
 		return err
 	}
 
-	log.Printf("✅ Rollback completed successfully")
+	log.Printf("Rollback completed successfully")
 	return nil
 }
 

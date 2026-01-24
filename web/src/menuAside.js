@@ -1,69 +1,31 @@
 import {
-    mdiBookSearch,
-    mdiDocker,
-    mdiMonitorDashboard,
-    mdiRouter
+  mdiBugCheck,
+  mdiConsole,
+  mdiDns,
+  mdiDocker,
+  mdiHome,
+  mdiLan,
+  mdiLanConnect,
+  mdiLaptop,
+  mdiNetworkOutline,
+  mdiPlaylistEdit,
+  mdiRocket,
+  mdiWeb,
+  mdiWrench
 } from '@mdi/js'
 
 export default [
-  {
-    to: '/dashboard',
-    icon: mdiMonitorDashboard,
-    label: 'Dashboard'
-  },
-  {
-    to: '/setup_environment',
-    icon: mdiMonitorDashboard,
-    label: 'Setup Environment',
-  },
-  {
-    to: '/container_settings',
-    icon: mdiDocker,
-    label: 'Container Settings',
-  },
-  {
-    to: '/virtual_hosts',
-    icon: mdiBookSearch,
-    label: 'Virtual Hosts',
-  },
-  {
-    to: '/saved_commands',
-    icon: mdiBookSearch,
-    label: 'Saved Commands',
-  },
-  {
-    to: '/devenv',
-    icon: mdiBookSearch,
-    label: 'Personal Containers',
-  },
-  {
-    to: '/tunnel_proxy',
-    icon: mdiBookSearch,
-    label: 'Tunnel Proxy',
-  },
-  {
-    to: '/local_proxy',
-    icon: mdiBookSearch,
-    label: 'Local Proxy',
-  },
-  {
-    to: '/api_gateway',
-    icon: mdiRouter,
-    label: 'API Gateway',
-  },
-  {
-    to: '/php_xdebug_adapter',
-    icon: mdiBookSearch,
-    label: 'PHP XDebug Adapter',
-  },
-  {
-    to: '/deployment',
-    icon: mdiBookSearch,
-    label: 'Deployment',
-  },
-  {
-    to: '/logs',
-    icon: mdiBookSearch,
-    label: 'Logs',
-  }
+  { name: 'Dashboard', path: '/', icon: mdiHome },
+  { name: 'Deployment', path: '/deployment', icon: mdiRocket },
+  { name: 'Setup Environment', path: '/setup_environment', icon: mdiWrench },
+  { name: 'Dev Environment', path: '/devenv', icon: mdiLaptop },
+  { name: 'Container Settings', path: '/container_settings', icon: mdiDocker },
+  { name: 'API Gateway', path: '/api-gateway', icon: mdiNetworkOutline },
+  { name: 'DNS Server', path: '/dns-server', icon: mdiDns },
+  { name: 'Local Proxy', path: '/local-proxy', icon: mdiLan },
+  { name: 'Terminal', path: '/exec', icon: mdiConsole },
+  { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiLanConnect },
+  { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiWeb },
+  { name: 'Saved Commands', path: '/saved-commands', icon: mdiPlaylistEdit },
+  { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck }
 ]

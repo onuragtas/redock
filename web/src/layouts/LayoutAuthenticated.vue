@@ -1,30 +1,21 @@
 <script setup>
 import BaseIcon from '@/components/BaseIcon.vue'
+import menuAside from '@/menuAside.js'
 import ApiService from '@/services/ApiService'
 import { useTerminalStore } from '@/stores/terminalStore'
 import {
   mdiAccount,
   mdiBell,
-  mdiBugCheck,
   mdiChevronDown,
   mdiClose,
   mdiConsole,
   mdiContentDuplicate,
   mdiDocker,
-  mdiHome,
-  mdiLan,
-  mdiLanConnect,
-  mdiLaptop,
   mdiLogout,
   mdiMagnify,
   mdiMenu,
   mdiMinus,
-  mdiNetworkOutline,
-  mdiPlaylistEdit,
-  mdiRocket,
-  mdiWeb,
-  mdiWindowMaximize,
-  mdiWrench
+  mdiWindowMaximize
 } from '@mdi/js'
 import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
@@ -52,21 +43,8 @@ const userInfo = ref({ username: '-' }) // Default to '-' if API fails
 // Computed properties
 const activeTab = computed(() => terminalStore.getActiveTab)
 
-// Navigation items
-const navigationItems = [
-  { name: 'Dashboard', path: '/', icon: mdiHome },
-  { name: 'Deployment', path: '/deployment', icon: mdiRocket },
-  { name: 'Setup Environment', path: '/setup_environment', icon: mdiWrench },
-  { name: 'Dev Environment', path: '/devenv', icon: mdiLaptop },
-  { name: 'Container Settings', path: '/container_settings', icon: mdiDocker },
-  { name: 'API Gateway', path: '/api-gateway', icon: mdiNetworkOutline },
-  { name: 'Local Proxy', path: '/local-proxy', icon: mdiLan },
-  { name: 'Terminal', path: '/exec', icon: mdiConsole },
-  { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiLanConnect },
-  { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiWeb },
-  { name: 'Saved Commands', path: '/saved-commands', icon: mdiPlaylistEdit },
-  { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck }
-]
+// Navigation items - imported from menuAside.js
+const navigationItems = menuAside
 
 // Methods
 const toggleSidebar = () => {
