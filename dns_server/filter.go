@@ -173,18 +173,21 @@ func (f *FilterEngine) DetectBlocklistFormat(reader io.Reader) string {
 
 		totalLines++
 
+		// Check for adblock format FIRST (||domain^)
+		// This must be checked before plain domain format
+		if strings.HasPrefix(line, "||") && strings.Contains(line, "^") {
+			adblockCount++
+			continue // Don't check other formats for this line
+		}
+
 		// Check for hosts format (starts with IP address)
 		if strings.HasPrefix(line, "0.0.0.0 ") || strings.HasPrefix(line, "127.0.0.1 ") ||
 			strings.HasPrefix(line, "::1 ") || strings.HasPrefix(line, ":: ") {
 			hostsCount++
+			continue
 		}
 
-		// Check for adblock format (||domain^)
-		if strings.HasPrefix(line, "||") && strings.Contains(line, "^") {
-			adblockCount++
-		}
-
-		// Check for plain domain format
+		// Check for plain domain format (only if not adblock or hosts)
 		parts := strings.Fields(line)
 		if len(parts) == 1 && f.isValidDomain(parts[0]) {
 			domainCount++
@@ -192,11 +195,11 @@ func (f *FilterEngine) DetectBlocklistFormat(reader io.Reader) string {
 	}
 
 	// Determine format based on analysis
-	if hostsCount > adblockCount && hostsCount > domainCount {
-		return "hosts"
-	}
 	if adblockCount > hostsCount && adblockCount > domainCount {
 		return "adblock"
+	}
+	if hostsCount > adblockCount && hostsCount > domainCount {
+		return "hosts"
 	}
 	// Default to domains format
 	return "domains"
@@ -416,7 +419,7 @@ func (f *FilterEngine) matchWildcard(domain, pattern string) bool {
 // isClientDomainBlocked checks if domain is blocked for specific client
 func (f *FilterEngine) isClientDomainBlocked(clientIP, domain string) (bool, string) {
 	var rules []DNSClientDomainRule
-	
+
 	// Check exact match
 	result := f.db.Where("client_ip = ? AND domain = ? AND type = ?", clientIP, domain, "block").Find(&rules)
 	if result.Error == nil && len(rules) > 0 {
@@ -447,7 +450,7 @@ func (f *FilterEngine) isClientDomainBlocked(clientIP, domain string) (bool, str
 // isClientDomainAllowed checks if domain is whitelisted for specific client
 func (f *FilterEngine) isClientDomainAllowed(clientIP, domain string) bool {
 	var rules []DNSClientDomainRule
-	
+
 	// Check exact match
 	result := f.db.Where("client_ip = ? AND domain = ? AND type = ?", clientIP, domain, "allow").Find(&rules)
 	if result.Error == nil && len(rules) > 0 {
