@@ -1065,6 +1065,10 @@ func BlockClient(c *fiber.Ctx) error {
 		}
 	}
 
+	// Invalidate client cache after blocking
+	filterEngine := server.GetFilterEngine()
+	filterEngine.InvalidateClientCache(req.ClientIP)
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "Client blocked successfully",
@@ -1109,6 +1113,10 @@ func UnblockClient(c *fiber.Ctx) error {
 			"msg":   "Failed to unblock client: " + err.Error(),
 		})
 	}
+
+	// Invalidate client cache after unblocking
+	filterEngine := server.GetFilterEngine()
+	filterEngine.InvalidateClientCache(clientIP)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -1199,6 +1207,10 @@ func CreateClientDomainRule(c *fiber.Ctx) error {
 		})
 	}
 
+	// Invalidate client cache
+	filterEngine := server.GetFilterEngine()
+	filterEngine.InvalidateClientCache(rule.ClientIP)
+
 	// Reload filters
 	go server.ReloadFilters()
 
@@ -1272,6 +1284,10 @@ func DeleteClientDomainRuleByDetails(c *fiber.Ctx) error {
 			"msg":   "Failed to delete rule: " + result.Error.Error(),
 		})
 	}
+
+	// Invalidate client cache
+	filterEngine := server.GetFilterEngine()
+	filterEngine.InvalidateClientCache(clientIP)
 
 	// Reload filters
 	go server.ReloadFilters()

@@ -14,6 +14,18 @@ import (
 	"gorm.io/gorm"
 )
 
+// ClientRules holds cached client-specific rules
+type ClientRules struct {
+	Blocked        bool             // Client IP banned
+	BlockedDomains map[string]bool  // Exact match blocked domains
+	AllowedDomains map[string]bool  // Exact match allowed domains
+	RegexRules     []*regexp.Regexp // Pre-compiled regex rules
+	WildcardRules  []string         // Wildcard patterns
+	AllowRegex     []*regexp.Regexp // Pre-compiled allow regex
+	AllowWildcard  []string         // Allow wildcard patterns
+	LastUpdate     time.Time
+}
+
 // FilterEngine manages domain filtering (blocklists and custom filters)
 type FilterEngine struct {
 	db               *gorm.DB
@@ -23,6 +35,11 @@ type FilterEngine struct {
 	wildcardFilters  []string
 	mutex            sync.RWMutex
 	lastUpdate       time.Time
+
+	// Client rules cache (NEW - Performance optimization)
+	clientRulesCache map[string]*ClientRules // clientIP -> rules
+	clientCacheMutex sync.RWMutex
+	clientCacheTTL   time.Duration
 }
 
 // NewFilterEngine creates a new filter engine
@@ -33,6 +50,8 @@ func NewFilterEngine(db *gorm.DB) *FilterEngine {
 		whitelistDomains: make(map[string]bool),
 		regexFilters:     make([]*regexp.Regexp, 0),
 		wildcardFilters:  make([]string, 0),
+		clientRulesCache: make(map[string]*ClientRules),
+		clientCacheTTL:   5 * time.Minute, // Cache for 5 minutes
 	}
 }
 
@@ -288,6 +307,88 @@ func (f *FilterEngine) handleBlocklistError(blocklist *DNSBlocklist, err error) 
 	}
 }
 
+// getClientRules returns cached client rules or loads them from DB
+func (f *FilterEngine) getClientRules(clientIP string) *ClientRules {
+	// Check cache first
+	f.clientCacheMutex.RLock()
+	if cached, exists := f.clientRulesCache[clientIP]; exists {
+		if time.Since(cached.LastUpdate) < f.clientCacheTTL {
+			f.clientCacheMutex.RUnlock()
+			return cached
+		}
+	}
+	f.clientCacheMutex.RUnlock()
+
+	// Load from DB
+	rules := &ClientRules{
+		BlockedDomains: make(map[string]bool),
+		AllowedDomains: make(map[string]bool),
+		RegexRules:     make([]*regexp.Regexp, 0),
+		WildcardRules:  make([]string, 0),
+		AllowRegex:     make([]*regexp.Regexp, 0),
+		AllowWildcard:  make([]string, 0),
+		LastUpdate:     time.Now(),
+	}
+
+	// Check if client is banned
+	var clientSettings DNSClientSettings
+	if err := f.db.Where("client_ip = ?", clientIP).First(&clientSettings).Error; err == nil {
+		rules.Blocked = clientSettings.Blocked
+	}
+
+	// Load client-specific domain rules
+	var domainRules []DNSClientDomainRule
+	f.db.Where("client_ip = ?", clientIP).Find(&domainRules)
+
+	for _, rule := range domainRules {
+		domain := strings.TrimSpace(strings.ToLower(rule.Domain))
+		domain = strings.TrimSuffix(domain, ".")
+
+		if rule.Type == "block" {
+			if rule.IsRegex {
+				if re, err := regexp.Compile(domain); err == nil {
+					rules.RegexRules = append(rules.RegexRules, re)
+				}
+			} else if rule.IsWildcard {
+				rules.WildcardRules = append(rules.WildcardRules, domain)
+			} else {
+				rules.BlockedDomains[domain] = true
+			}
+		} else if rule.Type == "allow" {
+			if rule.IsRegex {
+				if re, err := regexp.Compile(domain); err == nil {
+					rules.AllowRegex = append(rules.AllowRegex, re)
+				}
+			} else if rule.IsWildcard {
+				rules.AllowWildcard = append(rules.AllowWildcard, domain)
+			} else {
+				rules.AllowedDomains[domain] = true
+			}
+		}
+	}
+
+	// Cache the rules
+	f.clientCacheMutex.Lock()
+	f.clientRulesCache[clientIP] = rules
+	f.clientCacheMutex.Unlock()
+
+	return rules
+}
+
+// InvalidateClientCache invalidates cache for a specific client
+func (f *FilterEngine) InvalidateClientCache(clientIP string) {
+	f.clientCacheMutex.Lock()
+	delete(f.clientRulesCache, clientIP)
+	f.clientCacheMutex.Unlock()
+}
+
+// ClearClientCache clears all cached client rules
+func (f *FilterEngine) ClearClientCache() {
+	f.clientCacheMutex.Lock()
+	f.clientRulesCache = make(map[string]*ClientRules)
+	f.clientCacheMutex.Unlock()
+}
+
 // ShouldBlock checks if a domain should be blocked
 // Priority order:
 // 1. Client IP Ban -> Block everything
@@ -298,63 +399,77 @@ func (f *FilterEngine) handleBlocklistError(blocklist *DNSBlocklist, err error) 
 // 6. Allow
 func (f *FilterEngine) ShouldBlock(domain string, clientIP string) (bool, string) {
 	domain = strings.TrimSpace(strings.ToLower(domain))
-
-	// Remove trailing dot if present
 	domain = strings.TrimSuffix(domain, ".")
+
+	// Get client rules from cache (FAST!)
+	clientRules := f.getClientRules(clientIP)
+
+	// 1. Check if client is banned (from cache)
+	if clientRules.Blocked {
+		return true, "client IP banned"
+	}
 
 	f.mutex.RLock()
 	defer f.mutex.RUnlock()
 
-	// 1. Check if client is banned (IP Ban)
-	var clientSettings DNSClientSettings
-	result := f.db.Where("client_ip = ?", clientIP).First(&clientSettings)
-	if result.Error == nil {
-		if clientSettings.Blocked {
-			return true, "client IP banned"
-		}
-		if !clientSettings.BlockingEnabled {
-			return false, ""
-		}
-	}
-
-	// 2. Check global whitelist first (whitelist has priority)
+	// 2. Check global whitelist first
 	if f.whitelistDomains[domain] {
 		return false, ""
 	}
-
-	// Check if domain or any parent domain is whitelisted globally
 	if f.isParentWhitelisted(domain) {
 		return false, ""
 	}
 
-	// 3. Check client-specific whitelist
-	if f.isClientDomainAllowed(clientIP, domain) {
+	// 3. Check client-specific whitelist (from cache)
+	if clientRules.AllowedDomains[domain] {
 		return false, ""
 	}
-
-	// 4. Check client-specific blacklist
-	if blocked, reason := f.isClientDomainBlocked(clientIP, domain); blocked {
-		return true, reason
+	// Check client allow regex (pre-compiled)
+	for _, re := range clientRules.AllowRegex {
+		if re.MatchString(domain) {
+			return false, ""
+		}
+	}
+	// Check client allow wildcard
+	for _, wildcard := range clientRules.AllowWildcard {
+		if f.matchWildcard(domain, wildcard) {
+			return false, ""
+		}
 	}
 
-	// 5. Check global exact match in blocklist
+	// 4. Check client-specific blacklist (from cache)
+	if clientRules.BlockedDomains[domain] {
+		return true, "client-specific block"
+	}
+	// Check client block regex (pre-compiled)
+	for _, re := range clientRules.RegexRules {
+		if re.MatchString(domain) {
+			return true, "client-specific regex block"
+		}
+	}
+	// Check client block wildcard
+	for _, wildcard := range clientRules.WildcardRules {
+		if f.matchWildcard(domain, wildcard) {
+			return true, "client-specific wildcard block"
+		}
+	}
+
+	// 5. Check global blocklist
 	if f.blockedDomains[domain] {
 		return true, "blocklist"
 	}
-
-	// Check if any parent domain is blocked globally
 	if f.isParentBlocked(domain) {
 		return true, "blocklist (parent)"
 	}
 
-	// Check wildcard filters
+	// Check global wildcard filters
 	for _, wildcard := range f.wildcardFilters {
 		if f.matchWildcard(domain, wildcard) {
 			return true, "wildcard filter"
 		}
 	}
 
-	// Check regex filters
+	// Check global regex filters
 	for _, re := range f.regexFilters {
 		if re.MatchString(domain) {
 			return true, "regex filter"
