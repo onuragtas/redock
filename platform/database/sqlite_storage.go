@@ -54,10 +54,10 @@ func InitSQLiteStorage(workDir string) error {
 
 	// SQLite with WAL mode supports concurrent reads + single writer
 	// For high-traffic applications (DNS server, API Gateway), we need more connections
-	sqlDB.SetMaxOpenConns(25)                   // Max 25 concurrent connections (good for WAL mode)
-	sqlDB.SetMaxIdleConns(10)                   // Keep 10 idle connections ready
-	sqlDB.SetConnMaxLifetime(time.Hour * 1)     // Recycle connections every 1 hour (prevents stale connections)
-	sqlDB.SetConnMaxIdleTime(time.Minute * 10)  // Close idle connections after 10 minutes
+	sqlDB.SetMaxOpenConns(25)                  // Max 25 concurrent connections (good for WAL mode)
+	sqlDB.SetMaxIdleConns(10)                  // Keep 10 idle connections ready
+	sqlDB.SetConnMaxLifetime(time.Hour * 1)    // Recycle connections every 1 hour (prevents stale connections)
+	sqlDB.SetConnMaxIdleTime(time.Minute * 10) // Close idle connections after 10 minutes
 
 	globalDB = db
 
