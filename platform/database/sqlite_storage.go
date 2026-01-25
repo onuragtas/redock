@@ -29,9 +29,10 @@ func InitSQLiteStorage(workDir string) error {
 
 	// DSN with SQLite optimizations for concurrent access
 	// WAL mode: Allows concurrent reads and writes
-	// Busy timeout: Wait up to 5 seconds before returning SQLITE_BUSY
+	// Busy timeout: Wait up to 10 seconds before returning SQLITE_BUSY (increased from 5s)
 	// Cache size: Larger cache for better performance
-	dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=5000&_synchronous=NORMAL&_cache_size=1000000000"
+	// Synchronous NORMAL: Balance between safety and speed
+	dsn := dbPath + "?_journal_mode=WAL&_busy_timeout=10000&_synchronous=NORMAL&_cache_size=1000000000&_txlock=immediate"
 
 	// Open database connection using modernc.org/sqlite (pure Go, no CGO)
 	db, err := gorm.Open(sqlite.Dialector{

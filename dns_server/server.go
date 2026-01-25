@@ -36,11 +36,12 @@ type DNSServer struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 
-	// Log buffering for batch insert
+	// Log buffering for batch insert with channel
 	logBuffer      []DNSQueryLog
 	logBufferMutex sync.Mutex
 	logBufferSize  int
 	logFlushTicker *time.Ticker
+	logChannel     chan DNSQueryLog // Async log channel
 }
 
 // GetDNSServer returns singleton instance
@@ -91,12 +92,14 @@ func (s *DNSServer) Init(db *gorm.DB) error {
 	s.stats = NewStatsCollector(db)
 
 	// Initialize log buffer for batch insert (reduces DB lock contention)
-	s.logBuffer = make([]DNSQueryLog, 0, 100)
-	s.logBufferSize = 50                               // Flush when 50 logs accumulated
-	s.logFlushTicker = time.NewTicker(5 * time.Second) // Or flush every 5 seconds
+	s.logBuffer = make([]DNSQueryLog, 0, 200)
+	s.logBufferSize = 100                              // Flush when 100 logs accumulated (increased from 50)
+	s.logFlushTicker = time.NewTicker(10 * time.Second) // Flush every 10 seconds (increased from 5)
+	s.logChannel = make(chan DNSQueryLog, 500)          // Buffered channel for async logging
 
-	// Start background log flusher
+	// Start background log workers
 	go s.logFlusher()
+	go s.logChannelWorker()
 
 	// Load filters
 	if err := s.filterEngine.LoadFilters(); err != nil {
@@ -204,6 +207,14 @@ func (s *DNSServer) Stop() error {
 	}
 
 	s.cancel()
+
+	// Drain log channel before final flush
+	close(s.logChannel)
+	for logEntry := range s.logChannel {
+		s.logBufferMutex.Lock()
+		s.logBuffer = append(s.logBuffer, logEntry)
+		s.logBufferMutex.Unlock()
+	}
 
 	// Final flush of any remaining logs
 	s.flushLogBuffer()
@@ -427,9 +438,8 @@ func getClientIP(w dns.ResponseWriter) string {
 	return "unknown"
 }
 
-// logQuery logs DNS query to database
+// logQuery sends DNS query to async channel for batching
 func (s *DNSServer) logQuery(clientIP, domain, qtype string, response *dns.Msg, blocked bool, blockReason string, responseTime time.Duration, cached bool) {
-	// Build response string
 	var responseStr string
 	if response != nil && len(response.Answer) > 0 {
 		for _, ans := range response.Answer {
@@ -448,15 +458,31 @@ func (s *DNSServer) logQuery(clientIP, domain, qtype string, response *dns.Msg, 
 		Cached:       cached,
 	}
 
-	// Add to buffer instead of direct insert
-	s.logBufferMutex.Lock()
-	s.logBuffer = append(s.logBuffer, logEntry)
-	shouldFlush := len(s.logBuffer) >= s.logBufferSize
-	s.logBufferMutex.Unlock()
+	// Non-blocking send to channel (drop if channel full to avoid DNS slowdown)
+	select {
+	case s.logChannel <- logEntry:
+		// Log sent successfully
+	default:
+		// Channel full, drop log (better than blocking DNS queries)
+	}
+}
 
-	// Flush if buffer is full
-	if shouldFlush {
-		go s.flushLogBuffer()
+// logChannelWorker processes logs from channel and adds to buffer
+func (s *DNSServer) logChannelWorker() {
+	for {
+		select {
+		case <-s.ctx.Done():
+			return
+		case logEntry := <-s.logChannel:
+			s.logBufferMutex.Lock()
+			s.logBuffer = append(s.logBuffer, logEntry)
+			shouldFlush := len(s.logBuffer) >= s.logBufferSize
+			s.logBufferMutex.Unlock()
+
+			if shouldFlush {
+				s.flushLogBuffer()
+			}
+		}
 	}
 }
 
@@ -687,15 +713,32 @@ func (s *DNSServer) flushLogBuffer() {
 		return
 	}
 
-	// Take current buffer and create new one
 	logsToFlush := s.logBuffer
 	s.logBuffer = make([]DNSQueryLog, 0, 100)
 	s.logBufferMutex.Unlock()
 
-	// Batch insert with SkipDefaultTransaction for better SQLite performance
-	if err := s.db.Session(&gorm.Session{
-		SkipDefaultTransaction: true,
-	}).CreateInBatches(logsToFlush, 50).Error; err != nil {
-		log.Printf("⚠️  Failed to flush DNS query logs: %v", err)
+	// Retry mechanism for SQLITE_BUSY errors
+	maxRetries := 3
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err := s.db.Session(&gorm.Session{
+			SkipDefaultTransaction: true,
+		}).CreateInBatches(logsToFlush, 100).Error
+
+		if err == nil {
+			return
+		}
+
+		// Check if it's a busy/locked error
+		if strings.Contains(err.Error(), "SQLITE_BUSY") || strings.Contains(err.Error(), "database is locked") {
+			if attempt < maxRetries {
+				// Exponential backoff: 100ms, 200ms, 400ms
+				backoff := time.Duration(100*(1<<attempt)) * time.Millisecond
+				time.Sleep(backoff)
+				continue
+			}
+		}
+
+		log.Printf("⚠️  Failed to flush DNS query logs after %d attempts: %v", attempt+1, err)
+		return
 	}
 }
