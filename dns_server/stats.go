@@ -70,7 +70,7 @@ func (s *StatsCollector) UpdateDailyStats() {
 		Count(&uniqueClients)
 	stats.UniqueClients = int(uniqueClients)
 
-	// Get top domains
+	// Get top domains (exclude blocked)
 	topDomains := s.getTopDomains(today, false, 10)
 	if data, err := json.Marshal(topDomains); err == nil {
 		stats.TopDomains = string(data)
@@ -113,6 +113,8 @@ func (s *StatsCollector) getTopDomains(date time.Time, blocked bool, limit int) 
 
 	if blocked {
 		query = query.Where("blocked = ?", true)
+	} else {
+		query = query.Where("blocked = ?", false)
 	}
 
 	query.Group("domain").
@@ -215,11 +217,11 @@ func (s *StatsCollector) GetRealtimeStats() RealtimeStats {
 		stats.CacheHitRate = float64(cachedLastHour) / float64(totalLastHour) * 100
 	}
 
-	// Top queried domains (last 24h)
+	// Top queried domains (last 24h) - exclude blocked domains
 	var topDomains []DomainCount
 	s.db.Model(&DNSQueryLog{}).
 		Select("domain, COUNT(*) as count").
-		Where("created_at >= ?", last24h).
+		Where("created_at >= ? AND blocked = ?", last24h, false).
 		Group("domain").
 		Order("count DESC").
 		Limit(20).
