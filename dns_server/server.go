@@ -340,9 +340,6 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 
 	clientIP := getClientIP(w)
 
-	// 📥 LOG: Incoming DNS Request
-	log.Printf("📥 IN  | %s | %s | Type: %s | ID: %d", clientIP, domain, qtype, r.Id)
-
 	// Check cache first
 	var cached bool
 	var blocked bool
@@ -353,15 +350,10 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 			cachedMsg.SetReply(r)
 			w.WriteMsg(cachedMsg)
 			cached = true
-			responseTime := time.Since(startTime)
-
-			// 📤 LOG: Cache Hit Response
-			log.Printf("📤 OUT | %s | %s | Type: %s | Status: CACHED | Time: %dms | Answers: %d",
-				clientIP, domain, qtype, responseTime.Milliseconds(), len(cachedMsg.Answer))
 
 			// Log query
 			if s.config.QueryLogging {
-				s.logQuery(clientIP, domain, qtype, cachedMsg, blocked, blockReason, responseTime, cached)
+				s.logQuery(clientIP, domain, qtype, cachedMsg, blocked, blockReason, time.Since(startTime), cached)
 			}
 			return
 		}
@@ -377,15 +369,10 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 			// Return NXDOMAIN
 			msg.Rcode = dns.RcodeNameError
 			w.WriteMsg(msg)
-			responseTime := time.Since(startTime)
-
-			// 📤 LOG: Blocked Response
-			log.Printf("📤 OUT | %s | %s | Type: %s | Status: BLOCKED (%s) | Time: %dms",
-				clientIP, domain, qtype, blockReason, responseTime.Milliseconds())
 
 			// Log blocked query
 			if s.config.QueryLogging {
-				s.logQuery(clientIP, domain, qtype, msg, blocked, blockReason, responseTime, false)
+				s.logQuery(clientIP, domain, qtype, msg, blocked, blockReason, time.Since(startTime), false)
 			}
 			return
 		}
@@ -396,27 +383,17 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 		msg = rewrite
 		msg.SetReply(r)
 		w.WriteMsg(msg)
-		responseTime := time.Since(startTime)
-
-		// 📤 LOG: Rewrite Response
-		log.Printf("📤 OUT | %s | %s | Type: %s | Status: REWRITTEN | Time: %dms | Answer: %v",
-			clientIP, domain, qtype, responseTime.Milliseconds(), rewrite.Answer)
 
 		if s.config.QueryLogging {
-			s.logQuery(clientIP, domain, qtype, msg, false, "Rewrite", responseTime, false)
+			s.logQuery(clientIP, domain, qtype, msg, false, "Rewrite", time.Since(startTime), false)
 		}
 		return
 	}
 
 	// Forward to upstream DNS
 	response, err := s.upstreamManager.Query(r)
-	responseTime := time.Since(startTime)
-
 	if err != nil {
-		// 📤 LOG: Error Response
-		log.Printf("📤 OUT | %s | %s | Type: %s | Status: ERROR (%v) | Time: %dms",
-			clientIP, domain, qtype, err, responseTime.Milliseconds())
-
+		log.Printf("Upstream query error for %s: %v", domain, err)
 		msg.Rcode = dns.RcodeServerFailure
 		w.WriteMsg(msg)
 		return
@@ -430,15 +407,9 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	// Write response
 	w.WriteMsg(response)
 
-	// 📤 LOG: Successful Response
-	if response != nil {
-		log.Printf("📤 OUT | %s | %s | Type: %s | Status: SUCCESS | Time: %dms | Answers: %d | Rcode: %s",
-			clientIP, domain, qtype, responseTime.Milliseconds(), len(response.Answer), dns.RcodeToString[response.Rcode])
-	}
-
 	// Log query
 	if s.config.QueryLogging {
-		s.logQuery(clientIP, domain, qtype, response, blocked, blockReason, responseTime, cached)
+		s.logQuery(clientIP, domain, qtype, response, blocked, blockReason, time.Since(startTime), cached)
 	}
 }
 
