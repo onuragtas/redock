@@ -212,6 +212,22 @@ const routes = [
       },
       {
         meta: {
+          title: 'VPN Server'
+        },
+        path: 'vpn_server',
+        name: 'vpn_server',
+        component: () => import('@/views/VPNServer.vue')
+      },
+      {
+        meta: {
+          title: 'VPN Server'
+        },
+        path: 'vpn-server',
+        name: 'vpn-server',
+        component: () => import('@/views/VPNServer.vue')
+      },
+      {
+        meta: {
           title: 'Forms'
         },
         path: 'forms',

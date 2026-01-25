@@ -13,6 +13,7 @@ import (
 	_ "redock/platform/database/migrations" // Import migrations to register them
 	"redock/saved_commands"
 	"redock/tunnel_proxy"
+	"redock/vpn_server"
 	"time"
 
 	dockermanager "redock/docker-manager"
@@ -60,6 +61,7 @@ func initialize() {
 	deployment.Init(dockerEnvironmentManager)
 	api_gateway.Init(dockerEnvironmentManager)
 	dns_server.Init(dockerEnvironmentManager)
+	vpn_server.Init()
 	go deployment.GetDeployment().Run()
 	localproxy.GetLocalProxyManager().StartAll()
 	api_gateway.GetGateway().StartAll()

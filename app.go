@@ -109,6 +109,7 @@ func app() {
 	routes.UsageRoutes(app)            // Register a usage routes for app.
 	routes.APIGatewayRoutes(app)       // Register API Gateway routes for app.
 	routes.DNSRoutes(app)              // Register DNS Server routes for app.
+	routes.SetupVPNRoutes(app)         // Register VPN Server routes for app.
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))

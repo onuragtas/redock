@@ -10,6 +10,7 @@ import {
   mdiNetworkOutline,
   mdiPlaylistEdit,
   mdiRocket,
+  mdiServerNetwork,
   mdiWeb,
   mdiWrench
 } from '@mdi/js'
@@ -22,6 +23,7 @@ export default [
   { name: 'Container Settings', path: '/container_settings', icon: mdiDocker },
   { name: 'API Gateway', path: '/api-gateway', icon: mdiNetworkOutline },
   { name: 'DNS Server', path: '/dns-server', icon: mdiDns },
+  { name: 'VPN Server', path: '/vpn-server', icon: mdiServerNetwork },
   { name: 'Local Proxy', path: '/local-proxy', icon: mdiLan },
   { name: 'Terminal', path: '/exec', icon: mdiConsole },
   { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiLanConnect },
