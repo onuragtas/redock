@@ -208,6 +208,20 @@ func (m *WireGuardManager) StartServer(serverID uint) error {
 }
 
 func (m *WireGuardManager) startServerInstance(server *VPNServer) error {
+	// Check if private key is empty (old servers or corrupted data)
+	if server.PrivateKey == "" {
+		log.Printf("⚠️  Server %s has no private key, regenerating...", server.Name)
+		privateKeyStr, publicKeyStr, err := generateKeyPair()
+		if err != nil {
+			return fmt.Errorf("failed to generate keys: %w", err)
+		}
+		server.PrivateKey = privateKeyStr
+		server.PublicKey = publicKeyStr
+		if err := memory.Update[*VPNServer](m.db, "vpn_servers", server); err != nil {
+			return fmt.Errorf("failed to update server keys: %w", err)
+		}
+	}
+
 	privateKey, err := wgtypes.ParseKey(server.PrivateKey)
 	if err != nil {
 		return fmt.Errorf("invalid private key: %w", err)
@@ -746,6 +760,20 @@ func (m *WireGuardManager) GetUserConfig(userID uint) (string, error) {
 	user, err := memory.FindByID[*VPNUser](m.db, "vpn_users", userID)
 	if err != nil {
 		return "", fmt.Errorf("user not found: %w", err)
+	}
+
+	// Check if user has private key (old users or corrupted data)
+	if user.PrivateKey == "" {
+		log.Printf("⚠️  User %s has no private key, regenerating...", user.Username)
+		privateKeyStr, publicKeyStr, err := generateKeyPair()
+		if err != nil {
+			return "", fmt.Errorf("failed to generate keys: %w", err)
+		}
+		user.PrivateKey = privateKeyStr
+		user.PublicKey = publicKeyStr
+		if err := memory.Update[*VPNUser](m.db, "vpn_users", user); err != nil {
+			return "", fmt.Errorf("failed to update user keys: %w", err)
+		}
 	}
 
 	server, err := memory.FindByID[*VPNServer](m.db, "vpn_servers", user.ServerID)
