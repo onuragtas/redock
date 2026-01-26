@@ -144,7 +144,6 @@ func (c *DNSConfig) SetUpstreamDNSList(upstreams []string) error {
 
 // GetDefaultBlocklists returns the default blocklists
 func GetDefaultBlocklists() []DNSBlocklist {
-	now := time.Now()
 	return []DNSBlocklist{
 		{
 			Name:           "AdGuard DNS filter",
@@ -152,7 +151,7 @@ func GetDefaultBlocklists() []DNSBlocklist {
 			Enabled:        true,
 			Format:         "auto",
 			UpdateInterval: 3600,
-			LastUpdated:    &now,
+			LastUpdated:    nil, // nil means it will be downloaded immediately on startup
 			DomainCount:    0,
 		},
 		{
@@ -161,7 +160,7 @@ func GetDefaultBlocklists() []DNSBlocklist {
 			Enabled:        true,
 			Format:         "auto",
 			UpdateInterval: 3600,
-			LastUpdated:    &now,
+			LastUpdated:    nil, // nil means it will be downloaded immediately on startup
 			DomainCount:    0,
 		},
 	}
