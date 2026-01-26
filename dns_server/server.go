@@ -36,12 +36,8 @@ type DNSServer struct {
 	ctx             context.Context
 	cancel          context.CancelFunc
 
-	// Log buffering for batch insert with channel
-	logBuffer      []DNSQueryLog
-	logBufferMutex sync.Mutex
-	logBufferSize  int
-	logFlushTicker *time.Ticker
-	logChannel     chan DNSQueryLog // Async log channel
+	// Log buffering: single writer goroutine with in-memory buffer
+	logChannel chan DNSQueryLog // Async log channel (non-blocking)
 }
 
 // GetDNSServer returns singleton instance
@@ -91,15 +87,11 @@ func (s *DNSServer) Init(db *gorm.DB) error {
 	s.cache = NewDNSCache(s.config.CacheTTL)
 	s.stats = NewStatsCollector(db)
 
-	// Initialize log buffer for batch insert (reduces DB lock contention)
-	s.logBuffer = make([]DNSQueryLog, 0, 200)
-	s.logBufferSize = 100                              // Flush when 100 logs accumulated (increased from 50)
-	s.logFlushTicker = time.NewTicker(10 * time.Second) // Flush every 10 seconds (increased from 5)
-	s.logChannel = make(chan DNSQueryLog, 500)          // Buffered channel for async logging
+	// Initialize log channel for async logging (single writer goroutine)
+	s.logChannel = make(chan DNSQueryLog, 1000) // Large buffer to avoid blocking DNS queries
 
-	// Start background log workers
-	go s.logFlusher()
-	go s.logChannelWorker()
+	// Start single writer goroutine (ensures SQLite single writer, no mutex needed)
+	go s.logWriter()
 
 	// Load filters
 	if err := s.filterEngine.LoadFilters(); err != nil {
@@ -201,23 +193,11 @@ func (s *DNSServer) Stop() error {
 		return nil
 	}
 
-	// Stop log flusher and flush remaining logs
-	if s.logFlushTicker != nil {
-		s.logFlushTicker.Stop()
-	}
-
+	// Cancel context to stop log writer goroutine (it will flush remaining logs)
 	s.cancel()
 
-	// Drain log channel before final flush
+	// Close channel to drain remaining logs (logWriter will process them before exiting)
 	close(s.logChannel)
-	for logEntry := range s.logChannel {
-		s.logBufferMutex.Lock()
-		s.logBuffer = append(s.logBuffer, logEntry)
-		s.logBufferMutex.Unlock()
-	}
-
-	// Final flush of any remaining logs
-	s.flushLogBuffer()
 
 	s.stopUDPServer()
 	s.stopTCPServer()
@@ -467,20 +447,65 @@ func (s *DNSServer) logQuery(clientIP, domain, qtype string, response *dns.Msg, 
 	}
 }
 
-// logChannelWorker processes logs from channel and adds to buffer
-func (s *DNSServer) logChannelWorker() {
+// logWriter is the single writer goroutine that processes logs from channel
+// This ensures SQLite single writer guarantee and eliminates mutex contention
+func (s *DNSServer) logWriter() {
+	buffer := make([]DNSQueryLog, 0, 100)
+	batchSize := 50
+	ticker := time.NewTicker(5 * time.Second)
+	defer ticker.Stop()
+
+	flush := func(logs []DNSQueryLog) {
+		if len(logs) == 0 {
+			return
+		}
+
+		// Retry mechanism for SQLITE_BUSY errors
+		maxRetries := 3
+		for attempt := 0; attempt <= maxRetries; attempt++ {
+			err := s.db.Session(&gorm.Session{
+				SkipDefaultTransaction: true,
+			}).CreateInBatches(logs, batchSize).Error
+
+			if err == nil {
+				return
+			}
+
+			// Check if it's a busy/locked error
+			if strings.Contains(err.Error(), "SQLITE_BUSY") || strings.Contains(err.Error(), "database is locked") {
+				if attempt < maxRetries {
+					// Exponential backoff: 100ms, 200ms, 400ms
+					backoff := time.Duration(100*(1<<attempt)) * time.Millisecond
+					time.Sleep(backoff)
+					continue
+				}
+			}
+
+			log.Printf("⚠️  Failed to flush DNS query logs after %d attempts: %v", attempt+1, err)
+			return
+		}
+	}
+
 	for {
 		select {
 		case <-s.ctx.Done():
+			// Final flush on shutdown
+			flush(buffer)
 			return
-		case logEntry := <-s.logChannel:
-			s.logBufferMutex.Lock()
-			s.logBuffer = append(s.logBuffer, logEntry)
-			shouldFlush := len(s.logBuffer) >= s.logBufferSize
-			s.logBufferMutex.Unlock()
 
-			if shouldFlush {
-				s.flushLogBuffer()
+		case logEntry := <-s.logChannel:
+			buffer = append(buffer, logEntry)
+			// Flush when batch size reached
+			if len(buffer) >= batchSize {
+				flush(buffer)
+				buffer = buffer[:0] // Reset buffer, keep capacity
+			}
+
+		case <-ticker.C:
+			// Time-based flush (every 5 seconds)
+			if len(buffer) > 0 {
+				flush(buffer)
+				buffer = buffer[:0] // Reset buffer, keep capacity
 			}
 		}
 	}
@@ -691,54 +716,3 @@ func (s *DNSServer) GetQueryHistory(hours int) []QueryHistoryPoint {
 	return s.stats.GetQueryHistory(hours)
 }
 
-// logFlusher periodically flushes log buffer to database
-func (s *DNSServer) logFlusher() {
-	for {
-		select {
-		case <-s.ctx.Done():
-			// Final flush on shutdown
-			s.flushLogBuffer()
-			return
-		case <-s.logFlushTicker.C:
-			s.flushLogBuffer()
-		}
-	}
-}
-
-// flushLogBuffer writes buffered logs to database in batch
-func (s *DNSServer) flushLogBuffer() {
-	s.logBufferMutex.Lock()
-	if len(s.logBuffer) == 0 {
-		s.logBufferMutex.Unlock()
-		return
-	}
-
-	logsToFlush := s.logBuffer
-	s.logBuffer = make([]DNSQueryLog, 0, 100)
-	s.logBufferMutex.Unlock()
-
-	// Retry mechanism for SQLITE_BUSY errors
-	maxRetries := 3
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		err := s.db.Session(&gorm.Session{
-			SkipDefaultTransaction: true,
-		}).CreateInBatches(logsToFlush, 100).Error
-
-		if err == nil {
-			return
-		}
-
-		// Check if it's a busy/locked error
-		if strings.Contains(err.Error(), "SQLITE_BUSY") || strings.Contains(err.Error(), "database is locked") {
-			if attempt < maxRetries {
-				// Exponential backoff: 100ms, 200ms, 400ms
-				backoff := time.Duration(100*(1<<attempt)) * time.Millisecond
-				time.Sleep(backoff)
-				continue
-			}
-		}
-
-		log.Printf("⚠️  Failed to flush DNS query logs after %d attempts: %v", attempt+1, err)
-		return
-	}
-}

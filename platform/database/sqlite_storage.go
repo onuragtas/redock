@@ -53,11 +53,19 @@ func InitSQLiteStorage(workDir string) error {
 		return fmt.Errorf("failed to get database instance: %w", err)
 	}
 
-	// SQLite with WAL mode supports concurrent reads + single writer
-	// For high-traffic applications (DNS server, API Gateway), we need more connections
-	sqlDB.SetMaxOpenConns(25)                  // Max 25 concurrent connections (good for WAL mode)
-	sqlDB.SetMaxIdleConns(10)                  // Keep 10 idle connections ready
-	sqlDB.SetConnMaxLifetime(time.Hour * 1)    // Recycle connections every 1 hour (prevents stale connections)
+	// SQLite with WAL mode: multiple readers + single writer
+	// SQLite is file-based, not network-based, so fewer connections are optimal
+	// Too many connections can increase lock contention on the WAL file
+	//
+	// Usage pattern:
+	// - DNS: Batch writes (5s interval, 50 logs) + periodic stats reads (30s)
+	// - VPN: Periodic stats reads (30s) + occasional CRUD
+	// - API: Web requests (low concurrency, typically 1-5 concurrent)
+	//
+	// 20 connections is optimal: 1 writer + 19 readers (enough buffer for SELECT queries)
+	sqlDB.SetMaxOpenConns(20)                  // Optimal for SQLite WAL mode (1 writer + 19 readers)
+	sqlDB.SetMaxIdleConns(8)                   // Keep 8 idle connections ready
+	sqlDB.SetConnMaxLifetime(time.Hour * 1)    // Recycle connections every 1 hour
 	sqlDB.SetConnMaxIdleTime(time.Minute * 10) // Close idle connections after 10 minutes
 
 	globalDB = db
