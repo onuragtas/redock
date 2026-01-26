@@ -67,6 +67,11 @@ func (s *DNSServer) Init(db *memory.Database, dockerManager *dockermanager.Docke
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
+	// Load default blocklists if none exist
+	if err := s.loadDefaultBlocklists(); err != nil {
+		log.Printf("Warning: Failed to load default blocklists: %v", err)
+	}
+
 	// Initialize components
 	s.filterEngine = NewFilterEngine(db)
 	s.upstreamManager = NewUpstreamManager(s.config.GetUpstreamDNSList())
@@ -147,6 +152,8 @@ func (s *DNSServer) loadConfig() error {
 			CacheTTL:         3600,
 		}
 		config.SetUpstreamDNSList([]string{
+			"94.140.14.14:53",
+			"94.140.15.15:53",
 			"1.1.1.1:53",
 			"8.8.8.8:53",
 		})
@@ -159,6 +166,28 @@ func (s *DNSServer) loadConfig() error {
 		s.config = configs[0]
 	}
 
+	return nil
+}
+
+// loadDefaultBlocklists loads default blocklists if none exist
+func (s *DNSServer) loadDefaultBlocklists() error {
+	// Check if any blocklists exist
+	existingBlocklists := memory.FindAll[*DNSBlocklist](s.db, "dns_blocklists")
+	
+	if len(existingBlocklists) == 0 {
+		// Get default blocklists
+		defaultBlocklists := GetDefaultBlocklists()
+		
+		// Add each default blocklist to database
+		for _, blocklist := range defaultBlocklists {
+			bl := blocklist // Create a copy for pointer
+			if err := memory.Create[*DNSBlocklist](s.db, "dns_blocklists", &bl); err != nil {
+				log.Printf("⚠️  Failed to create default blocklist %s: %v", bl.Name, err)
+				continue
+			}
+		}
+	}
+	
 	return nil
 }
 

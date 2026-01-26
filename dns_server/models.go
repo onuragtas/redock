@@ -123,9 +123,10 @@ func (c *DNSConfig) GetUpstreamDNSList() []string {
 	if len(upstreams) == 0 {
 		// Default upstream DNS servers
 		upstreams = []string{
-			"1.1.1.1:53", // Cloudflare
-			"8.8.8.8:53", // Google
-			"9.9.9.9:53", // Quad9
+			"94.140.14.14:53", // AdGuard DNS
+			"94.140.15.15:53", // AdGuard DNS
+			"1.1.1.1:53",      // Cloudflare
+			"8.8.8.8:53",      // Google
 		}
 	}
 	return upstreams
@@ -139,4 +140,29 @@ func (c *DNSConfig) SetUpstreamDNSList(upstreams []string) error {
 	}
 	c.UpstreamDNS = string(data)
 	return nil
+}
+
+// GetDefaultBlocklists returns the default blocklists
+func GetDefaultBlocklists() []DNSBlocklist {
+	now := time.Now()
+	return []DNSBlocklist{
+		{
+			Name:           "AdGuard DNS filter",
+			URL:            "https://adguardteam.github.io/HostlistsRegistry/assets/filter_1.txt",
+			Enabled:        true,
+			Format:         "auto",
+			UpdateInterval: 3600,
+			LastUpdated:    &now,
+			DomainCount:    0,
+		},
+		{
+			Name:           "AdAway Default Blocklist",
+			URL:            "https://adguardteam.github.io/HostlistsRegistry/assets/filter_2.txt",
+			Enabled:        true,
+			Format:         "auto",
+			UpdateInterval: 3600,
+			LastUpdated:    &now,
+			DomainCount:    0,
+		},
+	}
 }
