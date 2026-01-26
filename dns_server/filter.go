@@ -6,12 +6,11 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"redock/platform/memory"
 	"regexp"
 	"strings"
 	"sync"
 	"time"
-
-	"gorm.io/gorm"
 )
 
 // ClientRules holds cached client-specific rules
@@ -28,7 +27,7 @@ type ClientRules struct {
 
 // FilterEngine manages domain filtering (blocklists and custom filters)
 type FilterEngine struct {
-	db               *gorm.DB
+	db               *memory.Database
 	blockedDomains   map[string]bool
 	whitelistDomains map[string]bool
 	regexFilters     []*regexp.Regexp
@@ -43,7 +42,7 @@ type FilterEngine struct {
 }
 
 // NewFilterEngine creates a new filter engine
-func NewFilterEngine(db *gorm.DB) *FilterEngine {
+func NewFilterEngine(db *memory.Database) *FilterEngine {
 	return &FilterEngine{
 		db:               db,
 		blockedDomains:   make(map[string]bool),
@@ -83,10 +82,7 @@ func (f *FilterEngine) LoadFilters() error {
 
 // loadCustomFilters loads custom blacklist/whitelist from database
 func (f *FilterEngine) loadCustomFilters() error {
-	var filters []DNSCustomFilter
-	if err := f.db.Find(&filters).Error; err != nil {
-		return err
-	}
+	filters := memory.FindAll[*DNSCustomFilter](f.db, "dns_custom_filters")
 
 	for _, filter := range filters {
 		domain := strings.TrimSpace(strings.ToLower(filter.Domain))
@@ -114,16 +110,15 @@ func (f *FilterEngine) loadCustomFilters() error {
 
 // loadBlocklists loads enabled blocklists
 func (f *FilterEngine) loadBlocklists() error {
-	var blocklists []DNSBlocklist
-	if err := f.db.Where("enabled = ?", true).Find(&blocklists).Error; err != nil {
-		return err
-	}
+	blocklists := memory.Filter[*DNSBlocklist](f.db, "dns_blocklists", func(b *DNSBlocklist) bool {
+		return b.Enabled
+	})
 
 	for _, blocklist := range blocklists {
 		// Check if needs update
 		if blocklist.LastUpdated == nil ||
 			time.Since(*blocklist.LastUpdated) > time.Duration(blocklist.UpdateInterval)*time.Second {
-			go f.updateBlocklist(&blocklist)
+			go f.updateBlocklist(blocklist)
 		}
 	}
 
@@ -165,7 +160,7 @@ func (f *FilterEngine) updateBlocklist(blocklist *DNSBlocklist) {
 	blocklist.DomainCount = len(domains)
 	blocklist.LastError = ""
 
-	if err := f.db.Save(blocklist).Error; err != nil {
+	if err := memory.Update[*DNSBlocklist](f.db, "dns_blocklists", blocklist); err != nil {
 		log.Printf("Failed to update blocklist record: %v", err)
 	}
 
@@ -302,7 +297,7 @@ func (f *FilterEngine) handleBlocklistError(blocklist *DNSBlocklist, err error) 
 	log.Printf("❌ Failed to update blocklist %s: %v", blocklist.Name, err)
 
 	blocklist.LastError = err.Error()
-	if updateErr := f.db.Save(blocklist).Error; updateErr != nil {
+	if updateErr := memory.Update[*DNSBlocklist](f.db, "dns_blocklists", blocklist); updateErr != nil {
 		log.Printf("Failed to save blocklist error: %v", updateErr)
 	}
 }
@@ -331,14 +326,17 @@ func (f *FilterEngine) getClientRules(clientIP string) *ClientRules {
 	}
 
 	// Check if client is banned
-	var clientSettings DNSClientSettings
-	if err := f.db.Where("client_ip = ?", clientIP).First(&clientSettings).Error; err == nil {
-		rules.Blocked = clientSettings.Blocked
+	clientSettings := memory.Filter[*DNSClientSettings](f.db, "dns_client_settings", func(c *DNSClientSettings) bool {
+		return c.ClientIP == clientIP
+	})
+	if len(clientSettings) > 0 {
+		rules.Blocked = clientSettings[0].Blocked
 	}
 
 	// Load client-specific domain rules
-	var domainRules []DNSClientDomainRule
-	f.db.Where("client_ip = ?", clientIP).Find(&domainRules)
+	domainRules := memory.Filter[*DNSClientDomainRule](f.db, "dns_client_rules", func(r *DNSClientDomainRule) bool {
+		return r.ClientIP == clientIP
+	})
 
 	for _, rule := range domainRules {
 		domain := strings.TrimSpace(strings.ToLower(rule.Domain))
@@ -533,28 +531,32 @@ func (f *FilterEngine) matchWildcard(domain, pattern string) bool {
 
 // isClientDomainBlocked checks if domain is blocked for specific client
 func (f *FilterEngine) isClientDomainBlocked(clientIP, domain string) (bool, string) {
-	var rules []DNSClientDomainRule
+	// Get all block rules for this client
+	rules := memory.Filter[*DNSClientDomainRule](f.db, "dns_client_rules", func(r *DNSClientDomainRule) bool {
+		return r.ClientIP == clientIP && r.Type == "block"
+	})
 
 	// Check exact match
-	result := f.db.Where("client_ip = ? AND domain = ? AND type = ?", clientIP, domain, "block").Find(&rules)
-	if result.Error == nil && len(rules) > 0 {
-		return true, "client-specific block"
+	for _, rule := range rules {
+		if !rule.IsRegex && !rule.IsWildcard && rule.Domain == domain {
+			return true, "client-specific block"
+		}
 	}
 
 	// Check regex rules
-	f.db.Where("client_ip = ? AND type = ? AND is_regex = ?", clientIP, "block", true).Find(&rules)
 	for _, rule := range rules {
-		if re, err := regexp.Compile(rule.Domain); err == nil {
-			if re.MatchString(domain) {
-				return true, "client-specific regex block"
+		if rule.IsRegex {
+			if re, err := regexp.Compile(rule.Domain); err == nil {
+				if re.MatchString(domain) {
+					return true, "client-specific regex block"
+				}
 			}
 		}
 	}
 
 	// Check wildcard rules
-	f.db.Where("client_ip = ? AND type = ? AND is_wildcard = ?", clientIP, "block", true).Find(&rules)
 	for _, rule := range rules {
-		if f.matchWildcard(domain, rule.Domain) {
+		if rule.IsWildcard && f.matchWildcard(domain, rule.Domain) {
 			return true, "client-specific wildcard block"
 		}
 	}
@@ -564,28 +566,32 @@ func (f *FilterEngine) isClientDomainBlocked(clientIP, domain string) (bool, str
 
 // isClientDomainAllowed checks if domain is whitelisted for specific client
 func (f *FilterEngine) isClientDomainAllowed(clientIP, domain string) bool {
-	var rules []DNSClientDomainRule
+	// Get all allow rules for this client
+	rules := memory.Filter[*DNSClientDomainRule](f.db, "dns_client_rules", func(r *DNSClientDomainRule) bool {
+		return r.ClientIP == clientIP && r.Type == "allow"
+	})
 
 	// Check exact match
-	result := f.db.Where("client_ip = ? AND domain = ? AND type = ?", clientIP, domain, "allow").Find(&rules)
-	if result.Error == nil && len(rules) > 0 {
-		return true
+	for _, rule := range rules {
+		if !rule.IsRegex && !rule.IsWildcard && rule.Domain == domain {
+			return true
+		}
 	}
 
 	// Check regex rules
-	f.db.Where("client_ip = ? AND type = ? AND is_regex = ?", clientIP, "allow", true).Find(&rules)
 	for _, rule := range rules {
-		if re, err := regexp.Compile(rule.Domain); err == nil {
-			if re.MatchString(domain) {
-				return true
+		if rule.IsRegex {
+			if re, err := regexp.Compile(rule.Domain); err == nil {
+				if re.MatchString(domain) {
+					return true
+				}
 			}
 		}
 	}
 
 	// Check wildcard rules
-	f.db.Where("client_ip = ? AND type = ? AND is_wildcard = ?", clientIP, "allow", true).Find(&rules)
 	for _, rule := range rules {
-		if f.matchWildcard(domain, rule.Domain) {
+		if rule.IsWildcard && f.matchWildcard(domain, rule.Domain) {
 			return true
 		}
 	}
@@ -650,9 +656,10 @@ func (f *FilterEngine) IsClientBlocked(clientIP, domain string) bool {
 
 // IsClientBanned checks if a client IP is banned
 func (f *FilterEngine) IsClientBanned(clientIP string) bool {
-	var clientSettings DNSClientSettings
-	result := f.db.Where("client_ip = ?", clientIP).First(&clientSettings)
-	if result.Error == nil && clientSettings.Blocked {
+	settings := memory.Filter[*DNSClientSettings](f.db, "dns_client_settings", func(c *DNSClientSettings) bool {
+		return c.ClientIP == clientIP
+	})
+	if len(settings) > 0 && settings[0].Blocked {
 		return true
 	}
 	return false

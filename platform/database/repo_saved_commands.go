@@ -2,36 +2,36 @@ package database
 
 import (
 	"fmt"
-
-	"gorm.io/gorm"
+	"redock/platform/memory"
 )
 
 // SavedCommandRepository handles saved commands CRUD operations
 type SavedCommandRepository struct {
-	db *gorm.DB
+	db *memory.Database
 }
 
 // NewSavedCommandRepository creates a new saved command repository
 func NewSavedCommandRepository() *SavedCommandRepository {
-	return &SavedCommandRepository{db: GetDB()}
+	return &SavedCommandRepository{db: GetMemoryDB()}
 }
 
 // GetAll returns all saved commands (excluding soft-deleted)
 func (r *SavedCommandRepository) GetAll() ([]SavedCommand, error) {
-	var commands []SavedCommand
-	if err := r.db.Find(&commands).Error; err != nil {
-		return nil, err
+	commands := memory.FindAll[*SavedCommand](r.db, "saved_commands")
+	result := make([]SavedCommand, len(commands))
+	for i, cmd := range commands {
+		result[i] = *cmd
 	}
-	return commands, nil
+	return result, nil
 }
 
 // Add creates a new saved command
 func (r *SavedCommandRepository) Add(command, path string) error {
-	cmd := SavedCommand{
+	cmd := &SavedCommand{
 		Command: command,
 		Path:    path,
 	}
-	if err := r.db.Create(&cmd).Error; err != nil {
+	if err := memory.Create[*SavedCommand](r.db, "saved_commands", cmd); err != nil {
 		return fmt.Errorf("failed to add command: %w", err)
 	}
 	return nil
@@ -39,57 +39,61 @@ func (r *SavedCommandRepository) Add(command, path string) error {
 
 // Delete soft-deletes a saved command by command string (deprecated, use DeleteByID)
 func (r *SavedCommandRepository) Delete(command string) error {
-	result := r.db.Where("command = ?", command).Delete(&SavedCommand{})
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete command: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
+	commands := memory.Filter[*SavedCommand](r.db, "saved_commands", func(c *SavedCommand) bool {
+		return c.Command == command
+	})
+	if len(commands) == 0 {
 		return fmt.Errorf("command not found: %s", command)
+	}
+	
+	for _, cmd := range commands {
+		if err := memory.Delete[*SavedCommand](r.db, "saved_commands", cmd.ID); err != nil {
+			return fmt.Errorf("failed to delete command: %w", err)
+		}
 	}
 	return nil
 }
 
 // DeleteByID soft-deletes a saved command by ID
 func (r *SavedCommandRepository) DeleteByID(id uint) error {
-	result := r.db.Delete(&SavedCommand{}, id)
-	if result.Error != nil {
-		return fmt.Errorf("failed to delete command: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
-		return fmt.Errorf("command not found with ID: %d", id)
+	if err := memory.Delete[*SavedCommand](r.db, "saved_commands", id); err != nil {
+		return fmt.Errorf("failed to delete command: %w", err)
 	}
 	return nil
 }
 
 // FindByID finds a saved command by ID
 func (r *SavedCommandRepository) FindByID(id uint) (*SavedCommand, error) {
-	var cmd SavedCommand
-	if err := r.db.First(&cmd, id).Error; err != nil {
+	cmd, err := memory.FindByID[*SavedCommand](r.db, "saved_commands", id)
+	if err != nil {
 		return nil, err
 	}
-	return &cmd, nil
+	return cmd, nil
 }
 
 // Update updates a saved command by ID
 func (r *SavedCommandRepository) Update(id uint, command, path string) error {
-	result := r.db.Model(&SavedCommand{}).Where("id = ?", id).Updates(map[string]interface{}{
-		"command": command,
-		"path":    path,
-	})
-	if result.Error != nil {
-		return fmt.Errorf("failed to update command: %w", result.Error)
-	}
-	if result.RowsAffected == 0 {
+	cmd, err := memory.FindByID[*SavedCommand](r.db, "saved_commands", id)
+	if err != nil {
 		return fmt.Errorf("command not found with ID: %d", id)
+	}
+	
+	cmd.Command = command
+	cmd.Path = path
+	
+	if err := memory.Update[*SavedCommand](r.db, "saved_commands", cmd); err != nil {
+		return fmt.Errorf("failed to update command: %w", err)
 	}
 	return nil
 }
 
 // FindByCommand finds a saved command by command string
 func (r *SavedCommandRepository) FindByCommand(command string) (*SavedCommand, error) {
-	var cmd SavedCommand
-	if err := r.db.Where("command = ?", command).First(&cmd).Error; err != nil {
-		return nil, err
+	commands := memory.Filter[*SavedCommand](r.db, "saved_commands", func(c *SavedCommand) bool {
+		return c.Command == command
+	})
+	if len(commands) == 0 {
+		return nil, fmt.Errorf("command not found")
 	}
-	return &cmd, nil
+	return commands[0], nil
 }

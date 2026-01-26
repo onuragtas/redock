@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	docker_manager "redock/docker-manager"
+	"redock/platform/memory"
 	"runtime"
 	"strings"
 	"sync"
@@ -21,7 +22,6 @@ import (
 	"golang.zx2c4.com/wireguard/tun"
 	"golang.zx2c4.com/wireguard/wgctrl"
 	"golang.zx2c4.com/wireguard/wgctrl/wgtypes"
-	"gorm.io/gorm"
 )
 
 var (
@@ -42,7 +42,7 @@ type WireGuardServerInstance struct {
 
 // WireGuardManager manages WireGuard VPN servers and users
 type WireGuardManager struct {
-	db        *gorm.DB
+	db        *memory.Database
 	servers   map[uint]*VPNServer
 	instances map[uint]*WireGuardServerInstance
 	mutex     sync.RWMutex
@@ -60,7 +60,7 @@ func GetWireGuardManager() *WireGuardManager {
 	return vpnManagerInstance
 }
 
-func (m *WireGuardManager) Init(db *gorm.DB) error {
+func (m *WireGuardManager) Init(db *memory.Database) error {
 	m.db = db
 	m.running = true
 
@@ -78,16 +78,13 @@ func (m *WireGuardManager) Init(db *gorm.DB) error {
 
 // loadServers loads all VPN servers from database
 func (m *WireGuardManager) loadServers() error {
-	var servers []VPNServer
-	if err := m.db.Find(&servers).Error; err != nil {
-		return err
-	}
+	servers := memory.FindAll[*VPNServer](m.db, "vpn_servers")
 
 	m.mutex.Lock()
 	defer m.mutex.Unlock()
 
-	for i := range servers {
-		m.servers[servers[i].ID] = &servers[i]
+	for _, server := range servers {
+		m.servers[server.ID] = server
 	}
 
 	return nil
@@ -171,7 +168,7 @@ func (m *WireGuardManager) CreateServer(name, address, endpoint string) (*VPNSer
 		Enabled:             true,
 	}
 
-	if err := m.db.Create(server).Error; err != nil {
+	if err := memory.Create[*VPNServer](m.db, "vpn_servers", server); err != nil {
 		return nil, fmt.Errorf("failed to create server: %w", err)
 	}
 
@@ -190,8 +187,8 @@ func (m *WireGuardManager) CreateServer(name, address, endpoint string) (*VPNSer
 
 // StartServer starts a WireGuard server
 func (m *WireGuardManager) StartServer(serverID uint) error {
-	server := &VPNServer{}
-	if err := m.db.First(server, serverID).Error; err != nil {
+	server, err := memory.FindByID[*VPNServer](m.db, "vpn_servers", serverID)
+	if err != nil {
 		return fmt.Errorf("server not found: %w", err)
 	}
 
@@ -238,7 +235,7 @@ func (m *WireGuardManager) startServerInstance(server *VPNServer) error {
 	}
 
 	server.Interface = actualName
-	m.db.Model(server).Update("interface", actualName)
+	memory.Update[*VPNServer](m.db, "vpn_servers", server)
 
 	udpBind := conn.NewDefaultBind()
 	logger := &device.Logger{
@@ -254,8 +251,10 @@ func (m *WireGuardManager) startServerInstance(server *VPNServer) error {
 		hex.EncodeToString(privateKey[:]),
 		server.ListenPort)
 
-	var users []VPNUser
-	m.db.Where("server_id = ? AND enabled = ?", server.ID, true).Find(&users)
+	// Get enabled users for this server
+	users := memory.Filter[*VPNUser](m.db, "vpn_users", func(u *VPNUser) bool {
+		return u.ServerID == server.ID && u.Enabled
+	})
 
 	for _, user := range users {
 		pubKeyBytes, err := base64.StdEncoding.DecodeString(user.PublicKey)
@@ -652,8 +651,8 @@ func (m *WireGuardManager) cleanupAllAnchors() {
 
 // getNextIP gets next available IP for user
 func (m *WireGuardManager) getNextIP(serverID uint) string {
-	server := &VPNServer{}
-	if err := m.db.First(server, serverID).Error; err != nil {
+	server, err := memory.FindByID[*VPNServer](m.db, "vpn_servers", serverID)
+	if err != nil {
 		return "10.0.0.2/32"
 	}
 
@@ -662,8 +661,10 @@ func (m *WireGuardManager) getNextIP(serverID uint) string {
 		return "10.0.0.2/32"
 	}
 
-	var users []VPNUser
-	m.db.Where("server_id = ?", serverID).Find(&users)
+	// Get all users for this server
+	users := memory.Filter[*VPNUser](m.db, "vpn_users", func(u *VPNUser) bool {
+		return u.ServerID == serverID
+	})
 
 	usedIPs := make(map[string]bool)
 	for _, user := range users {
@@ -689,8 +690,8 @@ func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName stri
 		return nil, fmt.Errorf("failed to generate keys: %w", err)
 	}
 
-	server := &VPNServer{}
-	if err := m.db.First(server, serverID).Error; err != nil {
+	server, err := memory.FindByID[*VPNServer](m.db, "vpn_servers", serverID)
+	if err != nil {
 		return nil, fmt.Errorf("server not found: %w", err)
 	}
 
@@ -709,7 +710,7 @@ func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName stri
 		Enabled:    true,
 	}
 
-	if err := m.db.Create(user).Error; err != nil {
+	if err := memory.Create[*VPNUser](m.db, "vpn_users", user); err != nil {
 		return nil, fmt.Errorf("failed to create user: %w", err)
 	}
 
@@ -732,13 +733,13 @@ func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName stri
 
 // GetUserConfig generates client configuration
 func (m *WireGuardManager) GetUserConfig(userID uint) (string, error) {
-	user := &VPNUser{}
-	if err := m.db.First(user, userID).Error; err != nil {
+	user, err := memory.FindByID[*VPNUser](m.db, "vpn_users", userID)
+	if err != nil {
 		return "", fmt.Errorf("user not found: %w", err)
 	}
 
-	server := &VPNServer{}
-	if err := m.db.First(server, user.ServerID).Error; err != nil {
+	server, err := memory.FindByID[*VPNServer](m.db, "vpn_servers", user.ServerID)
+	if err != nil {
 		return "", fmt.Errorf("server not found: %w", err)
 	}
 
@@ -774,7 +775,7 @@ func (m *WireGuardManager) GetUserConfig(userID uint) (string, error) {
 
 // collectStats collects statistics periodically
 func (m *WireGuardManager) collectStats() {
-	ticker := time.NewTicker(30 * time.Second)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for range ticker.C {
@@ -843,10 +844,14 @@ func (m *WireGuardManager) updateServerStats(instance *WireGuardServerInstance) 
 		pubKeyBytes, _ := hex.DecodeString(pubKeyHex)
 		pubKeyBase64 := base64.StdEncoding.EncodeToString(pubKeyBytes)
 
-		var user VPNUser
-		if err := m.db.Where("public_key = ? AND server_id = ?", pubKeyBase64, instance.Server.ID).First(&user).Error; err != nil {
+		// Find user by public key and server ID
+		users := memory.Filter[*VPNUser](m.db, "vpn_users", func(u *VPNUser) bool {
+			return u.PublicKey == pubKeyBase64 && u.ServerID == instance.Server.ID
+		})
+		if len(users) == 0 {
 			continue
 		}
+		user := users[0]
 
 		var rxBytes, txBytes int64
 		var lastHandshake *time.Time
@@ -865,19 +870,18 @@ func (m *WireGuardManager) updateServerStats(instance *WireGuardServerInstance) 
 			}
 		}
 
-		updates := map[string]interface{}{
-			"total_bytes_received": rxBytes,
-			"total_bytes_sent":     txBytes,
-		}
+		// Update user stats
+		user.TotalBytesReceived = rxBytes
+		user.TotalBytesSent = txBytes
 		if lastHandshake != nil {
-			updates["last_connected_at"] = *lastHandshake
+			user.LastConnectedAt = lastHandshake
 		}
-		m.db.Model(&user).Updates(updates)
+		memory.Update[*VPNUser](m.db, "vpn_users", user)
 	}
 }
 
 // GetDB returns database connection
-func (m *WireGuardManager) GetDB() (*gorm.DB, error) {
+func (m *WireGuardManager) GetDB() (*memory.Database, error) {
 	if m.db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}

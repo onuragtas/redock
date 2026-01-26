@@ -11,14 +11,14 @@ var dnsServer *DNSServer
 // Init initializes DNS server module
 func Init(dockerManager *dockermanager.DockerEnvironmentManager) {
 
-	// Get database connection
-	db := database.GetDB()
+	// Get memory database connection
+	db := database.GetMemoryDB()
 
 	// Get DNS server instance
 	dnsServer = GetDNSServer()
 
-	// Initialize with database
-	if err := dnsServer.Init(db); err != nil {
+	// Initialize with database and docker manager
+	if err := dnsServer.Init(db, dockerManager); err != nil {
 		log.Printf("⚠️  Failed to initialize DNS server: %v", err)
 		return
 	}

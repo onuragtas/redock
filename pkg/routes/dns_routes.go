@@ -42,6 +42,7 @@ func DNSRoutes(app *fiber.App) {
 
 	// Statistics
 	route.Get("/stats", controllers.GetDNSStatistics)
+	route.Get("/stats/daily", controllers.GetDNSDailyStats)
 	route.Get("/history", controllers.GetDNSQueryHistory)
 
 	// Client settings

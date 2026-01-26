@@ -2,12 +2,13 @@ package controllers
 
 import (
 	"redock/dns_server"
+	"redock/platform/memory"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
-	"gorm.io/gorm"
 )
 
 // GetDNSConfig returns DNS server configuration
@@ -193,7 +194,6 @@ func GetDNSBlocklists(c *fiber.Ctx) error {
 		})
 	}
 
-	var blocklists []dns_server.DNSBlocklist
 	db, err := server.GetDB()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -202,12 +202,7 @@ func GetDNSBlocklists(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Find(&blocklists).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
+	blocklists := memory.FindAll[*dns_server.DNSBlocklist](db, "dns_blocklists")
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -250,7 +245,7 @@ func CreateDNSBlocklist(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Create(&blocklist).Error; err != nil {
+	if err := memory.Create[*dns_server.DNSBlocklist](db, "dns_blocklists", &blocklist); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -312,7 +307,7 @@ func UpdateDNSBlocklist(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Save(&blocklist).Error; err != nil {
+	if err := memory.Update[*dns_server.DNSBlocklist](db, "dns_blocklists", &blocklist); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -363,7 +358,7 @@ func DeleteDNSBlocklist(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Delete(&dns_server.DNSBlocklist{}, id).Error; err != nil {
+	if err := memory.Delete[*dns_server.DNSBlocklist](db, "dns_blocklists", uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -396,7 +391,6 @@ func GetDNSCustomFilters(c *fiber.Ctx) error {
 		})
 	}
 
-	var filters []dns_server.DNSCustomFilter
 	db, err := server.GetDB()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -405,12 +399,7 @@ func GetDNSCustomFilters(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Find(&filters).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
+	filters := memory.FindAll[*dns_server.DNSCustomFilter](db, "dns_custom_filters")
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -456,7 +445,7 @@ func CreateDNSCustomFilter(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Create(&filter).Error; err != nil {
+	if err := memory.Create[*dns_server.DNSCustomFilter](db, "dns_custom_filters", &filter); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -507,7 +496,7 @@ func DeleteDNSCustomFilter(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Delete(&dns_server.DNSCustomFilter{}, id).Error; err != nil {
+	if err := memory.Delete[*dns_server.DNSCustomFilter](db, "dns_custom_filters", uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -548,14 +537,19 @@ func DeleteDNSCustomFilterByDetails(c *fiber.Ctx) error {
 	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
 
 	// Delete the filter
-	result := db.Where("domain = ? AND type = ?", domain, filterType).
-		Delete(&dns_server.DNSCustomFilter{})
+	filters := memory.Filter[*dns_server.DNSCustomFilter](db, "dns_custom_filters", func(f *dns_server.DNSCustomFilter) bool {
+		return f.Domain == domain && f.Type == filterType
+	})
 
-	if result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to delete filter: " + result.Error.Error(),
-		})
+	deletedCount := 0
+	for _, filter := range filters {
+		if err := memory.Delete[*dns_server.DNSCustomFilter](db, "dns_custom_filters", filter.GetID()); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Failed to delete filter: " + err.Error(),
+			})
+		}
+		deletedCount++
 	}
 
 	// Reload filters
@@ -565,7 +559,7 @@ func DeleteDNSCustomFilterByDetails(c *fiber.Ctx) error {
 		"error": false,
 		"msg":   "Filter deleted successfully",
 		"data": fiber.Map{
-			"deleted_count": result.RowsAffected,
+			"deleted_count": deletedCount,
 		},
 	})
 }
@@ -599,27 +593,52 @@ func GetDNSQueryLogs(c *fiber.Ctx) error {
 		limit = 50
 	}
 
-	offset := (page - 1) * limit
-
-	var logs []dns_server.DNSQueryLog
-	var total int64
-
-	db, err := server.GetDB()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+	// Read logs from JSONL files (last 24 hours)
+	logs := []dns_server.DNSQueryLog{}
+	since := time.Now().Add(-24 * time.Hour)
+	
+	logWriter := server.GetLogWriter()
+	if logWriter == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "Log writer not initialized",
 		})
 	}
-
-	db.Model(&dns_server.DNSQueryLog{}).Count(&total)
-	err = db.Order("created_at DESC").Limit(limit).Offset(offset).Find(&logs).Error
-
+	
+	err := logWriter.ReadLogs(since, func(log dns_server.DNSQueryLog) error {
+		logs = append(logs, log)
+		return nil
+	})
+	
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "Failed to read logs: " + err.Error(),
 		})
+	}
+	
+	// Sort by time descending (newest first)
+	sort.Slice(logs, func(i, j int) bool {
+		return logs[i].CreatedAt.After(logs[j].CreatedAt)
+	})
+	
+	// Pagination
+	total := len(logs)
+	start := (page - 1) * limit
+	end := start + limit
+	
+	if start >= total {
+		logs = []dns_server.DNSQueryLog{}
+	} else {
+		if end > total {
+			end = total
+		}
+		logs = logs[start:end]
+	}
+	
+	// Assign sequential IDs for frontend (based on position)
+	for i := range logs {
+		logs[i].ID = uint(total - start - i) // Descending ID (newest = highest)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -652,11 +671,24 @@ func GetDNSStatistics(c *fiber.Ctx) error {
 	}
 
 	stats := server.GetRealtimeStats()
+	
+	// Transform to frontend expected format (backward compatible)
+	response := fiber.Map{
+		"total_queries_24h":    stats.TotalQueries,
+		"blocked_queries_24h":  stats.BlockedQueries,
+		"block_percentage":     stats.BlockRate,
+		"queries_per_minute":   stats.QueriesPerMinute,
+		"avg_response_time":    stats.AvgResponseTime,
+		"active_clients":       stats.ActiveClients,
+		"cache_hit_rate":       stats.CacheHitRate,
+		"top_domains":          stats.TopDomains,
+		"top_blocked":          stats.TopBlocked,
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"data":  stats,
+		"data":  response,
 	})
 }
 
@@ -692,6 +724,74 @@ func GetDNSQueryHistory(c *fiber.Ctx) error {
 	})
 }
 
+// GetDNSDailyStats returns daily statistics
+// @Description Get DNS daily statistics for a date range
+// @Summary Get daily stats
+// @Tags DNS
+// @Accept json
+// @Produce json
+// @Param start_date query string false "Start date (YYYY-MM-DD)"
+// @Param end_date query string false "End date (YYYY-MM-DD)"
+// @Param period query string false "Period: 7days, 30days, custom"
+// @Success 200
+// @Router /v1/dns/stats/daily [get]
+func GetDNSDailyStats(c *fiber.Ctx) error {
+	server := dns_server.GetServer()
+	if server == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "DNS server not initialized",
+		})
+	}
+
+	period := c.Query("period", "7days")
+	
+	var stats []*dns_server.DailyStats
+	
+	switch period {
+	case "7days":
+		stats = server.GetLast7Days()
+	case "30days":
+		stats = server.GetLast30Days()
+	case "custom":
+		startDateStr := c.Query("start_date")
+		endDateStr := c.Query("end_date")
+		
+		if startDateStr == "" || endDateStr == "" {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": true,
+				"msg":   "start_date and end_date required for custom period",
+			})
+		}
+		
+		startDate, err := time.Parse("2006-01-02", startDateStr)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Invalid start_date format (use YYYY-MM-DD)",
+			})
+		}
+		
+		endDate, err := time.Parse("2006-01-02", endDateStr)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Invalid end_date format (use YYYY-MM-DD)",
+			})
+		}
+		
+		stats = server.GetDailyStatsRange(startDate, endDate)
+	default:
+		stats = server.GetLast7Days()
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  stats,
+	})
+}
+
 // GetDNSClientSettings returns all client settings
 // @Description Get DNS client settings
 // @Summary Get client settings
@@ -709,39 +809,67 @@ func GetDNSClientSettings(c *fiber.Ctx) error {
 		})
 	}
 
-	// Get active clients from query logs (last 24h)
-	db, err := server.GetDB()
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
 	type ClientStats struct {
-		IP           string `json:"ip"`
-		QueryCount   int64  `json:"query_count"`
-		BlockedCount int64  `json:"blocked_count"`
-		LastSeen     string `json:"last_seen"` // SQLite MAX() returns string in GROUP BY
-		IsBanned     bool   `json:"is_banned"`
+		IP           string    `json:"ip"`
+		QueryCount   int64     `json:"query_count"`
+		BlockedCount int64     `json:"blocked_count"`
+		LastSeen     time.Time `json:"last_seen"`
+		IsBanned     bool      `json:"is_banned"`
 	}
 
-	var clients []ClientStats
-	last24h := time.Now().Add(-24 * time.Hour)
-
-	err = db.Model(&dns_server.DNSQueryLog{}).
-		Select("client_ip as ip, COUNT(*) as query_count, SUM(CASE WHEN blocked THEN 1 ELSE 0 END) as blocked_count, MAX(created_at) as last_seen").
-		Where("created_at >= ?", last24h).
-		Group("client_ip").
-		Order("query_count DESC").
-		Limit(100).
-		Scan(&clients).Error
-
+	// Aggregate client stats from JSONL files (last 24 hours)
+	clientMap := make(map[string]*ClientStats)
+	since := time.Now().Add(-24 * time.Hour)
+	
+	logWriter := server.GetLogWriter()
+	if logWriter == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Log writer not initialized",
+		})
+	}
+	
+	err := logWriter.ReadLogs(since, func(log dns_server.DNSQueryLog) error {
+		if _, exists := clientMap[log.ClientIP]; !exists {
+			clientMap[log.ClientIP] = &ClientStats{
+				IP:       log.ClientIP,
+				LastSeen: log.CreatedAt,
+			}
+		}
+		
+		stats := clientMap[log.ClientIP]
+		stats.QueryCount++
+		if log.Blocked {
+			stats.BlockedCount++
+		}
+		if log.CreatedAt.After(stats.LastSeen) {
+			stats.LastSeen = log.CreatedAt
+		}
+		
+		return nil
+	})
+	
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "Failed to read logs: " + err.Error(),
 		})
+	}
+	
+	// Convert map to slice
+	var clients []ClientStats
+	for _, stats := range clientMap {
+		clients = append(clients, *stats)
+	}
+	
+	// Sort by query count descending
+	sort.Slice(clients, func(i, j int) bool {
+		return clients[i].QueryCount > clients[j].QueryCount
+	})
+	
+	// Limit to top 100
+	if len(clients) > 100 {
+		clients = clients[:100]
 	}
 
 	// Check ban status for each client
@@ -791,7 +919,7 @@ func CreateDNSClientSettings(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Create(&client).Error; err != nil {
+	if err := memory.Create[*dns_server.DNSClientSettings](db, "dns_client_settings", &client); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -846,13 +974,11 @@ func GetDNSRewrites(c *fiber.Ctx) error {
 		})
 	}
 
-	var rewrites []dns_server.DNSRewrite
-	if err := db.Order("created_at DESC").Find(&rewrites).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch rewrites: " + err.Error(),
-		})
-	}
+	rewrites := memory.FindAll[*dns_server.DNSRewrite](db, "dns_rewrites")
+	// Sort by CreatedAt descending
+	sort.Slice(rewrites, func(i, j int) bool {
+		return rewrites[i].CreatedAt.After(rewrites[j].CreatedAt)
+	})
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error":    false,
@@ -904,7 +1030,7 @@ func CreateDNSRewrite(c *fiber.Ctx) error {
 		})
 	}
 
-	if err := db.Create(&rewrite).Error; err != nil {
+	if err := memory.Create[*dns_server.DNSRewrite](db, "dns_rewrites", &rewrite); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to create rewrite: " + err.Error(),
@@ -929,9 +1055,17 @@ func UpdateDNSRewrite(c *fiber.Ctx) error {
 		})
 	}
 
-	id := c.Params("id")
-	var rewrite dns_server.DNSRewrite
-	if err := db.First(&rewrite, id).Error; err != nil {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid ID",
+		})
+	}
+
+	rewrite, err := memory.FindByID[*dns_server.DNSRewrite](db, "dns_rewrites", uint(id))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Rewrite not found",
@@ -965,7 +1099,7 @@ func UpdateDNSRewrite(c *fiber.Ctx) error {
 	rewrite.Comment = updateData.Comment
 	rewrite.Enabled = updateData.Enabled
 
-	if err := db.Save(&rewrite).Error; err != nil {
+	if err := memory.Update[*dns_server.DNSRewrite](db, "dns_rewrites", rewrite); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to update rewrite: " + err.Error(),
@@ -990,8 +1124,16 @@ func DeleteDNSRewrite(c *fiber.Ctx) error {
 		})
 	}
 
-	id := c.Params("id")
-	if err := db.Delete(&dns_server.DNSRewrite{}, id).Error; err != nil {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid ID",
+		})
+	}
+
+	if err := memory.Delete[*dns_server.DNSRewrite](db, "dns_rewrites", uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to delete rewrite: " + err.Error(),
@@ -1036,28 +1178,31 @@ func BlockClient(c *fiber.Ctx) error {
 	}
 
 	// Find or create client settings
-	var clientSettings dns_server.DNSClientSettings
-	result := db.Where("client_ip = ?", req.ClientIP).First(&clientSettings)
+	clients := memory.Filter[*dns_server.DNSClientSettings](db, "dns_client_settings", func(c *dns_server.DNSClientSettings) bool {
+		return c.ClientIP == req.ClientIP
+	})
 
 	now := time.Now()
-	if result.Error == gorm.ErrRecordNotFound {
+	var clientSettings dns_server.DNSClientSettings
+	if len(clients) == 0 {
 		clientSettings = dns_server.DNSClientSettings{
 			ClientIP:    req.ClientIP,
 			Blocked:     true,
 			BlockReason: req.Reason,
 			BlockedAt:   &now,
 		}
-		if err := db.Create(&clientSettings).Error; err != nil {
+		if err := memory.Create[*dns_server.DNSClientSettings](db, "dns_client_settings", &clientSettings); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": true,
 				"msg":   "Failed to block client: " + err.Error(),
 			})
 		}
 	} else {
+		clientSettings = *clients[0]
 		clientSettings.Blocked = true
 		clientSettings.BlockReason = req.Reason
 		clientSettings.BlockedAt = &now
-		if err := db.Save(&clientSettings).Error; err != nil {
+		if err := memory.Update[*dns_server.DNSClientSettings](db, "dns_client_settings", &clientSettings); err != nil {
 			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 				"error": true,
 				"msg":   "Failed to block client: " + err.Error(),
@@ -1095,19 +1240,24 @@ func UnblockClient(c *fiber.Ctx) error {
 		})
 	}
 
-	var clientSettings dns_server.DNSClientSettings
-	if err := db.Where("client_ip = ?", clientIP).First(&clientSettings).Error; err != nil {
+	clients := memory.Filter[*dns_server.DNSClientSettings](db, "dns_client_settings", func(c *dns_server.DNSClientSettings) bool {
+		return c.ClientIP == clientIP
+	})
+
+	if len(clients) == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Client not found",
 		})
 	}
 
+	clientSettings := *clients[0]
+
 	clientSettings.Blocked = false
 	clientSettings.BlockReason = ""
 	clientSettings.BlockedAt = nil
 
-	if err := db.Save(&clientSettings).Error; err != nil {
+	if err := memory.Update[*dns_server.DNSClientSettings](db, "dns_client_settings", &clientSettings); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to unblock client: " + err.Error(),
@@ -1137,19 +1287,20 @@ func GetClientDomainRules(c *fiber.Ctx) error {
 	}
 
 	clientIP := c.Query("client_ip")
-	var rules []dns_server.DNSClientDomainRule
+	var rules []*dns_server.DNSClientDomainRule
 
-	query := db.Model(&dns_server.DNSClientDomainRule{})
 	if clientIP != "" {
-		query = query.Where("client_ip = ?", clientIP)
+		rules = memory.Filter[*dns_server.DNSClientDomainRule](db, "dns_client_rules", func(r *dns_server.DNSClientDomainRule) bool {
+			return r.ClientIP == clientIP
+		})
+	} else {
+		rules = memory.FindAll[*dns_server.DNSClientDomainRule](db, "dns_client_rules")
 	}
 
-	if err := query.Order("created_at DESC").Find(&rules).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch rules: " + err.Error(),
-		})
-	}
+	// Sort by CreatedAt descending
+	sort.Slice(rules, func(i, j int) bool {
+		return rules[i].CreatedAt.After(rules[j].CreatedAt)
+	})
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -1200,7 +1351,7 @@ func CreateClientDomainRule(c *fiber.Ctx) error {
 	// Normalize domain (remove trailing dot, lowercase, trim)
 	rule.Domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(rule.Domain)), ".")
 
-	if err := db.Create(&rule).Error; err != nil {
+	if err := memory.Create[*dns_server.DNSClientDomainRule](db, "dns_client_rules", &rule); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to create rule: " + err.Error(),
@@ -1232,8 +1383,16 @@ func DeleteClientDomainRule(c *fiber.Ctx) error {
 		})
 	}
 
-	id := c.Params("id")
-	if err := db.Delete(&dns_server.DNSClientDomainRule{}, id).Error; err != nil {
+	idStr := c.Params("id")
+	id, err := strconv.ParseUint(idStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid ID",
+		})
+	}
+
+	if err := memory.Delete[*dns_server.DNSClientDomainRule](db, "dns_client_rules", uint(id)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to delete rule: " + err.Error(),
@@ -1275,14 +1434,19 @@ func DeleteClientDomainRuleByDetails(c *fiber.Ctx) error {
 	domain = strings.TrimSuffix(strings.TrimSpace(strings.ToLower(domain)), ".")
 
 	// Delete the rule
-	result := db.Where("client_ip = ? AND domain = ? AND type = ?", clientIP, domain, ruleType).
-		Delete(&dns_server.DNSClientDomainRule{})
+	rules := memory.Filter[*dns_server.DNSClientDomainRule](db, "dns_client_rules", func(r *dns_server.DNSClientDomainRule) bool {
+		return r.ClientIP == clientIP && r.Domain == domain && r.Type == ruleType
+	})
 
-	if result.Error != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to delete rule: " + result.Error.Error(),
-		})
+	deletedCount := 0
+	for _, rule := range rules {
+		if err := memory.Delete[*dns_server.DNSClientDomainRule](db, "dns_client_rules", rule.GetID()); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Failed to delete rule: " + err.Error(),
+			})
+		}
+		deletedCount++
 	}
 
 	// Invalidate client cache
@@ -1296,7 +1460,7 @@ func DeleteClientDomainRuleByDetails(c *fiber.Ctx) error {
 		"error": false,
 		"msg":   "Client domain rule deleted successfully",
 		"data": fiber.Map{
-			"deleted_count": result.RowsAffected,
+			"deleted_count": deletedCount,
 		},
 	})
 }
@@ -1313,31 +1477,33 @@ func GetAllCustomRules(c *fiber.Ctx) error {
 	}
 
 	// Get global custom filters
-	var globalFilters []dns_server.DNSCustomFilter
-	if err := db.Order("created_at DESC").Find(&globalFilters).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch global filters: " + err.Error(),
-		})
-	}
+	globalFilters := memory.FindAll[*dns_server.DNSCustomFilter](db, "dns_custom_filters")
+	sort.Slice(globalFilters, func(i, j int) bool {
+		return globalFilters[i].CreatedAt.After(globalFilters[j].CreatedAt)
+	})
 
 	// Get client-specific rules
-	var clientRules []dns_server.DNSClientDomainRule
-	if err := db.Order("created_at DESC").Find(&clientRules).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch client rules: " + err.Error(),
-		})
-	}
+	clientRules := memory.FindAll[*dns_server.DNSClientDomainRule](db, "dns_client_rules")
+	sort.Slice(clientRules, func(i, j int) bool {
+		return clientRules[i].CreatedAt.After(clientRules[j].CreatedAt)
+	})
 
 	// Get banned clients
-	var bannedClients []dns_server.DNSClientSettings
-	if err := db.Where("blocked = ?", true).Order("blocked_at DESC").Find(&bannedClients).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch banned clients: " + err.Error(),
-		})
-	}
+	bannedClients := memory.Filter[*dns_server.DNSClientSettings](db, "dns_client_settings", func(c *dns_server.DNSClientSettings) bool {
+		return c.Blocked
+	})
+	sort.Slice(bannedClients, func(i, j int) bool {
+		if bannedClients[i].BlockedAt == nil && bannedClients[j].BlockedAt == nil {
+			return false
+		}
+		if bannedClients[i].BlockedAt == nil {
+			return false
+		}
+		if bannedClients[j].BlockedAt == nil {
+			return true
+		}
+		return bannedClients[i].BlockedAt.After(*bannedClients[j].BlockedAt)
+	})
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,

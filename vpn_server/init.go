@@ -9,8 +9,8 @@ var vpnManager *WireGuardManager
 
 // Init initializes VPN server module
 func Init() {
-	// Get database connection
-	db := database.GetDB()
+	// Get memory database connection
+	db := database.GetMemoryDB()
 
 	// Get VPN manager instance
 	vpnManager = GetWireGuardManager()

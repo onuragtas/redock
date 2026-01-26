@@ -3,7 +3,9 @@ package controllers
 import (
 	"encoding/base64"
 	"fmt"
+	"redock/platform/memory"
 	"redock/vpn_server"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -28,13 +30,7 @@ func GetVPNServers(c *fiber.Ctx) error {
 		})
 	}
 
-	var servers []vpn_server.VPNServer
-	if err := db.Find(&servers).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch servers: " + err.Error(),
-		})
-	}
+	servers := memory.FindAll[*vpn_server.VPNServer](db, "vpn_servers")
 
 	// Add running status to each server
 	type ServerWithStatus struct {
@@ -45,7 +41,7 @@ func GetVPNServers(c *fiber.Ctx) error {
 	serversWithStatus := make([]ServerWithStatus, len(servers))
 	for i, server := range servers {
 		serversWithStatus[i] = ServerWithStatus{
-			VPNServer: server,
+			VPNServer: *server,
 			Running:   manager.IsServerRunning(server.ID),
 		}
 	}
@@ -114,18 +110,20 @@ func GetVPNUsers(c *fiber.Ctx) error {
 	}
 
 	serverID := c.Query("server_id")
-	query := db.Model(&vpn_server.VPNUser{})
-
+	var users []*vpn_server.VPNUser
 	if serverID != "" {
-		query = query.Where("server_id = ?", serverID)
-	}
-
-	var users []vpn_server.VPNUser
-	if err := query.Find(&users).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch users: " + err.Error(),
+		serverIDUint, err := strconv.ParseUint(serverID, 10, 32)
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Invalid server_id parameter",
+			})
+		}
+		users = memory.Filter[*vpn_server.VPNUser](db, "vpn_users", func(x *vpn_server.VPNUser) bool {
+			return x.ServerID == uint(serverIDUint)
 		})
+	} else {
+		users = memory.FindAll[*vpn_server.VPNUser](db, "vpn_users")
 	}
 
 	// Ensure last_connected_at is always included in response (even if nil)
@@ -137,7 +135,7 @@ func GetVPNUsers(c *fiber.Ctx) error {
 	userResponses := make([]UserResponse, len(users))
 	for i, user := range users {
 		userResponses[i] = UserResponse{
-			VPNUser:         user,
+			VPNUser:         *user,
 			LastConnectedAt: user.LastConnectedAt,
 		}
 	}
@@ -247,8 +245,15 @@ func GetVPNServer(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	var server vpn_server.VPNServer
-	if err := db.First(&server, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid server ID",
+		})
+	}
+	server, err := memory.FindByID[*vpn_server.VPNServer](db, "vpn_servers", uint(idUint))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Server not found",
@@ -281,22 +286,29 @@ func UpdateVPNServer(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	var server vpn_server.VPNServer
-	if err := db.First(&server, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid server ID",
+		})
+	}
+	server, err := memory.FindByID[*vpn_server.VPNServer](db, "vpn_servers", uint(idUint))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Server not found",
 		})
 	}
 
-	if err := c.BodyParser(&server); err != nil {
+	if err := c.BodyParser(server); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Invalid request body: " + err.Error(),
 		})
 	}
 
-	if err := db.Save(&server).Error; err != nil {
+	if err := memory.Update[*vpn_server.VPNServer](db, "vpn_servers", server); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to update server: " + err.Error(),
@@ -329,7 +341,14 @@ func DeleteVPNServer(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	if err := db.Delete(&vpn_server.VPNServer{}, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid server ID",
+		})
+	}
+	if err := memory.Delete[*vpn_server.VPNServer](db, "vpn_servers", uint(idUint)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to delete server: " + err.Error(),
@@ -361,8 +380,15 @@ func GetVPNUser(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	var user vpn_server.VPNUser
-	if err := db.First(&user, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid user ID",
+		})
+	}
+	user, err := memory.FindByID[*vpn_server.VPNUser](db, "vpn_users", uint(idUint))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "User not found",
@@ -395,22 +421,29 @@ func UpdateVPNUser(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	var user vpn_server.VPNUser
-	if err := db.First(&user, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid user ID",
+		})
+	}
+	user, err := memory.FindByID[*vpn_server.VPNUser](db, "vpn_users", uint(idUint))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "User not found",
 		})
 	}
 
-	if err := c.BodyParser(&user); err != nil {
+	if err := c.BodyParser(user); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Invalid request body: " + err.Error(),
 		})
 	}
 
-	if err := db.Save(&user).Error; err != nil {
+	if err := memory.Update[*vpn_server.VPNUser](db, "vpn_users", user); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to update user: " + err.Error(),
@@ -443,7 +476,14 @@ func DeleteVPNUser(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	if err := db.Delete(&vpn_server.VPNUser{}, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid user ID",
+		})
+	}
+	if err := memory.Delete[*vpn_server.VPNUser](db, "vpn_users", uint(idUint)); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Failed to delete user: " + err.Error(),
@@ -532,10 +572,11 @@ func GetVPNStatistics(c *fiber.Ctx) error {
 		})
 	}
 
-	var totalServers, totalUsers, activeConnections int64
-	db.Model(&vpn_server.VPNServer{}).Count(&totalServers)
-	db.Model(&vpn_server.VPNUser{}).Count(&totalUsers)
-	db.Model(&vpn_server.VPNConnection{}).Where("status = ?", "connected").Count(&activeConnections)
+	totalServers := int64(memory.Count[*vpn_server.VPNServer](db, "vpn_servers"))
+	totalUsers := int64(memory.Count[*vpn_server.VPNUser](db, "vpn_users"))
+	activeConnections := int64(len(memory.Filter[*vpn_server.VPNConnection](db, "vpn_connections", func(x *vpn_server.VPNConnection) bool {
+		return x.Status == "connected"
+	})))
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -568,18 +609,11 @@ func GetBandwidthStatistics(c *fiber.Ctx) error {
 
 	// Total bandwidth across all users
 	var totalReceived, totalSent int64
-	var result struct {
-		Total int64
+	users := memory.FindAll[*vpn_server.VPNUser](db, "vpn_users")
+	for _, user := range users {
+		totalReceived += user.TotalBytesReceived
+		totalSent += user.TotalBytesSent
 	}
-	db.Model(&vpn_server.VPNUser{}).
-		Select("COALESCE(SUM(total_bytes_received), 0) as total").
-		Scan(&result)
-	totalReceived = result.Total
-
-	db.Model(&vpn_server.VPNUser{}).
-		Select("COALESCE(SUM(total_bytes_sent), 0) as total").
-		Scan(&result)
-	totalSent = result.Total
 
 	// Top 10 users by bandwidth
 	type UserBandwidth struct {
@@ -589,11 +623,26 @@ func GetBandwidthStatistics(c *fiber.Ctx) error {
 		Total    int64  `json:"total"`
 	}
 	var topUsers []UserBandwidth
-	db.Model(&vpn_server.VPNUser{}).
-		Select("username, total_bytes_received as received, total_bytes_sent as sent, (total_bytes_received + total_bytes_sent) as total").
-		Order("(total_bytes_received + total_bytes_sent) DESC").
-		Limit(10).
-		Scan(&topUsers)
+	for _, user := range users {
+		total := user.TotalBytesReceived + user.TotalBytesSent
+		topUsers = append(topUsers, UserBandwidth{
+			Username: user.Username,
+			Received: user.TotalBytesReceived,
+			Sent:     user.TotalBytesSent,
+			Total:    total,
+		})
+	}
+	// Sort by total descending and take top 10
+	for i := 0; i < len(topUsers)-1; i++ {
+		for j := i + 1; j < len(topUsers); j++ {
+			if topUsers[i].Total < topUsers[j].Total {
+				topUsers[i], topUsers[j] = topUsers[j], topUsers[i]
+			}
+		}
+	}
+	if len(topUsers) > 10 {
+		topUsers = topUsers[:10]
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -627,27 +676,22 @@ func GetConnectionStatistics(c *fiber.Ctx) error {
 
 	// Total connections
 	var totalConnections int64
-	var result struct {
-		Total int64
+	users := memory.FindAll[*vpn_server.VPNUser](db, "vpn_users")
+	for _, user := range users {
+		totalConnections += int64(user.TotalConnections)
 	}
-	db.Model(&vpn_server.VPNUser{}).
-		Select("COALESCE(SUM(total_connections), 0) as total").
-		Scan(&result)
-	totalConnections = result.Total
 
 	// Total duration (seconds)
 	var totalDuration int64
-	db.Model(&vpn_server.VPNUser{}).
-		Select("COALESCE(SUM(total_duration), 0) as total").
-		Scan(&result)
-	totalDuration = result.Total
+	for _, user := range users {
+		totalDuration += user.TotalDuration
+	}
 
 	// Users with connections in last 24h
-	var activeUsers24h int64
 	twentyFourHoursAgo := time.Now().Add(-24 * time.Hour)
-	db.Model(&vpn_server.VPNUser{}).
-		Where("last_connected_at > ?", twentyFourHoursAgo).
-		Count(&activeUsers24h)
+	activeUsers24h := int64(len(memory.Filter[*vpn_server.VPNUser](db, "vpn_users", func(x *vpn_server.VPNUser) bool {
+		return x.LastConnectedAt != nil && x.LastConnectedAt.After(twentyFourHoursAgo)
+	})))
 
 	// Average connection duration
 	var avgDuration float64
@@ -685,13 +729,9 @@ func GetActiveConnections(c *fiber.Ctx) error {
 		})
 	}
 
-	var connections []vpn_server.VPNConnection
-	if err := db.Where("status = ?", "connected").Find(&connections).Error; err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to fetch connections: " + err.Error(),
-		})
-	}
+	connections := memory.Filter[*vpn_server.VPNConnection](db, "vpn_connections", func(x *vpn_server.VPNConnection) bool {
+		return x.Status == "connected"
+	})
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -719,8 +759,15 @@ func GetConnectionDetails(c *fiber.Ctx) error {
 	}
 
 	id := c.Params("id")
-	var connection vpn_server.VPNConnection
-	if err := db.First(&connection, id).Error; err != nil {
+	idUint, err := strconv.ParseUint(id, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid connection ID",
+		})
+	}
+	connection, err := memory.FindByID[*vpn_server.VPNConnection](db, "vpn_connections", uint(idUint))
+	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Connection not found",

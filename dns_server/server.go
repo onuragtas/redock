@@ -6,12 +6,13 @@ import (
 	"fmt"
 	"log"
 	"net"
+	dockermanager "redock/docker-manager"
+	"redock/platform/memory"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/miekg/dns"
-	"gorm.io/gorm"
 )
 
 var (
@@ -21,7 +22,8 @@ var (
 
 // DNSServer manages DNS server operations
 type DNSServer struct {
-	db              *gorm.DB
+	db              *memory.Database
+	dockerManager   *dockermanager.DockerEnvironmentManager
 	config          *DNSConfig
 	udpServer       *dns.Server
 	tcpServer       *dns.Server
@@ -31,6 +33,7 @@ type DNSServer struct {
 	upstreamManager *UpstreamManager
 	cache           *DNSCache
 	stats           *StatsCollector
+	jsonlWriter     *DNSLogWriter
 	mutex           sync.RWMutex
 	running         bool
 	ctx             context.Context
@@ -51,30 +54,13 @@ func GetDNSServer() *DNSServer {
 }
 
 // Init initializes DNS server with database
-func (s *DNSServer) Init(db *gorm.DB) error {
+func (s *DNSServer) Init(db *memory.Database, dockerManager *dockermanager.DockerEnvironmentManager) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
 	s.db = db
+	s.dockerManager = dockerManager
 	s.ctx, s.cancel = context.WithCancel(context.Background())
-
-	// Auto-migrate tables with SkipDefaultTransaction for SQLite compatibility
-	migrator := s.db.Session(&gorm.Session{
-		SkipDefaultTransaction: true,
-	})
-
-	if err := migrator.AutoMigrate(
-		&DNSConfig{},
-		&DNSBlocklist{},
-		&DNSCustomFilter{},
-		&DNSClientDomainRule{},
-		&DNSQueryLog{},
-		&DNSStatistics{},
-		&DNSClientSettings{},
-		&DNSRewrite{},
-	); err != nil {
-		return fmt.Errorf("failed to migrate DNS tables: %w", err)
-	}
 
 	// Load or create config
 	if err := s.loadConfig(); err != nil {
@@ -87,10 +73,20 @@ func (s *DNSServer) Init(db *gorm.DB) error {
 	s.cache = NewDNSCache(s.config.CacheTTL)
 	s.stats = NewStatsCollector(db)
 
+	// Initialize JSONL log writer
+	jsonlWriter, err := NewDNSLogWriter(dockerManager)
+	if err != nil {
+		return fmt.Errorf("failed to initialize log writer: %w", err)
+	}
+	s.jsonlWriter = jsonlWriter
+	
+	// Set log writer for stats (for historical query reading)
+	s.stats.SetLogWriter(jsonlWriter)
+
 	// Initialize log channel for async logging (single writer goroutine)
 	s.logChannel = make(chan DNSQueryLog, 1000) // Large buffer to avoid blocking DNS queries
 
-	// Start single writer goroutine (ensures SQLite single writer, no mutex needed)
+	// Start single writer goroutine
 	go s.logWriter()
 
 	// Load filters
@@ -98,17 +94,45 @@ func (s *DNSServer) Init(db *gorm.DB) error {
 		log.Printf("Warning: Failed to load filters: %v", err)
 	}
 
+	// Preload stats from last 24 hours (async, non-blocking)
+	go s.preloadStats()
+
 	return nil
+}
+
+// preloadStats loads stats from JSONL files to populate in-memory counters after restart
+func (s *DNSServer) preloadStats() {
+	log.Printf("🔄 Preloading stats from last 24 hours...")
+	startTime := time.Now()
+	
+	since := time.Now().Add(-24 * time.Hour)
+	var count int64
+	
+	err := s.jsonlWriter.ReadLogs(since, func(logEntry DNSQueryLog) error {
+		// Update in-memory stats just like live queries
+		responseTimeMicros := int64(logEntry.ResponseTime) * 1000 // ms to microseconds
+		s.stats.RecordQueryDetails(logEntry.Domain, logEntry.ClientIP, logEntry.Blocked, logEntry.Cached, responseTimeMicros)
+		count++
+		return nil
+	})
+	
+	if err != nil {
+		log.Printf("⚠️  Failed to preload stats: %v", err)
+		return
+	}
+	
+	duration := time.Since(startTime)
+	log.Printf("✅ Preloaded %d queries from last 24 hours in %v", count, duration)
 }
 
 // loadConfig loads or creates default config
 func (s *DNSServer) loadConfig() error {
-	var config DNSConfig
-	result := s.db.First(&config)
+	// Get all configs (should only be one)
+	configs := memory.FindAll[*DNSConfig](s.db, "dns_config")
 
-	if result.Error == gorm.ErrRecordNotFound {
+	if len(configs) == 0 {
 		// Create default config
-		config = DNSConfig{
+		config := &DNSConfig{
 			Enabled:          false,
 			UDPPort:          53,
 			TCPPort:          53,
@@ -127,14 +151,14 @@ func (s *DNSServer) loadConfig() error {
 			"8.8.8.8:53",
 		})
 
-		if err := s.db.Create(&config).Error; err != nil {
+		if err := memory.Create[*DNSConfig](s.db, "dns_config", config); err != nil {
 			return err
 		}
-	} else if result.Error != nil {
-		return result.Error
+		s.config = config
+	} else {
+		s.config = configs[0]
 	}
 
-	s.config = &config
 	return nil
 }
 
@@ -428,6 +452,7 @@ func (s *DNSServer) logQuery(clientIP, domain, qtype string, response *dns.Msg, 
 	}
 
 	logEntry := DNSQueryLog{
+		CreatedAt:    time.Now(),
 		ClientIP:     clientIP,
 		Domain:       domain,
 		QueryType:    qtype,
@@ -448,65 +473,35 @@ func (s *DNSServer) logQuery(clientIP, domain, qtype string, response *dns.Msg, 
 }
 
 // logWriter is the single writer goroutine that processes logs from channel
-// This ensures SQLite single writer guarantee and eliminates mutex contention
 func (s *DNSServer) logWriter() {
-	buffer := make([]DNSQueryLog, 0, 100)
-	batchSize := 50
-	ticker := time.NewTicker(5 * time.Second)
-	defer ticker.Stop()
-
-	flush := func(logs []DNSQueryLog) {
-		if len(logs) == 0 {
-			return
+	defer func() {
+		// Stop the JSONL log writer on shutdown
+		if s.jsonlWriter != nil {
+			s.jsonlWriter.Stop()
 		}
-
-		// Retry mechanism for SQLITE_BUSY errors
-		maxRetries := 3
-		for attempt := 0; attempt <= maxRetries; attempt++ {
-			err := s.db.Session(&gorm.Session{
-				SkipDefaultTransaction: true,
-			}).CreateInBatches(logs, batchSize).Error
-
-			if err == nil {
-				return
-			}
-
-			// Check if it's a busy/locked error
-			if strings.Contains(err.Error(), "SQLITE_BUSY") || strings.Contains(err.Error(), "database is locked") {
-				if attempt < maxRetries {
-					// Exponential backoff: 100ms, 200ms, 400ms
-					backoff := time.Duration(100*(1<<attempt)) * time.Millisecond
-					time.Sleep(backoff)
-					continue
-				}
-			}
-
-			log.Printf("⚠️  Failed to flush DNS query logs after %d attempts: %v", attempt+1, err)
-			return
-		}
-	}
+	}()
 
 	for {
 		select {
 		case <-s.ctx.Done():
-			// Final flush on shutdown
-			flush(buffer)
-			return
+			// Drain remaining logs before exiting
+			for {
+				select {
+				case logEntry := <-s.logChannel:
+					s.jsonlWriter.LogQuery(logEntry)
+					responseTimeMicros := int64(logEntry.ResponseTime) * 1000 // ms to microseconds
+					s.stats.RecordQueryDetails(logEntry.Domain, logEntry.ClientIP, logEntry.Blocked, logEntry.Cached, responseTimeMicros)
+				default:
+					return
+				}
+			}
 
 		case logEntry := <-s.logChannel:
-			buffer = append(buffer, logEntry)
-			// Flush when batch size reached
-			if len(buffer) >= batchSize {
-				flush(buffer)
-				buffer = buffer[:0] // Reset buffer, keep capacity
-			}
-
-		case <-ticker.C:
-			// Time-based flush (every 5 seconds)
-			if len(buffer) > 0 {
-				flush(buffer)
-				buffer = buffer[:0] // Reset buffer, keep capacity
-			}
+			// Write to JSONL file
+			s.jsonlWriter.LogQuery(logEntry)
+			// Update real-time stats with domain/client tracking
+			responseTimeMicros := int64(logEntry.ResponseTime) * 1000 // ms to microseconds
+			s.stats.RecordQueryDetails(logEntry.Domain, logEntry.ClientIP, logEntry.Blocked, logEntry.Cached, responseTimeMicros)
 		}
 	}
 }
@@ -514,22 +509,21 @@ func (s *DNSServer) logWriter() {
 // getRewrite checks for DNS rewrite rules
 // getRewrite checks for DNS rewrite rules with wildcard support
 func (s *DNSServer) getRewrite(domain string, qtype uint16) *dns.Msg {
-	var rewrites []DNSRewrite
 	qtypeStr := dns.TypeToString[qtype]
 
 	// Normalize domain (remove trailing dot for comparison)
 	normalizedDomain := strings.TrimSuffix(domain, ".")
 
 	// Get all enabled rewrites for this query type
-	if err := s.db.Where("enabled = ? AND type = ?", true, qtypeStr).Find(&rewrites).Error; err != nil {
-		return nil
-	}
+	rewrites := memory.Filter[*DNSRewrite](s.db, "dns_rewrites", func(r *DNSRewrite) bool {
+		return r.Enabled && r.Type == qtypeStr
+	})
 
 	// Check for exact match first
 	for _, rewrite := range rewrites {
 		rewriteDomain := strings.TrimSuffix(rewrite.Domain, ".")
 		if rewriteDomain == normalizedDomain {
-			return s.buildRewriteResponse(domain, qtype, &rewrite)
+			return s.buildRewriteResponse(domain, qtype, rewrite)
 		}
 	}
 
@@ -539,7 +533,7 @@ func (s *DNSServer) getRewrite(domain string, qtype uint16) *dns.Msg {
 		if strings.HasPrefix(rewriteDomain, "*.") {
 			baseDomain := strings.TrimPrefix(rewriteDomain, "*.")
 			if strings.HasSuffix(normalizedDomain, "."+baseDomain) || normalizedDomain == baseDomain {
-				return s.buildRewriteResponse(domain, qtype, &rewrite)
+				return s.buildRewriteResponse(domain, qtype, rewrite)
 			}
 		}
 	}
@@ -632,10 +626,10 @@ func (s *DNSServer) cleanupOldLogs() {
 		case <-s.ctx.Done():
 			return
 		case <-ticker.C:
-			cutoffDate := time.Now().AddDate(0, 0, -s.config.LogRetentionDays)
-			result := s.db.Where("created_at < ?", cutoffDate).Delete(&DNSQueryLog{})
-			if result.Error == nil && result.RowsAffected > 0 {
-				log.Printf("🧹 Cleaned up %d old DNS query logs", result.RowsAffected)
+			// Cleanup is handled by DNSLogWriter automatically (every hour)
+			// It keeps logs based on LogRetentionDays config
+			if s.jsonlWriter != nil && s.config != nil {
+				s.jsonlWriter.cleanup(s.config.LogRetentionDays)
 			}
 		}
 	}
@@ -643,7 +637,7 @@ func (s *DNSServer) cleanupOldLogs() {
 
 // updateStatistics updates daily statistics
 func (s *DNSServer) updateStatistics() {
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(10 * time.Second)
 	defer ticker.Stop()
 
 	for {
@@ -675,7 +669,7 @@ func (s *DNSServer) UpdateConfig(config *DNSConfig) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 
-	if err := s.db.Save(config).Error; err != nil {
+	if err := memory.Update[*DNSConfig](s.db, "dns_config", config); err != nil {
 		return err
 	}
 
@@ -694,7 +688,7 @@ func (s *DNSServer) ReloadFilters() error {
 }
 
 // GetDB returns database connection
-func (s *DNSServer) GetDB() (*gorm.DB, error) {
+func (s *DNSServer) GetDB() (*memory.Database, error) {
 	if s.db == nil {
 		return nil, fmt.Errorf("database not initialized")
 	}
@@ -714,5 +708,30 @@ func (s *DNSServer) GetRealtimeStats() RealtimeStats {
 // GetQueryHistory returns query history
 func (s *DNSServer) GetQueryHistory(hours int) []QueryHistoryPoint {
 	return s.stats.GetQueryHistory(hours)
+}
+
+// GetLogWriter returns the log writer instance
+func (s *DNSServer) GetLogWriter() *DNSLogWriter {
+	return s.jsonlWriter
+}
+
+// GetDailyStats returns daily statistics for a specific date
+func (s *DNSServer) GetDailyStats(date time.Time) *DailyStats {
+	return s.stats.GetDailyStats(date)
+}
+
+// GetDailyStatsRange returns daily statistics for a date range
+func (s *DNSServer) GetDailyStatsRange(startDate, endDate time.Time) []*DailyStats {
+	return s.stats.GetDailyStatsRange(startDate, endDate)
+}
+
+// GetLast7Days returns statistics for last 7 days
+func (s *DNSServer) GetLast7Days() []*DailyStats {
+	return s.stats.GetLast7Days()
+}
+
+// GetLast30Days returns statistics for last 30 days
+func (s *DNSServer) GetLast30Days() []*DailyStats {
+	return s.stats.GetLast30Days()
 }
 
