@@ -67,6 +67,7 @@ func CreateVPNServer(c *fiber.Ctx) error {
 		Name     string `json:"name" validate:"required"`
 		Address  string `json:"address" validate:"required"`
 		Endpoint string `json:"endpoint"`
+		DNS      string `json:"dns"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -76,7 +77,7 @@ func CreateVPNServer(c *fiber.Ctx) error {
 		})
 	}
 
-	server, err := manager.CreateServer(req.Name, req.Address, req.Endpoint)
+	server, err := manager.CreateServer(req.Name, req.Address, req.Endpoint, req.DNS)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -162,6 +163,7 @@ func CreateVPNUser(c *fiber.Ctx) error {
 		Username string `json:"username" validate:"required"`
 		Email    string `json:"email"`
 		FullName string `json:"full_name"`
+		DNS      string `json:"dns"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -171,7 +173,7 @@ func CreateVPNUser(c *fiber.Ctx) error {
 		})
 	}
 
-	user, err := manager.AddUser(req.ServerID, req.Username, req.Email, req.FullName)
+	user, err := manager.AddUser(req.ServerID, req.Username, req.Email, req.FullName, req.DNS)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

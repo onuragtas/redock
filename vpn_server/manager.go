@@ -147,10 +147,15 @@ func generateKeyPair() (privateKey, publicKey string, err error) {
 	return privateKey, publicKey, nil
 }
 
-func (m *WireGuardManager) CreateServer(name, address, endpoint string) (*VPNServer, error) {
+func (m *WireGuardManager) CreateServer(name, address, endpoint, dns string) (*VPNServer, error) {
 	privateKey, publicKey, err := generateKeyPair()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate keys: %w", err)
+	}
+
+	// Use default DNS if not provided
+	if dns == "" {
+		dns = "1.1.1.1,8.8.8.8"
 	}
 
 	server := &VPNServer{
@@ -161,7 +166,7 @@ func (m *WireGuardManager) CreateServer(name, address, endpoint string) (*VPNSer
 		ListenPort:          51820,
 		Address:             address,
 		Endpoint:            endpoint,
-		DNS:                 "1.1.1.1,8.8.8.8",
+		DNS:                 dns,
 		AllowedIPs:          "0.0.0.0/0",
 		MTU:                 1420,
 		PersistentKeepalive: 25,
@@ -684,7 +689,7 @@ func (m *WireGuardManager) getNextIP(serverID uint) string {
 	return "10.0.0.2/32"
 }
 
-func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName string) (*VPNUser, error) {
+func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName, dns string) (*VPNUser, error) {
 	privateKey, publicKey, err := generateKeyPair()
 	if err != nil {
 		return nil, fmt.Errorf("failed to generate keys: %w", err)
@@ -697,6 +702,11 @@ func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName stri
 
 	address := m.getNextIP(serverID)
 
+	// Use custom DNS if provided, otherwise use server's DNS
+	if dns == "" {
+		dns = server.DNS
+	}
+
 	user := &VPNUser{
 		ServerID:   serverID,
 		Username:   username,
@@ -706,7 +716,7 @@ func (m *WireGuardManager) AddUser(serverID uint, username, email, fullName stri
 		PrivateKey: privateKey,
 		Address:    address,
 		AllowedIPs: "0.0.0.0/0",
-		DNS:        server.DNS,
+		DNS:        dns,
 		Enabled:    true,
 	}
 
