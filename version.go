@@ -12,6 +12,7 @@ import (
 
 // Update configuration URLs
 const (
+	// GitHub Pages serves from /redock subpath (repository name)
 	UPDATE_CONFIG_URL = "https://onuragtas.github.io/redock/update.json"
 	GITHUB_REPO       = "onuragtas/redock"
 )
