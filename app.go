@@ -110,6 +110,15 @@ func app() {
 	routes.APIGatewayRoutes(app)       // Register API Gateway routes for app.
 	routes.DNSRoutes(app)              // Register DNS Server routes for app.
 	routes.SetupVPNRoutes(app)         // Register VPN Server routes for app.
+	routes.CloudflareRoutes(app)       // Register Cloudflare routes for app.
+	routes.EmailRoutes(app)            // Register Email Server routes for app.
+
+	// Register shutdown callback for database flush
+	utils.ShutdownCallback = func() {
+		if globalDB != nil {
+			_ = globalDB.Close()
+		}
+	}
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))

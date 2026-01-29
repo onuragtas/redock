@@ -127,8 +127,6 @@ func (f *FilterEngine) loadBlocklists() error {
 
 // updateBlocklist downloads and updates a blocklist
 func (f *FilterEngine) updateBlocklist(blocklist *DNSBlocklist) {
-	log.Printf("🔄 Updating blocklist: %s from %s", blocklist.Name, blocklist.URL)
-
 	resp, err := http.Get(blocklist.URL)
 	if err != nil {
 		f.handleBlocklistError(blocklist, fmt.Errorf("download failed: %w", err))
@@ -163,8 +161,6 @@ func (f *FilterEngine) updateBlocklist(blocklist *DNSBlocklist) {
 	if err := memory.Update[*DNSBlocklist](f.db, "dns_blocklists", blocklist); err != nil {
 		log.Printf("Failed to update blocklist record: %v", err)
 	}
-
-	log.Printf("Updated blocklist %s: %d domains", blocklist.Name, len(domains))
 }
 
 // DetectBlocklistFormat detects the format of a blocklist by analyzing its content

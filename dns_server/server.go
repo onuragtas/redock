@@ -107,9 +107,6 @@ func (s *DNSServer) Init(db *memory.Database, dockerManager *dockermanager.Docke
 
 // preloadStats loads stats from JSONL files to populate in-memory counters after restart
 func (s *DNSServer) preloadStats() {
-	log.Printf("🔄 Preloading stats from last 24 hours...")
-	startTime := time.Now()
-	
 	since := time.Now().Add(-24 * time.Hour)
 	var count int64
 	
@@ -125,9 +122,6 @@ func (s *DNSServer) preloadStats() {
 		log.Printf("⚠️  Failed to preload stats: %v", err)
 		return
 	}
-	
-	duration := time.Since(startTime)
-	log.Printf("✅ Preloaded %d queries from last 24 hours in %v", count, duration)
 }
 
 // loadConfig loads or creates default config

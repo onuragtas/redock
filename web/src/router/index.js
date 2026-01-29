@@ -228,6 +228,30 @@ const routes = [
       },
       {
         meta: {
+          title: 'Email Server'
+        },
+        path: 'email_server',
+        name: 'email_server',
+        component: () => import('@/views/Email/EmailServer.vue')
+      },
+      {
+        meta: {
+          title: 'Email Server'
+        },
+        path: 'email-server',
+        name: 'email-server',
+        component: () => import('@/views/Email/EmailServer.vue')
+      },
+      {
+        meta: {
+          title: 'Cloudflare'
+        },
+        path: 'cloudflare',
+        name: 'cloudflare',
+        component: () => import('@/views/Cloudflare/CloudflareManager.vue')
+      },
+      {
+        meta: {
           title: 'Forms'
         },
         path: 'forms',

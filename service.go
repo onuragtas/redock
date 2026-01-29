@@ -17,16 +17,9 @@ func (p *program) Start(s service.Service) error {
 }
 
 func (p *program) Stop(s service.Service) error {
-	log.Println("Service is stopping...")
-	
 	// Flush memory database to disk before shutdown
 	if globalDB != nil {
-		log.Println("Flushing database to disk...")
-		if err := globalDB.Close(); err != nil {
-			log.Printf("⚠️  Failed to close database: %v", err)
-		} else {
-			log.Println("✅ Database flushed successfully")
-		}
+		_ = globalDB.Close()
 	}
 	
 	return nil

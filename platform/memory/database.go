@@ -18,6 +18,8 @@ type Database struct {
 	mutex     sync.RWMutex
 	ctx       chan struct{}
 	wg        sync.WaitGroup
+	closed    bool
+	closeMux  sync.Mutex
 }
 
 // Table holds a collection of entities
@@ -470,8 +472,21 @@ func isBooleanField(name string) bool {
 
 // Close gracefully shuts down the database
 func (db *Database) Close() error {
+	db.closeMux.Lock()
+	defer db.closeMux.Unlock()
+	
+	// Prevent double close
+	if db.closed {
+		return nil
+	}
+	
 	close(db.ctx)
 	db.wg.Wait()
+	
+	// Flush all dirty tables to disk before closing
+	db.flushAll()
+	db.closed = true
+	
 	return nil
 }
 

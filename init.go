@@ -5,9 +5,11 @@ import (
 	"os"
 	"path/filepath"
 	"redock/api_gateway"
+	"redock/cloudflare"
 	"redock/deployment"
 	"redock/devenv"
 	"redock/dns_server"
+	"redock/email_server"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
 	"redock/platform/database"
@@ -64,8 +66,6 @@ func initialize() {
 		log.Fatalf("Failed to register entities: %v", err)
 	}
 
-	log.Println("✅ Generic in-memory database initialized")
-
 	go dockerEnvironmentManager.UpdateDocker()
 
 	dockerEnvironmentManager.Init()
@@ -81,6 +81,8 @@ func initialize() {
 	api_gateway.Init(dockerEnvironmentManager)
 	dns_server.Init(dockerEnvironmentManager)
 	vpn_server.Init()
+	cloudflare.Init()
+	email_server.Init(dockerEnvironmentManager)
 	go deployment.GetDeployment().Run()
 	localproxy.GetLocalProxyManager().StartAll()
 	api_gateway.GetGateway().StartAll()
@@ -108,6 +110,26 @@ func registerEntities(db *memory.Database) error {
 		{"vpn_connections", func() error { return memory.Register[*vpn_server.VPNConnection](db, "vpn_connections") }},
 		{"vpn_connection_logs", func() error { return memory.Register[*vpn_server.VPNConnectionLog](db, "vpn_connection_logs") }},
 		{"vpn_bandwidth_stats", func() error { return memory.Register[*vpn_server.VPNBandwidthStat](db, "vpn_bandwidth_stats") }},
+		
+		// Cloudflare entities
+		{"cloudflare_accounts", func() error { return memory.Register[*cloudflare.CloudflareAccount](db, "cloudflare_accounts") }},
+		{"cloudflare_zones", func() error { return memory.Register[*cloudflare.CloudflareZone](db, "cloudflare_zones") }},
+		{"cloudflare_dns_records", func() error { return memory.Register[*cloudflare.CloudflareDNSRecord](db, "cloudflare_dns_records") }},
+		{"cloudflare_firewall_rules", func() error { return memory.Register[*cloudflare.CloudflareFirewallRule](db, "cloudflare_firewall_rules") }},
+		{"cloudflare_page_rules", func() error { return memory.Register[*cloudflare.CloudflarePageRule](db, "cloudflare_page_rules") }},
+		{"cloudflare_zone_settings", func() error { return memory.Register[*cloudflare.CloudflareZoneSettings](db, "cloudflare_zone_settings") }},
+		{"cloudflare_events", func() error { return memory.Register[*cloudflare.CloudflareEvent](db, "cloudflare_events") }},
+		
+		// Email entities
+		{"email_domains", func() error { return memory.Register[*email_server.EmailDomain](db, "email_domains") }},
+		{"email_mailboxes", func() error { return memory.Register[*email_server.EmailMailbox](db, "email_mailboxes") }},
+		{"email_aliases", func() error { return memory.Register[*email_server.EmailAlias](db, "email_aliases") }},
+		{"email_folders", func() error { return memory.Register[*email_server.EmailFolder](db, "email_folders") }},
+		{"email_messages", func() error { return memory.Register[*email_server.Email](db, "email_messages") }},
+		{"email_attachments", func() error { return memory.Register[*email_server.EmailAttachment](db, "email_attachments") }},
+		{"email_filters", func() error { return memory.Register[*email_server.EmailFilter](db, "email_filters") }},
+		{"email_logs", func() error { return memory.Register[*email_server.EmailLog](db, "email_logs") }},
+		{"email_server_configs", func() error { return memory.Register[*email_server.EmailServerConfig](db, "email_server_configs") }},
 		
 		// Other entities
 		{"saved_commands", func() error { return memory.Register[*database.SavedCommand](db, "saved_commands") }},

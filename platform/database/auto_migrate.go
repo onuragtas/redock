@@ -56,7 +56,6 @@ func AutoMigrate(dataDir string) error {
 		return fmt.Errorf("failed to save migration status: %w", err)
 	}
 
-	log.Println("✅ Storage initialized successfully!")
 	return nil
 }
 

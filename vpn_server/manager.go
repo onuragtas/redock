@@ -259,9 +259,7 @@ func (m *WireGuardManager) startServerInstance(server *VPNServer) error {
 	udpBind := conn.NewDefaultBind()
 	logger := &device.Logger{
 		Verbosef: func(format string, args ...interface{}) {},
-		Errorf: func(format string, args ...interface{}) {
-			log.Printf("[WG ERROR] "+format, args...)
-		},
+		Errorf:   func(format string, args ...interface{}) {},
 	}
 
 	wgDevice := device.NewDevice(tunDevice, udpBind, logger)
@@ -588,7 +586,6 @@ func (m *WireGuardManager) StopServer(serverID uint) error {
 	instance.Running = false
 	delete(m.instances, serverID)
 
-	log.Printf("✅ Server %d stopped", serverID)
 	return nil
 }
 

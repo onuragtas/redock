@@ -8,6 +8,9 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
+// ShutdownCallback is called before the server shuts down
+var ShutdownCallback func()
+
 // StartServerWithGracefulShutdown function for starting server with a graceful shutdown.
 func StartServerWithGracefulShutdown(a *fiber.App) {
 	// Create channel for idle connections.
@@ -17,6 +20,11 @@ func StartServerWithGracefulShutdown(a *fiber.App) {
 		sigint := make(chan os.Signal, 1)
 		signal.Notify(sigint, os.Interrupt) // Catch OS signals.
 		<-sigint
+
+		// Call shutdown callback first (database flush, cleanup, etc.)
+		if ShutdownCallback != nil {
+			ShutdownCallback()
+		}
 
 		// Received an interrupt signal, shutdown.
 		if err := a.Shutdown(); err != nil {
