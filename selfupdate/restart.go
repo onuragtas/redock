@@ -17,15 +17,11 @@ import (
 
 // UpdateWithRestart downloads and applies update, then restarts the process
 func (u *Updater) UpdateWithRestart() error {
-	log.Println("📥 Downloading new version...")
-	
 	// Download new binary
 	bin, err := u.downloadBinary()
 	if err != nil {
 		return fmt.Errorf("download failed: %w", err)
 	}
-	
-	log.Println("✅ Download complete, applying update...")
 	
 	// Get current executable path
 	path, err := osext.Executable()
@@ -42,15 +38,10 @@ func (u *Updater) UpdateWithRestart() error {
 		return fmt.Errorf("update failed: %w", err)
 	}
 	
-	log.Println("✅ Update applied successfully")
-	log.Printf("📍 Updated binary location: %s", path)
-	
 	// Determine restart method
 	if isRunningAsService() {
-		log.Println("🔄 Restarting service...")
 		return restartService()
 	} else {
-		log.Println("🔄 Performing graceful restart...")
 		return gracefulRestart(path)
 	}
 }
@@ -101,8 +92,6 @@ func restartService() error {
 		return fmt.Errorf("failed to restart service: %w", err)
 	}
 	
-	log.Println("✅ Service restart initiated")
-	
 	// Exit this process (systemd will restart it)
 	os.Exit(0)
 	return nil
@@ -121,13 +110,11 @@ func gracefulRestart(execPath string) error {
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	
-	log.Println("🚀 Starting new process...")
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("failed to start new process: %w", err)
 	}
 	
 	// Give the new process time to start
-	log.Println("⏳ Waiting 5 seconds for new process to initialize...")
 	time.Sleep(5 * time.Second)
 	
 	// Check if new process is still running
@@ -140,14 +127,10 @@ func gracefulRestart(execPath string) error {
 		return fmt.Errorf("new process failed to start properly: process not running")
 	}
 	
-	log.Printf("✅ New process (PID: %d) is healthy, shutting down old process (PID: %d)...", cmd.Process.Pid, os.Getpid())
-	
 	// Give connections time to drain (optional)
-	log.Println("⏳ Draining connections for 2 seconds...")
 	time.Sleep(2 * time.Second)
 	
 	// Exit old process
-	log.Println("👋 Goodbye from old process!")
 	os.Exit(0)
 	
 	return nil
@@ -170,6 +153,5 @@ func RollbackUpdate() error {
 		return fmt.Errorf("failed to restore backup: %w", err)
 	}
 	
-	log.Println("✅ Rolled back to previous version")
 	return nil
 }

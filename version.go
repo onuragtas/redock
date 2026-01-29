@@ -19,10 +19,7 @@ const (
 
 func checkSelfUpdate() {
 	// Skip update check if restarting after an update
-	skipCheck := os.Getenv("SKIP_UPDATE_CHECK")
-	log.Printf("🔍 SKIP_UPDATE_CHECK env: '%s'", skipCheck) // Debug log
-	if skipCheck == "1" {
-		log.Println("⏭️  Skipping update check (post-restart)")
+	if os.Getenv("SKIP_UPDATE_CHECK") == "1" {
 		return
 	}
 	
@@ -58,24 +55,12 @@ func checkSelfUpdate() {
 	
 	if isBelowMinimum {
 		// FORCE UPDATE - Current version is below minimum required
-		log.Println("⚠️  CRITICAL: Your version is below minimum required!")
-		log.Printf("⚠️  Current: %s | Minimum Required: %s", version, minimumRequiredVersion)
-		
-		if config.CriticalUpdate {
-			log.Println("🔒 This is a CRITICAL security update!")
-		}
-		
-		if config.ReleaseNotes != "" {
-			log.Printf("📝 %s", config.ReleaseNotes)
-		}
-		
+		log.Printf("⚠️  CRITICAL: Version below minimum required! Current: %s | Required: %s", version, minimumRequiredVersion)
 		performForceUpdate("https://github.com/onuragtas/redock/releases/latest/download/redock_" + runtime.GOOS + "_" + runtime.GOARCH)
 	}
 }
 
 func checkBetaUpdate(currentVer *selfupdate.Version) {
-	log.Println("🧪 Beta version detected, checking for updates from GitHub...")
-	
 	// Get latest beta version from GitHub
 	latestBeta, err := selfupdate.GetLatestBetaVersion("onuragtas", "redock")
 	if err != nil {
@@ -92,28 +77,17 @@ func checkBetaUpdate(currentVer *selfupdate.Version) {
 	// Compare versions
 	if currentVer.Compare(latestBetaVer) < 0 {
 		// New beta available - force update
-		log.Println("🆕 New beta version available!")
-		log.Printf("⚠️  Current: %s | Latest Beta: %s", currentVer.String(), latestBeta)
-		log.Println("🚀 Auto-updating to latest beta...")
-		
-		// Build download URL for latest beta
 		downloadURL := fmt.Sprintf("https://github.com/onuragtas/redock/releases/download/v%s/redock_%s_%s", 
 			latestBeta, runtime.GOOS, runtime.GOARCH)
 		
 		performForceUpdate(downloadURL)
-	} else {
-		log.Printf("✅ You are on the latest beta: %s", currentVer.String())
 	}
 }
 
 func performForceUpdate(downloadURL string) {
-	log.Println("🚀 FORCE UPDATE starting automatically...")
-	
 	if getProcessOwner() != "root" {
 		log.Fatalln("❌ Please run this command as root user for force update.")
 	}
-
-	log.Println("📥 Downloading:", downloadURL)
 
 	var updater = &selfupdate.Updater{
 		CurrentVersion: version,
@@ -123,7 +97,6 @@ func performForceUpdate(downloadURL string) {
 	}
 
 	if updater != nil {
-		log.Println("🔄 Update started, please wait...")
 		updater.Update()
 		log.Fatalln("✅ Force update complete. Please run the command again.")
 	}

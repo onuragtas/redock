@@ -3,6 +3,9 @@ package controllers
 import (
 	"fmt"
 	"log"
+	"redock/app/cache_models"
+	"redock/platform/database"
+	"redock/platform/memory"
 	"redock/selfupdate"
 	"runtime"
 	"time"
@@ -19,10 +22,65 @@ func SetCurrentVersion(v string) {
 	currentVersion = v
 }
 
+// getCachedReleases returns cached releases or fetches from GitHub
+func getCachedReleases() ([]selfupdate.ReleaseInfo, error) {
+	owner := "onuragtas"
+	repo := "redock"
+	db := database.GetMemoryDB()
+	
+	// Find existing cache
+	caches := memory.Filter[*cache_models.ReleaseCache](db, "release_cache", func(c *cache_models.ReleaseCache) bool {
+		return c.Owner == owner && c.Repo == repo
+	})
+	
+	if len(caches) > 0 {
+		cache := caches[0]
+		// Check if cache is still valid (5 minutes)
+		if cache.IsValid() {
+			return cache.Releases, nil
+		}
+	}
+	
+	// Cache expired or not found, fetch from GitHub
+	releases, err := selfupdate.FetchAllReleases(owner, repo)
+	if err != nil {
+		// If fetch fails but we have old cache, return it
+		if len(caches) > 0 && len(caches[0].Releases) > 0 {
+			log.Printf("⚠️  GitHub API failed, using stale cache: %v", err)
+			return caches[0].Releases, nil
+		}
+		return nil, err
+	}
+	
+	// Update or create cache
+	if len(caches) > 0 {
+		// Update existing cache
+		releaseCache := caches[0]
+		releaseCache.Releases = releases
+		releaseCache.FetchedAt = time.Now()
+		if err := memory.Update(db, "release_cache", releaseCache); err != nil {
+			log.Printf("⚠️  Failed to update cache: %v", err)
+		}
+	} else {
+		// Create new cache
+		releaseCache := &cache_models.ReleaseCache{
+			Owner:     owner,
+			Repo:      repo,
+			Releases:  releases,
+			FetchedAt: time.Now(),
+		}
+		if err := memory.Create(db, "release_cache", releaseCache); err != nil {
+			log.Printf("⚠️  Failed to create cache: %v", err)
+		}
+	}
+	
+	return releases, nil
+}
+
 // GetAvailableUpdates returns available updates for the current version
 func GetAvailableUpdates(c *fiber.Ctx) error {
-	// Fetch all releases from GitHub
-	releases, err := selfupdate.FetchAllReleases("onuragtas", "redock")
+	// Fetch releases from cache (or GitHub if cache expired)
+	releases, err := getCachedReleases()
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -154,8 +212,6 @@ func ApplyUpdate(c *fiber.Ctx) error {
 
 	// Start update in background
 	go func() {
-		log.Printf("🔄 Starting update to %s...", req.Version)
-		
 		updater := &selfupdate.Updater{
 			CurrentVersion: currentVersion,
 			BinURL:         downloadURL,
@@ -198,3 +254,4 @@ func GetCurrentVersion(c *fiber.Ctx) error {
 		},
 	})
 }
+

@@ -22,12 +22,10 @@ func FetchUpdateConfig(primaryURL, fallbackRepo string) (*UpdateConfig, error) {
 	// Try primary source first (GitHub Pages)
 	config, err := fetchFromURL(primaryURL)
 	if err == nil && config != nil {
-		log.Println("✅ Update config fetched from:", primaryURL)
 		return config, nil
 	}
 
 	log.Printf("⚠️  Failed to fetch from primary source: %v", err)
-	log.Println("🔄 Falling back to GitHub API...")
 
 	// Fallback to GitHub API
 	return fetchFromGitHubAPI(fallbackRepo)
