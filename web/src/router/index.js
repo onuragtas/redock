@@ -228,6 +228,14 @@ const routes = [
       },
       {
         meta: {
+          title: 'Updates'
+        },
+        path: 'updates',
+        name: 'updates',
+        component: () => import('@/views/Updates.vue')
+      },
+      {
+        meta: {
           title: 'Forms'
         },
         path: 'forms',

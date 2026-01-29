@@ -3,6 +3,7 @@ import {
   mdiConsole,
   mdiDns,
   mdiDocker,
+  mdiDownload,
   mdiHome,
   mdiLan,
   mdiLanConnect,
@@ -29,5 +30,6 @@ export default [
   { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiLanConnect },
   { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiWeb },
   { name: 'Saved Commands', path: '/saved-commands', icon: mdiPlaylistEdit },
-  { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck }
+  { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck },
+  { name: 'Updates', path: '/updates', icon: mdiDownload }
 ]

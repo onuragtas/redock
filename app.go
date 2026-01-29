@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"redock/app/controllers"
 	"redock/app/models"
 	"redock/platform/database"
 	"redock/ssh_server"
@@ -66,6 +67,10 @@ func app() {
 	os.Setenv("REDOCK_HOST", "0.0.0.0")
 	os.Setenv("REDOCK_PORT", "6001")
 	os.Setenv("SERVER_READ_TIMEOUT", "60")
+
+	// Set current version for update controller
+	controllers.SetCurrentVersion(version)
+
 	// Define Fiber config.
 	config := configs.FiberConfig()
 
@@ -110,6 +115,7 @@ func app() {
 	routes.APIGatewayRoutes(app)       // Register API Gateway routes for app.
 	routes.DNSRoutes(app)              // Register DNS Server routes for app.
 	routes.SetupVPNRoutes(app)         // Register VPN Server routes for app.
+	routes.UpdateRoutes(app)           // Register Update routes for app.
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))

@@ -1,0 +1,156 @@
+name: Beta Release
+
+on:
+  push:
+    branches:
+      - beta
+  workflow_dispatch:
+    inputs:
+      version_override:
+        description: 'Override version (e.g., v1.1.0-beta.1)'
+        required: false
+        default: ''
+
+jobs:
+  beta-release:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          token: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Determine beta version
+        id: version
+        run: |
+          git fetch --tags
+          
+          # Manuel version override varsa kullan
+          if [ -n "${{ github.event.inputs.version_override }}" ]; then
+            BETA_TAG="${{ github.event.inputs.version_override }}"
+            echo "Using manual override: $BETA_TAG"
+          else
+            # Son stable version'ı bul
+            LAST_STABLE=$(git tag --list 'v*' --sort=-version:refname | grep -v 'beta' | head -n 1)
+            
+            if [ -z "$LAST_STABLE" ]; then
+              # Hiç stable yok, v1.0.0-beta.1'den başla
+              BASE_VERSION="1.0.0"
+              BETA_NUM=1
+            else
+              # Stable version'dan sonraki patch'i al
+              BASE_VERSION=$(echo $LAST_STABLE | sed 's/^v//')
+              
+              # Aynı base version için en son beta numarasını bul
+              LAST_BETA=$(git tag --list "v${BASE_VERSION}-beta.*" --sort=-version:refname | head -n 1)
+              
+              if [ -z "$LAST_BETA" ]; then
+                # Bu base version için ilk beta
+                BETA_NUM=1
+              else
+                # Mevcut beta numarasını artır
+                BETA_NUM=$(echo $LAST_BETA | grep -oP 'beta\.\K\d+')
+                BETA_NUM=$((BETA_NUM + 1))
+              fi
+            fi
+            
+            BETA_TAG="v${BASE_VERSION}-beta.${BETA_NUM}"
+            echo "Auto-generated beta version: $BETA_TAG"
+          fi
+          
+          # Tag zaten var mı kontrol et
+          if git rev-parse "$BETA_TAG" >/dev/null 2>&1; then
+            echo "❌ Tag $BETA_TAG already exists!"
+            exit 1
+          fi
+          
+          echo "BETA_TAG=$BETA_TAG" >> $GITHUB_OUTPUT
+          echo "BETA_TAG=$BETA_TAG" >> $GITHUB_ENV
+
+      - name: Create and push beta tag
+        env:
+          BETA_TAG: ${{ steps.version.outputs.BETA_TAG }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          CURRENT_SHA=$(git rev-parse HEAD)
+          echo "Tagging $CURRENT_SHA with $BETA_TAG"
+          
+          git tag "$BETA_TAG" "$CURRENT_SHA"
+          git push origin "$BETA_TAG"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: 19
+          
+      - name: Build frontend
+        run: |
+          cd web
+          npm install
+          npm run build
+
+      - name: Setup Go
+        uses: actions/setup-go@v4
+        with:
+          go-version: 1.21
+
+      - name: Create Config
+        env:
+          USER: ${{ secrets.USER }}
+          PASSWORD: ${{ secrets.PASSWORD }}
+        run: |
+          cat <<EOF > tunnel_proxy/account.go
+          package tunnel_proxy
+          var sshUser = "$USER"
+          var sshPassword = "$PASSWORD"
+          EOF
+
+      - name: Create version file
+        env:
+          BETA_TAG: ${{ steps.version.outputs.BETA_TAG }}
+        run: |
+          cat <<EOF > app_version.go
+          package main
+          var version = "$BETA_TAG"
+          EOF
+          
+          echo "Generated version file:"
+          cat app_version.go
+
+      - name: Build
+        run: go build -v ./...
+
+      - name: Run GoReleaser (Beta)
+        uses: goreleaser/goreleaser-action@v5
+        with:
+          distribution: goreleaser
+          version: latest
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+
+      - name: Mark as pre-release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          BETA_TAG: ${{ steps.version.outputs.BETA_TAG }}
+        run: |
+          # GitHub CLI ile release'i pre-release olarak işaretle
+          gh release edit "$BETA_TAG" --prerelease --title "🧪 Beta Release $BETA_TAG" --notes "
+          ## 🧪 Beta Release
+          
+          This is a **beta release** for testing purposes.
+          
+          **⚠️ Warning:** Beta releases may contain bugs and are not recommended for production use.
+          
+          ### How to use:
+          1. Download the appropriate binary for your platform
+          2. Replace your current binary
+          3. Use the Updates UI to switch between beta and stable versions
+          
+          ### Feedback:
+          Please report any issues on GitHub!
+          "

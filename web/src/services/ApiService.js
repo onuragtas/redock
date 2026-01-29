@@ -475,6 +475,19 @@ class ApiService {
     return await this.post('/api/v1/api_gateway/observability', data);
   }
 
+  // Update methods
+  static async getCurrentVersion() {
+    return await this.get('/api/updates/version');
+  }
+
+  static async getAvailableUpdates() {
+    return await this.get('/api/updates/available');
+  }
+
+  static async applyUpdate(version) {
+    return await this.post('/api/updates/apply', { version });
+  }
+
 }
 
 export default ApiService;
