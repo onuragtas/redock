@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version_override:
-        description: 'Override version (e.g., v1.1.0-beta_1)'
+        description: 'Override version (e.g., v1.1.0-beta.1)'
         required: false
         default: ''
 
@@ -44,14 +44,14 @@ jobs:
               BASE_VERSION=$(echo $LAST_STABLE | sed 's/^v//')
               
               # Aynı base version için en son beta numarasını bul
-              LAST_BETA=$(git tag --list "v${BASE_VERSION}-beta_*" --sort=-version:refname | head -n 1)
+              LAST_BETA=$(git tag --list "v${BASE_VERSION}-beta.*" --sort=-version:refname | head -n 1)
               
               if [ -z "$LAST_BETA" ]; then
                 # Bu base version için ilk beta
                 BETA_NUM=1
               else
                 # Mevcut beta numarasını artır
-                BETA_NUM=$(echo $LAST_BETA | grep -oP 'beta_\K\d+')
+                BETA_NUM=$(echo $LAST_BETA | grep -oP 'beta\.\K\d+')
                 BETA_NUM=$((BETA_NUM + 1))
               fi
             fi
