@@ -1,15 +1,19 @@
 package email_server
 
 import (
+	"bytes"
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"redock/platform/memory"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/emersion/go-imap/v2"
 	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-message/mail"
 )
 
 type IMAPClient struct {
@@ -67,11 +71,11 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 
 	seqSet := imap.SeqSetNum(start, end)
 
+	// Tam mesajı (BODY[]) çek; gövde metni MIME parse ile alınacak
 	fetchOptions := &imap.FetchOptions{
 		Envelope: true,
 		BodySection: []*imap.FetchItemBodySection{
-			{Specifier: imap.PartSpecifierHeader},
-			{Specifier: imap.PartSpecifierText},
+			{}, // zero value = full message (BODY[])
 		},
 		Flags: true,
 		UID:   true,
@@ -108,7 +112,9 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 			email.MessageID = buf.Envelope.MessageID
 			email.Subject = buf.Envelope.Subject
 			email.Date = buf.Envelope.Date
-
+			if len(buf.Envelope.InReplyTo) > 0 {
+				email.InReplyTo = strings.Join(buf.Envelope.InReplyTo, " ")
+			}
 			if len(buf.Envelope.From) > 0 {
 				email.From = formatAddress(&buf.Envelope.From[0])
 			}
@@ -132,12 +138,17 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 			}
 		}
 
-		// Get body from sections
+		// Tam mesajı MIME parse et; text/plain, text/html ve References çıkar
 		for _, bodyBuf := range buf.BodySection {
-			if len(bodyBuf.Bytes) > 0 {
-				email.BodyPlain = string(bodyBuf.Bytes)
-				break
+			if len(bodyBuf.Bytes) == 0 {
+				continue
 			}
+			plain, html, references := extractBodyFromRawMessage(bodyBuf.Bytes)
+			email.BodyPlain = plain
+			email.BodyHTML = html
+			email.References = references
+			email.ThreadID = computeThreadID(email.MessageID, references)
+			break
 		}
 
 		emails = append(emails, email)
@@ -148,6 +159,91 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 	}
 
 	return emails, nil
+}
+
+// GetThread returns all emails in the same thread as the message with the given UID, sorted by date (oldest first).
+func (c *IMAPClient) GetThread(mailboxID uint, folderPath string, threadUID uint32, maxMessages int) ([]*Email, error) {
+	if maxMessages <= 0 {
+		maxMessages = 200
+	}
+	all, err := c.GetMessages(mailboxID, folderPath, maxMessages)
+	if err != nil {
+		return nil, err
+	}
+	var targetThreadID string
+	for _, e := range all {
+		if e.UID == threadUID {
+			targetThreadID = e.ThreadID
+			break
+		}
+	}
+	if targetThreadID == "" {
+		return []*Email{}, nil
+	}
+	var thread []*Email
+	for _, e := range all {
+		if e.ThreadID == targetThreadID {
+			thread = append(thread, e)
+		}
+	}
+	// Tarihe göre sırala (eskiden yeniye)
+	sort.Slice(thread, func(i, j int) bool {
+		return thread[i].Date.Before(thread[j].Date)
+	})
+	return thread, nil
+}
+
+// computeThreadID returns the thread root id: first Message-ID in References, or this message's ID.
+func computeThreadID(messageID, references string) string {
+	ref := strings.TrimSpace(references)
+	if ref == "" {
+		return strings.Trim(messageID, "<>")
+	}
+	// References: "<id1> <id2> ..." veya "id1 id2" - ilk tanımlayıcıyı al
+	first := ref
+	if idx := strings.IndexAny(ref, " \t"); idx > 0 {
+		first = ref[:idx]
+	}
+	return strings.Trim(first, "<>")
+}
+
+// extractBodyFromRawMessage parses full raw RFC 5322 message and returns plain, html body and References header.
+func extractBodyFromRawMessage(raw []byte) (plain, html, references string) {
+	mr, err := mail.CreateReader(bytes.NewReader(raw))
+	if err != nil {
+		return "", "", ""
+	}
+	defer mr.Close()
+
+	references = mr.Header.Get("References")
+
+	for {
+		p, err := mr.NextPart()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			continue
+		}
+		switch h := p.Header.(type) {
+		case *mail.InlineHeader:
+			ct, _, _ := h.ContentType()
+			body, _ := io.ReadAll(p.Body)
+			content := strings.TrimSpace(string(body))
+			if content == "" {
+				continue
+			}
+			if strings.HasPrefix(ct, "text/html") {
+				html = content
+			} else {
+				plain = content
+			}
+		case *mail.AttachmentHeader:
+			// Ekleri atla (sadece gövde)
+			_, _ = io.Copy(io.Discard, p.Body)
+		}
+	}
+	return plain, html, references
 }
 
 func formatAddress(addr *imap.Address) string {

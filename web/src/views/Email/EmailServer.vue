@@ -87,6 +87,8 @@ const selectedDomain = ref(null);
 const selectedFolder = ref('INBOX');
 const selectedEmail = ref(null);
 const showEmailDetail = ref(false);
+const threadMessages = ref([]);
+const threadLoading = ref(false);
 
 // Email folders (dynamically loaded from IMAP)
 const folders = ref([
@@ -205,6 +207,25 @@ const loadEmails = async (mailboxId, folder = 'INBOX') => {
     toast.error('Failed to load emails');
   } finally {
     loading.value = false;
+  }
+};
+
+const loadThread = async (mailboxId, folder, uid) => {
+  if (!mailboxId || !uid) return;
+  threadLoading.value = true;
+  threadMessages.value = [];
+  try {
+    const response = await ApiService.get(`/api/email/mailboxes/${mailboxId}/thread`, {
+      params: { folder, uid }
+    });
+    if (!response.data.error) {
+      threadMessages.value = response.data.data || [];
+    }
+  } catch (error) {
+    console.error('Failed to load thread:', error);
+    threadMessages.value = [];
+  } finally {
+    threadLoading.value = false;
   }
 };
 
@@ -1023,13 +1044,13 @@ onMounted(() => {
           <div v-else class="flex-1 overflow-y-auto">
             <div
               v-for="email in emails"
-              :key="email.id"
+              :key="email.uid"
               :class="[
                 'px-4 py-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700',
-                selectedEmail?.id === email.id ? 'bg-blue-50 dark:bg-blue-900/10' : '',
-                !email.read ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
+                selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : '',
+                !email.seen ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
               ]"
-              @click="selectedEmail = email; showEmailDetail = true"
+              @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
             >
               <div class="flex items-start gap-3">
                 <!-- Star -->
@@ -1045,18 +1066,18 @@ onMounted(() => {
                 <!-- Email Content -->
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center justify-between mb-1">
-                    <p :class="['truncate', !email.read ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
+                    <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
                       {{ email.from || 'Unknown Sender' }}
                     </p>
                     <span class="text-xs text-gray-500 ml-2">
                       {{ formatTime(email.date) }}
                     </span>
                   </div>
-                  <p :class="['text-sm truncate mb-1', !email.read ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
+                  <p :class="['text-sm truncate mb-1', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
                     {{ email.subject || '(No Subject)' }}
                   </p>
                   <p class="text-sm text-gray-500 dark:text-gray-500 truncate">
-                    {{ email.snippet || email.body?.substring(0, 100) || 'No preview available' }}
+                    {{ email.snippet || (email.body_plain || '').substring(0, 100) || 'No preview available' }}
                   </p>
                 </div>
 
@@ -1086,43 +1107,65 @@ onMounted(() => {
             v-if="showEmailDetail && selectedEmail"
             class="w-[600px] bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700 flex flex-col overflow-hidden"
           >
-            <!-- Email Header -->
+            <!-- Thread Header -->
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
-              <div class="flex items-start justify-between mb-4">
-                <h2 class="text-2xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || '(No Subject)' }}</h2>
+              <div class="flex items-start justify-between mb-2">
+                <h2 class="text-xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || '(No Subject)' }}</h2>
                 <button @click="showEmailDetail = false" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                   <BaseIcon :path="mdiArrowLeft" w="w-6" h="h-6" />
                 </button>
               </div>
-
-              <!-- Action Buttons -->
-              <div class="flex items-center gap-2 mb-4">
+              <div class="flex items-center gap-2">
                 <BaseButton :icon="mdiReply" label="Reply" color="light" small />
                 <BaseButton :icon="mdiReplyAll" label="Reply All" color="light" small />
                 <BaseButton :icon="mdiArchive" color="light" small />
                 <BaseButton :icon="mdiTrashCan" color="danger" small />
-                <button class="ml-auto">
-                  <BaseIcon :path="mdiDotsVertical" class="text-gray-500" w="w-5" h="h-5" />
-                </button>
-              </div>
-
-              <!-- Sender Info -->
-              <div class="flex items-center gap-3">
-                <div class="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white font-bold">
-                  {{ getInitials(selectedEmail.from) }}
-                </div>
-                <div class="flex-1">
-                  <p class="font-semibold">{{ selectedEmail.from }}</p>
-                  <p class="text-sm text-gray-500">to me</p>
-                </div>
-                <span class="text-sm text-gray-500">{{ formatDate(selectedEmail.date) }}</span>
               </div>
             </div>
 
-            <!-- Email Body -->
-            <div class="flex-1 overflow-y-auto px-6 py-4">
-              <div v-if="selectedEmail.html" v-html="selectedEmail.html" class="prose dark:prose-invert max-w-none"></div>
-              <div v-else class="whitespace-pre-wrap">{{ selectedEmail.body || 'No content' }}</div>
+            <!-- Konu zinciri (orijinal + cevaplar) + mail içindeki alıntı -->
+            <div class="flex-1 overflow-y-auto px-6 py-4 space-y-6">
+              <template v-if="threadLoading">
+                <p class="text-sm text-gray-500">Yükleniyor...</p>
+              </template>
+              <template v-else-if="threadMessages.length === 0">
+                <div class="border-l-4 border-blue-500 pl-4 py-3 rounded-r bg-gray-50/50 dark:bg-slate-700/30">
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                      {{ getInitials(selectedEmail.from) }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-sm truncate">{{ selectedEmail.from }}</p>
+                      <p class="text-xs text-gray-500">{{ formatDate(selectedEmail.date) }}</p>
+                    </div>
+                  </div>
+                  <div class="email-body-content text-sm">
+                    <div v-if="selectedEmail.body_html" v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
+                    <pre v-else class="whitespace-pre-wrap font-sans">{{ selectedEmail.body_plain || 'No content' }}</pre>
+                  </div>
+                </div>
+              </template>
+              <template v-else>
+                <div
+                  v-for="msg in threadMessages"
+                  :key="msg.uid"
+                  class="border-l-4 border-blue-500 pl-4 py-3 rounded-r bg-gray-50/50 dark:bg-slate-700/30"
+                >
+                  <div class="flex items-center gap-3 mb-2">
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                      {{ getInitials(msg.from) }}
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-sm truncate">{{ msg.from }}</p>
+                      <p class="text-xs text-gray-500">{{ formatDate(msg.date) }}</p>
+                    </div>
+                  </div>
+                  <div class="email-body-content text-sm">
+                    <div v-if="msg.body_html" v-html="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
+                    <pre v-else class="whitespace-pre-wrap font-sans">{{ msg.body_plain || 'No content' }}</pre>
+                  </div>
+                </div>
+              </template>
             </div>
 
             <!-- Attachments -->
@@ -1413,3 +1456,20 @@ onMounted(() => {
     </CardBoxModal>
   </div>
 </template>
+
+<style scoped>
+/* Mail içindeki alıntı (On ... wrote:) - blockquote ve quoted satırlar */
+.email-quoted :deep(blockquote),
+.email-quoted :deep(.gmail_quote) {
+  border-left: 4px solid var(--color-gray-300, #d1d5db);
+  margin: 0.75rem 0;
+  padding-left: 1rem;
+  color: var(--color-gray-600, #4b5563);
+  font-size: 0.9em;
+}
+.dark .email-quoted :deep(blockquote),
+.dark .email-quoted :deep(.gmail_quote) {
+  border-left-color: #475569;
+  color: #94a3b8;
+}
+</style>

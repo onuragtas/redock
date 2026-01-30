@@ -100,6 +100,7 @@ type Email struct {
 	Recent          bool       `json:"recent"`
 	InReplyTo       string     `json:"in_reply_to"`
 	References      string     `json:"references"`
+	ThreadID        string     `json:"thread_id"` // Konu zinciri: References'ın ilk Message-ID veya kendi Message-ID
 	Labels          string     `json:"labels"`
 	Priority        int        `json:"priority"`
 	IsSpam          bool       `json:"is_spam"`

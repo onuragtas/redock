@@ -530,6 +530,49 @@ func GetEmails(c *fiber.Ctx) error {
 	})
 }
 
+func GetThread(c *fiber.Ctx) error {
+	manager := email_server.GetEmailManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Email server not initialized",
+		})
+	}
+
+	mailboxIDStr := c.Params("mailbox_id")
+	mailboxID, err := strconv.ParseUint(mailboxIDStr, 10, 32)
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid mailbox ID",
+		})
+	}
+
+	folder := c.Query("folder", "INBOX")
+	uidStr := c.Query("uid", "0")
+	uid, _ := strconv.ParseUint(uidStr, 10, 32)
+	if uid == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "uid query parameter required",
+		})
+	}
+
+	imapClient := email_server.NewIMAPClient(manager)
+	thread, err := imapClient.GetThread(uint(mailboxID), folder, uint32(uid), 200)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Failed to get thread: " + err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"data":  thread,
+	})
+}
+
 func GetFolders(c *fiber.Ctx) error {
 	manager := email_server.GetEmailManager()
 	if manager == nil {

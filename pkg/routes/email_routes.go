@@ -34,5 +34,6 @@ func EmailRoutes(app *fiber.App) {
 	// Email operations
 	email.Get("/mailboxes/:mailbox_id/folders", controllers.GetFolders)
 	email.Get("/mailboxes/:mailbox_id/emails", controllers.GetEmails)
+	email.Get("/mailboxes/:mailbox_id/thread", controllers.GetThread)
 	email.Post("/mailboxes/:mailbox_id/send", controllers.SendEmail)
 }
