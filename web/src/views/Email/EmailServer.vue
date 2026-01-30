@@ -642,6 +642,38 @@ const formatFileSize = (bytes) => {
   return Math.round(bytes / Math.pow(k, i) * 100) / 100 + ' ' + sizes[i];
 };
 
+/** Plain metindeki > alıntı satırlarını blockquote HTML'e çevirir (daha profesyonel görünüm) */
+const plainTextToHtml = (plain) => {
+  if (!plain || typeof plain !== 'string') return '';
+  const escape = (s) => String(s)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+  const lines = plain.split('\n');
+  const parts = [];
+  let quoteLines = [];
+  const flushQuote = () => {
+    if (quoteLines.length === 0) return;
+    const content = quoteLines
+      .map((l) => l.replace(/^(>\s*)+/, '').trim())
+      .map(escape)
+      .join('<br/>');
+    parts.push(`<blockquote class="email-plain-quote">${content}</blockquote>`);
+    quoteLines = [];
+  };
+  for (const line of lines) {
+    if (line.startsWith('>')) {
+      quoteLines.push(line);
+    } else {
+      flushQuote();
+      parts.push(escape(line) + '<br/>');
+    }
+  }
+  flushQuote();
+  return parts.join('');
+};
+
 onMounted(() => {
   loadData();
 });
@@ -1178,8 +1210,8 @@ onMounted(() => {
                 <p class="text-sm text-gray-500">Yükleniyor...</p>
               </template>
               <template v-else-if="threadMessages.length === 0">
-                <div class="border-l-4 border-blue-500 pl-4 py-3 rounded-r bg-gray-50/50 dark:bg-slate-700/30">
-                  <div class="flex items-center gap-3 mb-2">
+                <CardBox class="border-l-4 border-blue-500">
+                  <div class="flex items-center gap-3 mb-3">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
                       {{ getInitials(selectedEmail.from) }}
                     </div>
@@ -1190,17 +1222,20 @@ onMounted(() => {
                   </div>
                   <div class="email-body-content text-sm">
                     <div v-if="selectedEmail.body_html" v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
-                    <pre v-else class="whitespace-pre-wrap font-sans">{{ selectedEmail.body_plain || 'İçerik yok' }}</pre>
+                    <template v-else>
+                    <div v-if="selectedEmail.body_plain" v-html="plainTextToHtml(selectedEmail.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
+                    <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
+                  </template>
                   </div>
-                </div>
+                </CardBox>
               </template>
               <template v-else>
-                <div
+                <CardBox
                   v-for="msg in threadMessages"
                   :key="msg.uid"
-                  class="border-l-4 border-blue-500 pl-4 py-3 rounded-r bg-gray-50/50 dark:bg-slate-700/30"
+                  class="border-l-4 border-blue-500"
                 >
-                  <div class="flex items-center gap-3 mb-2">
+                  <div class="flex items-center gap-3 mb-3">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
                       {{ getInitials(msg.from) }}
                     </div>
@@ -1211,9 +1246,12 @@ onMounted(() => {
                   </div>
                   <div class="email-body-content text-sm">
                     <div v-if="msg.body_html" v-html="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
-                    <pre v-else class="whitespace-pre-wrap font-sans">{{ msg.body_plain || 'İçerik yok' }}</pre>
+                    <template v-else>
+                    <div v-if="msg.body_plain" v-html="plainTextToHtml(msg.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
+                    <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
+                  </template>
                   </div>
-                </div>
+                </CardBox>
               </template>
             </div>
 
@@ -1510,16 +1548,21 @@ onMounted(() => {
 <style scoped>
 /* Mail içindeki alıntı (On ... wrote:) - blockquote ve quoted satırlar */
 .email-quoted :deep(blockquote),
-.email-quoted :deep(.gmail_quote) {
+.email-quoted :deep(.gmail_quote),
+.email-quoted :deep(.email-plain-quote) {
   border-left: 4px solid var(--color-gray-300, #d1d5db);
   margin: 0.75rem 0;
-  padding-left: 1rem;
+  padding: 0.5rem 0 0.5rem 1rem;
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 0 6px 6px 0;
   color: var(--color-gray-600, #4b5563);
   font-size: 0.9em;
 }
 .dark .email-quoted :deep(blockquote),
-.dark .email-quoted :deep(.gmail_quote) {
+.dark .email-quoted :deep(.gmail_quote),
+.dark .email-quoted :deep(.email-plain-quote) {
   border-left-color: #475569;
+  background: rgba(255, 255, 255, 0.04);
   color: #94a3b8;
 }
 </style>
