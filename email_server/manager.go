@@ -237,6 +237,7 @@ func (m *EmailManager) StartServer() error {
 	}
 	
 	envVars := []string{
+		"OVERRIDE_HOSTNAME=" + m.config.Hostname,
 		"ACCOUNT_PROVISIONER=FILE",
 		"ENABLE_SPAMASSASSIN=1",
 		"SA_TAG=2.0",
