@@ -40,9 +40,11 @@ import {
   mdiFolderOutline,
   mdiInformationOutline,
   mdiCloud,
-  mdiKey
+  mdiKey,
+  mdiChevronDown,
+  mdiChevronUp
 } from '@mdi/js';
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { useToast } from 'vue-toastification';
 
 const toast = useToast();
@@ -89,6 +91,10 @@ const selectedEmail = ref(null);
 const showEmailDetail = ref(false);
 const threadMessages = ref([]);
 const threadLoading = ref(false);
+/** Thread / body segment kartlarında hangisi açık: 'msg-{uid}' veya 'seg-{idx}' */
+const expandedCardKeys = ref(new Set());
+/** Klasör listesinde hangi e-postalar açık (inline önizleme): uid set */
+const expandedListUids = ref(new Set());
 
 // Email folders (dynamically loaded from IMAP)
 const folders = ref([
@@ -154,6 +160,42 @@ const bodySegments = computed(() =>
   parseBodyIntoQuoteCards(selectedEmail.value?.body_plain || '')
 );
 
+/** Açılır kart: sadece ilk kart açık başlar */
+watch(
+  () => [selectedEmail.value, threadMessages.value, bodySegments.value],
+  () => {
+    if (!selectedEmail.value) {
+      expandedCardKeys.value = new Set();
+      return;
+    }
+    if (threadMessages.value.length > 0) {
+      expandedCardKeys.value = new Set([`msg-${threadMessages.value[0].uid}`]);
+      return;
+    }
+    if (bodySegments.value.length > 0) {
+      expandedCardKeys.value = new Set(['seg-0']);
+      return;
+    }
+    expandedCardKeys.value = new Set();
+  },
+  { immediate: true }
+);
+
+const toggleThreadCard = (key) => {
+  const next = new Set(expandedCardKeys.value);
+  if (next.has(key)) next.delete(key);
+  else next.add(key);
+  expandedCardKeys.value = next;
+};
+
+const toggleListRow = (uid, event) => {
+  event?.stopPropagation();
+  const next = new Set(expandedListUids.value);
+  if (next.has(uid)) next.delete(uid);
+  else next.add(uid);
+  expandedListUids.value = next;
+};
+
 // Methods
 const loadData = async () => {
   await Promise.all([
@@ -206,6 +248,7 @@ const loadEmails = async (mailboxId, folder = 'INBOX') => {
     });
     if (!response.data.error) {
       emails.value = response.data.data || [];
+      expandedListUids.value = new Set();
     }
   } catch (error) {
     console.error('Failed to load emails:', error);
@@ -1169,15 +1212,31 @@ onMounted(() => {
               v-for="email in emails"
               :key="email.uid"
               :class="[
-                'px-4 py-3 border-b border-gray-100 dark:border-gray-700 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700',
+                'border-b border-gray-100 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700',
                 selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : '',
                 !email.seen ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
               ]"
-              @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
             >
-              <div class="flex items-start gap-3">
+              <div
+                class="px-4 py-3 flex items-start gap-3 cursor-pointer"
+                @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
+              >
+                <!-- Açılır ok -->
+                <button
+                  type="button"
+                  class="mt-1 shrink-0 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                  :aria-label="expandedListUids.has(email.uid) ? 'Daralt' : 'Genişlet'"
+                  @click="toggleListRow(email.uid, $event)"
+                >
+                  <BaseIcon
+                    :path="expandedListUids.has(email.uid) ? mdiChevronUp : mdiChevronDown"
+                    class="text-gray-400"
+                    w="w-5"
+                    h="h-5"
+                  />
+                </button>
                 <!-- Star -->
-                <button class="mt-1" @click.stop="toggleStar(email)">
+                <button class="mt-1 shrink-0" @click.stop="toggleStar(email)">
                   <BaseIcon
                     :path="email.flagged ? mdiStar : mdiStarOutline"
                     :class="email.flagged ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'"
@@ -1192,7 +1251,7 @@ onMounted(() => {
                     <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
                       {{ email.from || 'Bilinmeyen' }}
                     </p>
-                    <span class="text-xs text-gray-500 ml-2">
+                    <span class="text-xs text-gray-500 ml-2 shrink-0">
                       {{ formatTime(email.date) }}
                     </span>
                   </div>
@@ -1208,10 +1267,30 @@ onMounted(() => {
                 <BaseIcon
                   v-if="email.has_attachments"
                   :path="mdiAttachment"
-                  class="text-gray-400 mt-1"
+                  class="text-gray-400 mt-1 shrink-0"
                   w="w-4"
                   h="h-4"
                 />
+              </div>
+
+              <!-- Açıkken: önizleme / detay linki -->
+              <div
+                v-show="expandedListUids.has(email.uid)"
+                class="px-4 pb-3 pt-0 pl-[3.25rem] border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-slate-800/80"
+              >
+                <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">
+                  {{ formatDate(email.date) }} · {{ email.to }}
+                </p>
+                <p class="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap line-clamp-4 break-words">
+                  {{ email.body_plain || email.snippet || 'İçerik yok' }}
+                </p>
+                <button
+                  type="button"
+                  class="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+                  @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
+                >
+                  Tam oku →
+                </button>
               </div>
             </div>
           </div>
@@ -1267,15 +1346,19 @@ onMounted(() => {
                     <div v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
                   </div>
                 </CardBox>
-                <!-- Plain gövde: "On ... wrote:" bloklarına göre her biri ayrı CardBox -->
+                <!-- Plain gövde: "On ... wrote:" bloklarına göre her biri ayrı CardBox, açılır -->
                 <template v-else>
                   <CardBox
                     v-for="(seg, idx) in bodySegments"
                     :key="idx"
                     class="border-l-4 border-blue-500"
                   >
-                    <div class="flex items-center gap-3 mb-3">
-                      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                    <button
+                      type="button"
+                      class="w-full flex items-center gap-3 mb-0 text-left cursor-pointer hover:opacity-90"
+                      @click="toggleThreadCard('seg-' + idx)"
+                    >
+                      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
                         {{ idx === 0 ? getInitials(selectedEmail.from) : '…' }}
                       </div>
                       <div class="flex-1 min-w-0">
@@ -1283,8 +1366,14 @@ onMounted(() => {
                         <p v-else class="font-medium text-sm truncate text-gray-600 dark:text-gray-400">{{ seg.header }}</p>
                         <p v-if="idx === 0" class="text-xs text-gray-500">{{ formatDate(selectedEmail.date) }}</p>
                       </div>
-                    </div>
-                    <div class="email-body-content text-sm">
+                      <BaseIcon
+                        :path="expandedCardKeys.has('seg-' + idx) ? mdiChevronUp : mdiChevronDown"
+                        class="shrink-0 text-gray-400"
+                        w="w-5"
+                        h="h-5"
+                      />
+                    </button>
+                    <div v-show="expandedCardKeys.has('seg-' + idx)" class="email-body-content text-sm mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                       <div v-if="seg.content" v-html="plainTextToHtml(seg.content)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
                       <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
                     </div>
@@ -1297,21 +1386,31 @@ onMounted(() => {
                   :key="msg.uid"
                   class="border-l-4 border-blue-500"
                 >
-                  <div class="flex items-center gap-3 mb-3">
-                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                  <button
+                    type="button"
+                    class="w-full flex items-center gap-3 mb-0 text-left cursor-pointer hover:opacity-90"
+                    @click="toggleThreadCard('msg-' + msg.uid)"
+                  >
+                    <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
                       {{ getInitials(msg.from) }}
                     </div>
                     <div class="flex-1 min-w-0">
                       <p class="font-medium text-sm truncate">{{ msg.from }}</p>
                       <p class="text-xs text-gray-500">{{ formatDate(msg.date) }}</p>
                     </div>
-                  </div>
-                  <div class="email-body-content text-sm">
+                    <BaseIcon
+                      :path="expandedCardKeys.has('msg-' + msg.uid) ? mdiChevronUp : mdiChevronDown"
+                      class="shrink-0 text-gray-400"
+                      w="w-5"
+                      h="h-5"
+                    />
+                  </button>
+                  <div v-show="expandedCardKeys.has('msg-' + msg.uid)" class="email-body-content text-sm mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
                     <div v-if="msg.body_html" v-html="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
                     <template v-else>
-                    <div v-if="msg.body_plain" v-html="plainTextToHtml(msg.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
-                    <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
-                  </template>
+                      <div v-if="msg.body_plain" v-html="plainTextToHtml(msg.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
+                      <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
+                    </template>
                   </div>
                 </CardBox>
               </template>
