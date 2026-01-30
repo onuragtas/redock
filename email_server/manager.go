@@ -614,17 +614,10 @@ func (m *EmailManager) isContainerReady() bool {
 }
 
 func (m *EmailManager) waitForContainerReady(maxWaitSeconds int) error {
-	log.Printf("⏳ Waiting for container to be ready (max %ds)...", maxWaitSeconds)
-	
 	for i := 0; i < maxWaitSeconds; i++ {
 		if m.isContainerReady() {
 			return nil
 		}
-		
-		if i%5 == 0 && i > 0 {
-			log.Printf("⏳ Still waiting... (%ds/%ds)", i, maxWaitSeconds)
-		}
-		
 		time.Sleep(1 * time.Second)
 	}
 	

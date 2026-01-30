@@ -334,7 +334,6 @@ func (m *CloudflareManager) CreateEmailDNSRecords(zoneID string, params EmailDNS
 		if params.MailServerIP != "" {
 			// Include server IP in SPF for production
 			params.SPFRecord = fmt.Sprintf("v=spf1 a mx ip4:%s -all", params.MailServerIP)
-			log.Printf("🔐 SPF record includes server IP: %s", params.MailServerIP)
 		} else {
 			// Fallback without IP
 			params.SPFRecord = "v=spf1 a mx ~all"
@@ -345,7 +344,6 @@ func (m *CloudflareManager) CreateEmailDNSRecords(zoneID string, params EmailDNS
 	// Strict DMARC policy for production
 	if params.DMARCRecord == "" {
 		params.DMARCRecord = fmt.Sprintf("v=DMARC1; p=reject; rua=mailto:dmarc@%s; ruf=mailto:forensics@%s; fo=1; adkim=s; aspf=s", domain, domain)
-		log.Printf("🔐 DMARC policy set to 'reject' for maximum protection")
 	}
 	
 	if params.MXRecord == "" {

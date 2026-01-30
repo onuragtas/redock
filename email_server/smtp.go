@@ -207,8 +207,6 @@ func (c *SMTPClient) saveToSent(mailboxID uint, msg *EmailMessage, mimeMsg []byt
 		return fmt.Errorf("domain not found: %w", err)
 	}
 	
-	log.Printf("📝 Saving sent email to Sent folder via docker exec")
-	
 	// With named volumes, we can write directly via container!
 	// Create unique Maildir filename with Seen flag
 	timestamp := time.Now().UnixNano()
