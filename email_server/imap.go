@@ -147,7 +147,7 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 			email.BodyPlain = plain
 			email.BodyHTML = html
 			email.References = references
-			email.ThreadID = computeThreadID(email.MessageID, references)
+			email.ThreadID = computeThreadID(email.MessageID, references, email.InReplyTo)
 			email.AttachmentCount = attCount
 			email.HasAttachments = attCount > 0
 			break
@@ -164,49 +164,93 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 }
 
 // GetThread returns all emails in the same thread as the message with the given UID, sorted by date (oldest first).
-func (c *IMAPClient) GetThread(mailboxID uint, folderPath string, threadUID uint32, maxMessages int) ([]*Email, error) {
-	if maxMessages <= 0 {
-		maxMessages = 200
-	}
-	all, err := c.GetMessages(mailboxID, folderPath, maxMessages)
+// Thread, References/In-Reply-To zinciri takip edilerek toplanır; böylece aynı konuşmadaki tüm mesajlar gelir.
+func (c *IMAPClient) GetThread(mailboxID uint, folderPath string, threadUID uint32, _ int) ([]*Email, error) {
+	const threadScanLimit = 5000
+	all, err := c.GetMessages(mailboxID, folderPath, threadScanLimit)
 	if err != nil {
 		return nil, err
 	}
-	var targetThreadID string
-	for _, e := range all {
-		if e.UID == threadUID {
-			targetThreadID = e.ThreadID
+	var seed *Email
+	for i := range all {
+		if all[i].UID == threadUID {
+			seed = all[i]
 			break
 		}
 	}
-	if targetThreadID == "" {
+	if seed == nil {
 		return []*Email{}, nil
 	}
-	var thread []*Email
-	for _, e := range all {
-		if e.ThreadID == targetThreadID {
-			thread = append(thread, e)
+	wantedIDs := make(map[string]struct{})
+	addIDs := func(refs, inReplyTo string) {
+		for _, s := range parseMessageIDList(refs) {
+			wantedIDs[s] = struct{}{}
+		}
+		for _, s := range parseMessageIDList(inReplyTo) {
+			wantedIDs[s] = struct{}{}
 		}
 	}
-	// Tarihe göre sırala (eskiden yeniye)
+	wantedIDs[normalizeID(seed.MessageID)] = struct{}{}
+	addIDs(seed.References, seed.InReplyTo)
+	for {
+		prev := len(wantedIDs)
+		for i := range all {
+			mid := normalizeID(all[i].MessageID)
+			if _, ok := wantedIDs[mid]; !ok {
+				continue
+			}
+			addIDs(all[i].References, all[i].InReplyTo)
+		}
+		if len(wantedIDs) == prev {
+			break
+		}
+	}
+	var thread []*Email
+	for i := range all {
+		if _, ok := wantedIDs[normalizeID(all[i].MessageID)]; ok {
+			thread = append(thread, all[i])
+		}
+	}
 	sort.Slice(thread, func(i, j int) bool {
 		return thread[i].Date.Before(thread[j].Date)
 	})
 	return thread, nil
 }
 
-// computeThreadID returns the thread root id: first Message-ID in References, or this message's ID.
-func computeThreadID(messageID, references string) string {
+func normalizeID(id string) string {
+	return strings.Trim(strings.TrimSpace(id), "<>")
+}
+
+func parseMessageIDList(s string) []string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return nil
+	}
+	var ids []string
+	for _, part := range strings.FieldsFunc(s, func(r rune) bool { return r == ' ' || r == '\t' }) {
+		part = strings.Trim(part, "<>")
+		if part != "" {
+			ids = append(ids, part)
+		}
+	}
+	return ids
+}
+
+// computeThreadID returns a stable id for threading: first Message-ID in References, else In-Reply-To, else this message's ID.
+// In-Reply-To kullanımı sayesinde References boş olan cevaplar da üst mesajla aynı thread'e düşer.
+func computeThreadID(messageID, references, inReplyTo string) string {
 	ref := strings.TrimSpace(references)
-	if ref == "" {
-		return strings.Trim(messageID, "<>")
+	if ref != "" {
+		first := ref
+		if idx := strings.IndexAny(ref, " \t"); idx > 0 {
+			first = ref[:idx]
+		}
+		return strings.Trim(first, "<>")
 	}
-	// References: "<id1> <id2> ..." veya "id1 id2" - ilk tanımlayıcıyı al
-	first := ref
-	if idx := strings.IndexAny(ref, " \t"); idx > 0 {
-		first = ref[:idx]
+	if s := strings.TrimSpace(inReplyTo); s != "" {
+		return strings.Trim(s, "<>")
 	}
-	return strings.Trim(first, "<>")
+	return strings.Trim(messageID, "<>")
 }
 
 // extractBodyFromRawMessage parses full raw RFC 5322 message; returns plain, html, References and attachment count.
