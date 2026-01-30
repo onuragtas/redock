@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       version_override:
-        description: 'Override version (e.g., v1.1.0-beta_1)'
+        description: 'Override version (e.g., v1.1.0-beta.1)'
         required: false
         default: ''
 
@@ -40,23 +40,30 @@ jobs:
               BASE_VERSION="1.0.0"
               BETA_NUM=1
             else
-              # Stable version'dan sonraki patch'i al
-              BASE_VERSION=$(echo $LAST_STABLE | sed 's/^v//')
+              # Son stable version'dan SONRAKI patch versiyonun beta'sını oluştur
+              LAST_STABLE_WITHOUT_V=$(echo $LAST_STABLE | sed 's/^v//')
               
-              # Aynı base version için en son beta numarasını bul
-              LAST_BETA=$(git tag --list "v${BASE_VERSION}-beta_*" --sort=-version:refname | head -n 1)
+              # Parse version (1.0.256 -> 1, 0, 256)
+              IFS='.' read -r MAJOR MINOR PATCH <<< "$LAST_STABLE_WITHOUT_V"
+              
+              # Sonraki patch'e geç
+              NEXT_PATCH=$((PATCH + 1))
+              BASE_VERSION="${MAJOR}.${MINOR}.${NEXT_PATCH}"
+              
+              # Bu yeni version için beta tag'lerini kontrol et
+              LAST_BETA=$(git tag --list "v${BASE_VERSION}-beta.*" --sort=-version:refname | head -n 1)
               
               if [ -z "$LAST_BETA" ]; then
-                # Bu base version için ilk beta
+                # Bu version için ilk beta
                 BETA_NUM=1
               else
-                # Mevcut beta numarasını artır
-                BETA_NUM=$(echo $LAST_BETA | grep -oP 'beta_\K\d+')
+                # Mevcut beta numarasını artır (portable sed kullan)
+                BETA_NUM=$(echo $LAST_BETA | sed -E 's/.*beta\.([0-9]+).*/\1/')
                 BETA_NUM=$((BETA_NUM + 1))
               fi
             fi
             
-            BETA_TAG="v${BASE_VERSION}-beta_${BETA_NUM}"
+            BETA_TAG="v${BASE_VERSION}-beta.${BETA_NUM}"
             echo "Auto-generated beta version: $BETA_TAG"
           fi
           
