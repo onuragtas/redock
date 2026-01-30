@@ -138,16 +138,18 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 			}
 		}
 
-		// Tam mesajı MIME parse et; text/plain, text/html ve References çıkar
+		// Tam mesajı MIME parse et; text/plain, text/html, References ve ek sayısı
 		for _, bodyBuf := range buf.BodySection {
 			if len(bodyBuf.Bytes) == 0 {
 				continue
 			}
-			plain, html, references := extractBodyFromRawMessage(bodyBuf.Bytes)
+			plain, html, references, attCount := extractBodyFromRawMessage(bodyBuf.Bytes)
 			email.BodyPlain = plain
 			email.BodyHTML = html
 			email.References = references
 			email.ThreadID = computeThreadID(email.MessageID, references)
+			email.AttachmentCount = attCount
+			email.HasAttachments = attCount > 0
 			break
 		}
 
@@ -207,11 +209,11 @@ func computeThreadID(messageID, references string) string {
 	return strings.Trim(first, "<>")
 }
 
-// extractBodyFromRawMessage parses full raw RFC 5322 message and returns plain, html body and References header.
-func extractBodyFromRawMessage(raw []byte) (plain, html, references string) {
+// extractBodyFromRawMessage parses full raw RFC 5322 message; returns plain, html, References and attachment count.
+func extractBodyFromRawMessage(raw []byte) (plain, html, references string, attachmentCount int) {
 	mr, err := mail.CreateReader(bytes.NewReader(raw))
 	if err != nil {
-		return "", "", ""
+		return "", "", "", 0
 	}
 	defer mr.Close()
 
@@ -239,11 +241,11 @@ func extractBodyFromRawMessage(raw []byte) (plain, html, references string) {
 				plain = content
 			}
 		case *mail.AttachmentHeader:
-			// Ekleri atla (sadece gövde)
+			attachmentCount++
 			_, _ = io.Copy(io.Discard, p.Body)
 		}
 	}
-	return plain, html, references
+	return plain, html, references, attachmentCount
 }
 
 func formatAddress(addr *imap.Address) string {

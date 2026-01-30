@@ -519,31 +519,38 @@ const deleteMailbox = async (mailboxId) => {
 
 const sendEmail = async () => {
   if (!selectedMailbox.value) {
-    toast.error('Select a mailbox first');
+    toast.error('Önce bir posta kutusu seçin');
     return;
   }
-  
+  const toList = newEmail.value.to.split(/[,;]/).map(e => e.trim()).filter(Boolean);
+  if (!toList.length) {
+    toast.error('En az bir alıcı girin');
+    return;
+  }
+  if (!(newEmail.value.subject || '').trim()) {
+    toast.error('Konu girin');
+    return;
+  }
   try {
     const emailData = {
-      to: newEmail.value.to.split(',').map(e => e.trim()),
-      subject: newEmail.value.subject,
-      body: newEmail.value.body
+      to: toList,
+      subject: newEmail.value.subject.trim(),
+      body: newEmail.value.body || ''
     };
-    
     const response = await ApiService.post(
       `/api/email/mailboxes/${selectedMailbox.value}/send`,
       emailData
     );
-    
     if (!response.data.error) {
-      toast.success('✅ Email sent successfully');
+      toast.success('✅ E-posta gönderildi');
       isComposeModalActive.value = false;
       newEmail.value = { to: '', subject: '', body: '' };
+      loadEmails(selectedMailbox.value, selectedFolder.value);
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error('❌ Gönderilemedi: ' + (error.response?.data?.msg || error.message));
   }
 };
 
@@ -579,10 +586,52 @@ const getInitials = (name) => {
   return username.split(/[._-]/).map(n => n[0]).join('').toUpperCase().slice(0, 2);
 };
 
+/** Adres string'inden e-posta adresini çıkar (örn: "Ad Soyad <a@b.com>" -> "a@b.com") */
+const extractEmailFromAddress = (str) => {
+  if (!str || typeof str !== 'string') return '';
+  const m = str.match(/<([^>]+)>/);
+  return m ? m[1].trim() : str.trim();
+};
+
+/** Reply: compose modal aç, To=gönderen, Subject=Re:..., Body=alıntı */
+const openReplyCompose = (replyAll = false) => {
+  if (!selectedEmail.value) return;
+  const fromAddr = extractEmailFromAddress(selectedEmail.value.from);
+  let toAddr = fromAddr;
+  if (replyAll && selectedEmail.value.to) {
+    const toList = selectedEmail.value.to.split(/[,;]/).map(s => extractEmailFromAddress(s.trim())).filter(Boolean);
+    const combined = new Set([fromAddr, ...toList]);
+    toAddr = [...combined].join(', ');
+  }
+  let subj = selectedEmail.value.subject || '';
+  if (subj && !/^re:\s+/i.test(subj)) subj = 'Re: ' + subj;
+  const quoted = selectedEmail.value.body_plain
+    ? `\n\nOn ${formatDate(selectedEmail.value.date)} ${selectedEmail.value.from} wrote:\n${selectedEmail.value.body_plain.split('\n').map(l => '> ' + l).join('\n')}`
+    : '';
+  newEmail.value = {
+    to: toAddr,
+    subject: subj,
+    body: quoted
+  };
+  isComposeModalActive.value = true;
+};
+
+const openComposeNew = () => {
+  newEmail.value = { to: '', subject: '', body: '' };
+  isComposeModalActive.value = true;
+};
+
 const toggleStar = (email) => {
-  email.starred = !email.starred;
-  // TODO: Send API request to update starred status
-  toast.info(email.starred ? '⭐ Starred' : 'Unstarred');
+  email.flagged = !email.flagged;
+  toast.info(email.flagged ? '⭐ Yıldızlandı' : 'Yıldız kaldırıldı');
+};
+
+const onArchive = () => {
+  toast.info('Arşiv özelliği yakında eklenecek.');
+};
+
+const onMoveToTrash = () => {
+  toast.info('Çöp kutusuna taşıma yakında eklenecek.');
 };
 
 const formatFileSize = (bytes) => {
@@ -985,9 +1034,9 @@ onMounted(() => {
           <BaseButton
             :icon="mdiPencil"
             color="info"
-            label="Compose"
+            label="Yeni e-posta"
             class="mb-6 w-full justify-center"
-            @click="isComposeModalActive = true"
+            @click="openComposeNew"
           />
 
           <!-- Folders List -->
@@ -1027,7 +1076,7 @@ onMounted(() => {
           <div v-if="loading" class="flex-1 flex items-center justify-center text-gray-500">
             <div class="text-center">
               <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p>Loading emails...</p>
+              <p>E-postalar yükleniyor...</p>
             </div>
           </div>
 
@@ -1035,8 +1084,8 @@ onMounted(() => {
           <div v-else-if="emails.length === 0" class="flex-1 flex items-center justify-center text-gray-500">
             <div class="text-center">
               <BaseIcon :path="mdiEmailOpen" class="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p class="text-lg font-medium mb-2">No emails in {{ selectedFolder }}</p>
-              <p class="text-sm">Your {{ selectedFolder.toLowerCase() }} folder is empty</p>
+              <p class="text-lg font-medium mb-2">{{ selectedFolder }} klasöründe e-posta yok</p>
+              <p class="text-sm">Bu klasör şu an boş</p>
             </div>
           </div>
 
@@ -1056,8 +1105,8 @@ onMounted(() => {
                 <!-- Star -->
                 <button class="mt-1" @click.stop="toggleStar(email)">
                   <BaseIcon
-                    :path="email.starred ? mdiStar : mdiStarOutline"
-                    :class="email.starred ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'"
+                    :path="email.flagged ? mdiStar : mdiStarOutline"
+                    :class="email.flagged ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'"
                     w="w-5"
                     h="h-5"
                   />
@@ -1067,17 +1116,17 @@ onMounted(() => {
                 <div class="flex-1 min-w-0">
                   <div class="flex items-center justify-between mb-1">
                     <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
-                      {{ email.from || 'Unknown Sender' }}
+                      {{ email.from || 'Bilinmeyen' }}
                     </p>
                     <span class="text-xs text-gray-500 ml-2">
                       {{ formatTime(email.date) }}
                     </span>
                   </div>
                   <p :class="['text-sm truncate mb-1', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
-                    {{ email.subject || '(No Subject)' }}
+                    {{ email.subject || '(Konu yok)' }}
                   </p>
                   <p class="text-sm text-gray-500 dark:text-gray-500 truncate">
-                    {{ email.snippet || (email.body_plain || '').substring(0, 100) || 'No preview available' }}
+                    {{ email.snippet || (email.body_plain || '').substring(0, 100) || 'Önizleme yok' }}
                   </p>
                 </div>
 
@@ -1110,16 +1159,16 @@ onMounted(() => {
             <!-- Thread Header -->
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div class="flex items-start justify-between mb-2">
-                <h2 class="text-xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || '(No Subject)' }}</h2>
+                <h2 class="text-xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || '(Konu yok)' }}</h2>
                 <button @click="showEmailDetail = false" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
                   <BaseIcon :path="mdiArrowLeft" w="w-6" h="h-6" />
                 </button>
               </div>
               <div class="flex items-center gap-2">
-                <BaseButton :icon="mdiReply" label="Reply" color="light" small />
-                <BaseButton :icon="mdiReplyAll" label="Reply All" color="light" small />
-                <BaseButton :icon="mdiArchive" color="light" small />
-                <BaseButton :icon="mdiTrashCan" color="danger" small />
+                <BaseButton :icon="mdiReply" label="Yanıtla" color="light" small @click="openReplyCompose(false)" />
+                <BaseButton :icon="mdiReplyAll" label="Tümünü yanıtla" color="light" small @click="openReplyCompose(true)" />
+                <BaseButton :icon="mdiArchive" label="Arşivle" color="light" small @click="onArchive" />
+                <BaseButton :icon="mdiTrashCan" label="Çöpe taşı" color="danger" small @click="onMoveToTrash" />
               </div>
             </div>
 
@@ -1141,7 +1190,7 @@ onMounted(() => {
                   </div>
                   <div class="email-body-content text-sm">
                     <div v-if="selectedEmail.body_html" v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
-                    <pre v-else class="whitespace-pre-wrap font-sans">{{ selectedEmail.body_plain || 'No content' }}</pre>
+                    <pre v-else class="whitespace-pre-wrap font-sans">{{ selectedEmail.body_plain || 'İçerik yok' }}</pre>
                   </div>
                 </div>
               </template>
@@ -1162,7 +1211,7 @@ onMounted(() => {
                   </div>
                   <div class="email-body-content text-sm">
                     <div v-if="msg.body_html" v-html="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
-                    <pre v-else class="whitespace-pre-wrap font-sans">{{ msg.body_plain || 'No content' }}</pre>
+                    <pre v-else class="whitespace-pre-wrap font-sans">{{ msg.body_plain || 'İçerik yok' }}</pre>
                   </div>
                 </div>
               </template>
@@ -1194,8 +1243,8 @@ onMounted(() => {
       <div v-else class="h-full flex items-center justify-center bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div class="text-center text-gray-500">
           <BaseIcon :path="mdiEmail" class="w-20 h-20 mx-auto mb-4 text-gray-300" />
-          <p class="text-lg font-medium mb-2">Select an email account</p>
-          <p class="text-sm">Choose an account from the dropdown above to start reading emails</p>
+          <p class="text-lg font-medium mb-2">E-posta hesabı seçin</p>
+          <p class="text-sm">E-postaları okumak için yukarıdan bir hesap seçin</p>
         </div>
       </div>
     </div>
@@ -1265,23 +1314,24 @@ onMounted(() => {
     <!-- Compose Email Modal -->
     <CardBoxModal
       v-model="isComposeModalActive"
-      title="Compose Email"
-      button-label="Send"
+      title="Yeni e-posta"
+      button-label="Gönder"
       has-cancel
       @confirm="sendEmail"
     >
-      <FormField label="To">
-        <FormControl v-model="newEmail.to" placeholder="recipient@example.com" required />
+      <FormField label="Alıcı">
+        <FormControl v-model="newEmail.to" placeholder="alici@example.com (virgülle birden fazla)" />
+        <p class="text-xs text-gray-500 mt-1">Birden fazla alıcı için virgül veya noktalı virgül kullanın</p>
       </FormField>
-      <FormField label="Subject">
-        <FormControl v-model="newEmail.subject" placeholder="Email subject" required />
+      <FormField label="Konu">
+        <FormControl v-model="newEmail.subject" placeholder="Konu" />
       </FormField>
-      <FormField label="Message">
+      <FormField label="Mesaj">
         <FormControl
           v-model="newEmail.body"
           type="textarea"
-          placeholder="Write your message..."
-          required
+          placeholder="Mesajınızı yazın..."
+          :rows="8"
         />
       </FormField>
     </CardBoxModal>
