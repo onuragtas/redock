@@ -3,13 +3,16 @@ import BaseIcon from '@/components/BaseIcon.vue'
 
 import ApiService from '@/services/ApiService'
 import {
+  mdiAlert,
   mdiChevronLeft,
   mdiChevronRight,
+  mdiChevronRight as mdiArrowRight,
   mdiCloudDownload,
   mdiCog,
   mdiConsole,
   mdiDocker,
   mdiDownload,
+  mdiInformationOutline,
   mdiMagnify,
   mdiMonitorDashboard,
   mdiPlay,
@@ -20,6 +23,10 @@ import {
   mdiRefresh as mdiUpdate
 } from '@mdi/js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRouter } from 'vue-router'
+
+// Router
+const router = useRouter()
 
 // Reactive state
 const loading = ref(false)
@@ -37,6 +44,23 @@ const systemStats = ref({
   download_speed: '0 KB/s',
   network_sent_total: '0 MB',
   network_recv_total: '0 MB'
+})
+
+// Update notification state
+const updateInfo = ref(null)
+const checkingUpdates = ref(false)
+const showUpdateNotification = computed(() => {
+  return updateInfo.value && updateInfo.value.updates && updateInfo.value.updates.length > 0
+})
+
+const hasRecommendedUpdate = computed(() => {
+  if (!updateInfo.value?.updates) return false
+  return updateInfo.value.updates.some(u => u.recommended)
+})
+
+const hasCriticalUpdate = computed(() => {
+  if (!updateInfo.value?.updates) return false
+  return updateInfo.value.updates.some(u => u.critical)
 })
 
 // Get system stats from API
@@ -241,6 +265,25 @@ const goToPage = (page) => {
   }
 }
 
+// Update check
+const checkForUpdates = async () => {
+  checkingUpdates.value = true
+  try {
+    const response = await ApiService.getAvailableUpdates()
+    if (response.data && response.data.data) {
+      updateInfo.value = response.data.data
+    }
+  } catch (error) {
+    console.error('Failed to check for updates:', error)
+  } finally {
+    checkingUpdates.value = false
+  }
+}
+
+const goToUpdatesPage = () => {
+  router.push('/updates')
+}
+
 // Personal DevEnv actions
 const userRegenerating = ref(false)
 const regenerateDevEnv = async () => {
@@ -264,6 +307,7 @@ onMounted(async () => {
   await getLocalIp()
   await getAllServices()
   await updateSystemStats()
+  await checkForUpdates()
 
   // Update stats periodically (every 3 seconds for real-time feel)
   statsInterval = setInterval(updateSystemStats, 3000)
@@ -289,6 +333,82 @@ onUnmounted(() => {
             <div class="text-sm text-blue-100">Server IP</div>
             <div class="text-lg font-mono font-semibold">{{ localIp || 'Loading...' }}</div>
           </div>
+        </div>
+      </div>
+
+      <!-- Update Notification Banner -->
+      <div
+        v-if="showUpdateNotification"
+        :class="[
+          'rounded-xl p-6 border-2',
+          hasCriticalUpdate
+            ? 'bg-red-50 dark:bg-red-900/20 border-red-300 dark:border-red-700'
+            : 'bg-blue-50 dark:bg-blue-900/20 border-blue-300 dark:border-blue-700'
+        ]"
+      >
+        <div class="flex items-start justify-between">
+          <div class="flex items-start space-x-4">
+            <div
+              :class="[
+                'p-3 rounded-full',
+                hasCriticalUpdate
+                  ? 'bg-red-100 dark:bg-red-800/50'
+                  : 'bg-blue-100 dark:bg-blue-800/50'
+              ]"
+            >
+              <BaseIcon
+                :path="hasCriticalUpdate ? mdiAlert : mdiInformationOutline"
+                size="24"
+                :class="[
+                  hasCriticalUpdate
+                    ? 'text-red-600 dark:text-red-400'
+                    : 'text-blue-600 dark:text-blue-400'
+                ]"
+              />
+            </div>
+            <div class="flex-1">
+              <h3
+                :class="[
+                  'text-lg font-semibold mb-1',
+                  hasCriticalUpdate
+                    ? 'text-red-900 dark:text-red-200'
+                    : 'text-blue-900 dark:text-blue-200'
+                ]"
+              >
+                {{ hasCriticalUpdate ? '🚨 Critical Update Available' : '📦 Updates Available' }}
+              </h3>
+              <p
+                :class="[
+                  'text-sm',
+                  hasCriticalUpdate
+                    ? 'text-red-700 dark:text-red-300'
+                    : 'text-blue-700 dark:text-blue-300'
+                ]"
+              >
+                <template v-if="hasCriticalUpdate">
+                  A critical security update is available. Please update as soon as possible.
+                </template>
+                <template v-else-if="hasRecommendedUpdate">
+                  A recommended update is available with new features and improvements.
+                </template>
+                <template v-else>
+                  {{ updateInfo.updates.length }} update{{ updateInfo.updates.length > 1 ? 's' : '' }} available for your system.
+                </template>
+              </p>
+            </div>
+          </div>
+          <button
+            @click="goToUpdatesPage"
+            :class="[
+              'ml-4 px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-all duration-200 hover:shadow-lg',
+              hasCriticalUpdate
+                ? 'bg-red-600 hover:bg-red-700 text-white'
+                : 'bg-blue-600 hover:bg-blue-700 text-white'
+            ]"
+          >
+            <span>View Updates</span>
+            <BaseIcon :path="mdiArrowRight" size="18" />
+          </button>
         </div>
       </div>
 

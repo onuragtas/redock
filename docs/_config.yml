@@ -24,6 +24,10 @@ exclude:
   - README.md
   - docs.go
 
+# Include JSON files (Jekyll ignores them by default)
+include:
+  - update.json
+
 # Layout ayarları
 defaults:
   - scope:

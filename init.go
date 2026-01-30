@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"redock/api_gateway"
 	"redock/cloudflare"
+	"redock/app/cache_models"
 	"redock/deployment"
 	"redock/devenv"
 	"redock/dns_server"
@@ -133,6 +134,7 @@ func registerEntities(db *memory.Database) error {
 		
 		// Other entities
 		{"saved_commands", func() error { return memory.Register[*database.SavedCommand](db, "saved_commands") }},
+		{"release_cache", func() error { return memory.Register[*cache_models.ReleaseCache](db, "release_cache") }},
 	}
 
 	for _, entity := range entities {

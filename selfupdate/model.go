@@ -74,3 +74,8 @@ type LastRelease struct {
 	ZipballUrl string `json:"zipball_url"`
 	Body       string `json:"body"`
 }
+
+// ReleaseConfig represents configuration in release body
+type ReleaseConfig struct {
+	MinimumRequiredVersion string `json:"minimum_required_version"`
+}
