@@ -135,6 +135,11 @@ func (m *EmailManager) createDefaultConfig() *EmailServerConfig {
 	hostname, _ := os.Hostname()
 	if hostname == "" {
 		hostname = "mail.localhost"
+	} else {
+		parts := strings.Split(hostname, ".")
+		if len(parts) == 1 {
+			hostname = hostname + ".localhost"
+		}
 	}
 	
 	return &EmailServerConfig{
