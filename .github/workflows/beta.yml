@@ -56,7 +56,7 @@ jobs:
               fi
             fi
             
-            BETA_TAG="v${BASE_VERSION}-beta_${BETA_NUM}"
+            BETA_TAG="v${BASE_VERSION}-beta.${BETA_NUM}"
             echo "Auto-generated beta version: $BETA_TAG"
           fi
           

@@ -19,6 +19,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    # Skip beta tags - they are handled by beta.yml workflow
+    if: "!contains(github.ref, 'beta')"
     env:
       CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
       RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
