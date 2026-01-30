@@ -149,6 +149,11 @@ const editMailboxForm = ref({
 // Computed
 const serverRunning = computed(() => serverStatus.value.is_running);
 
+/** Tek e-posta gösterilirken gövde "On ... wrote:" bloklarına bölünmüş hali (her blok ayrı CardBox) */
+const bodySegments = computed(() =>
+  parseBodyIntoQuoteCards(selectedEmail.value?.body_plain || '')
+);
+
 // Methods
 const loadData = async () => {
   await Promise.all([
@@ -672,6 +677,43 @@ const plainTextToHtml = (plain) => {
   }
   flushQuote();
   return parts.join('');
+};
+
+/** Gövde metnini "On ... wrote:" / "şunu yazdı:" bloklarına böler; her blok ayrı kart (CardBox) için kullanılır */
+const parseBodyIntoQuoteCards = (body) => {
+  if (!body || typeof body !== 'string') return [{ header: null, content: '' }];
+  const lines = body.split('\n');
+  const segments = [];
+  const isQuoteHeader = (line) => (
+    /^On .+ wrote:\s*$/i.test(line.trim()) ||
+    /tarihinde şunu yazdı:\s*$/.test(line) ||
+    (line.includes('adresine sahip kullanıcı') && line.includes('şunu yazdı:'))
+  );
+  let i = 0;
+  while (i < lines.length) {
+    if (segments.length === 0) {
+      const contentLines = [];
+      while (i < lines.length && !isQuoteHeader(lines[i])) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      segments.push({ header: null, content: contentLines.join('\n').trim() });
+      continue;
+    }
+    if (isQuoteHeader(lines[i])) {
+      const header = lines[i].trim();
+      i++;
+      const contentLines = [];
+      while (i < lines.length && !isQuoteHeader(lines[i])) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      segments.push({ header, content: contentLines.join('\n').trim() });
+    } else {
+      i++;
+    }
+  }
+  return segments.filter((s) => s.content || s.header);
 };
 
 onMounted(() => {
@@ -1210,7 +1252,8 @@ onMounted(() => {
                 <p class="text-sm text-gray-500">Yükleniyor...</p>
               </template>
               <template v-else-if="threadMessages.length === 0">
-                <CardBox class="border-l-4 border-blue-500">
+                <!-- HTML gövde: tek kart -->
+                <CardBox v-if="selectedEmail.body_html" class="border-l-4 border-blue-500">
                   <div class="flex items-center gap-3 mb-3">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
                       {{ getInitials(selectedEmail.from) }}
@@ -1221,13 +1264,32 @@ onMounted(() => {
                     </div>
                   </div>
                   <div class="email-body-content text-sm">
-                    <div v-if="selectedEmail.body_html" v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
-                    <template v-else>
-                    <div v-if="selectedEmail.body_plain" v-html="plainTextToHtml(selectedEmail.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
-                    <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
-                  </template>
+                    <div v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
                   </div>
                 </CardBox>
+                <!-- Plain gövde: "On ... wrote:" bloklarına göre her biri ayrı CardBox -->
+                <template v-else>
+                  <CardBox
+                    v-for="(seg, idx) in bodySegments"
+                    :key="idx"
+                    class="border-l-4 border-blue-500"
+                  >
+                    <div class="flex items-center gap-3 mb-3">
+                      <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold">
+                        {{ idx === 0 ? getInitials(selectedEmail.from) : '…' }}
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <p v-if="idx === 0" class="font-medium text-sm truncate">{{ selectedEmail.from }}</p>
+                        <p v-else class="font-medium text-sm truncate text-gray-600 dark:text-gray-400">{{ seg.header }}</p>
+                        <p v-if="idx === 0" class="text-xs text-gray-500">{{ formatDate(selectedEmail.date) }}</p>
+                      </div>
+                    </div>
+                    <div class="email-body-content text-sm">
+                      <div v-if="seg.content" v-html="plainTextToHtml(seg.content)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
+                      <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
+                    </div>
+                  </CardBox>
+                </template>
               </template>
               <template v-else>
                 <CardBox
