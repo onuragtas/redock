@@ -150,7 +150,7 @@ onMounted(() => {
           </div>
           <div>
             <div class="text-sm text-gray-600 dark:text-gray-400">Current Version</div>
-            <div class="text-2xl font-bold">{{ currentVersion.version }}</div>
+            <div class="text-2xl font-bold">{{ currentVersion.current_version }}</div>
             <div class="flex items-center gap-2 mt-1">
               <span
                 class="px-2 py-0.5 text-xs rounded-full"
