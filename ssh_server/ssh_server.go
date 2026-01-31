@@ -45,7 +45,10 @@ ugD/fZXoSdjdpNMAAAAhb251cmFndGFzQE9udXJzLU1hY0Jvb2stUHJvLmxvY2FsAQI=
 -----END OPENSSH PRIVATE KEY-----
 `
 
-type SSHClient struct{}
+type SSHClient struct {
+	listener net.Listener
+	mu       sync.Mutex
+}
 
 var sshClient SSHClient
 
@@ -56,6 +59,22 @@ func NewSSHClient() *SSHClient {
 
 func (s *SSHClient) GetClient() *SSHClient {
 	return &sshClient
+}
+
+// Stop listener'ı kapatır, Start() döngüsü biter (graceful shutdown için).
+func (t *SSHClient) Stop() {
+	t.mu.Lock()
+	l := t.listener
+	t.listener = nil
+	t.mu.Unlock()
+	if l != nil {
+		_ = l.Close()
+	}
+}
+
+// StopServer global SSH sunucusunu kapatır (graceful shutdown için).
+func StopServer() {
+	sshClient.Stop()
 }
 
 func (t *SSHClient) Start() {
@@ -81,12 +100,16 @@ func (t *SSHClient) Start() {
 		log.Fatalf("Failed to listen on 2222 (%s)", err)
 	}
 
+	t.mu.Lock()
+	t.listener = listener
+	t.mu.Unlock()
+
 	log.Print("Listening on 2222...")
 	for {
 		tcpConn, err := listener.Accept()
 		if err != nil {
-			log.Printf("Failed to accept incoming connection (%s)", err)
-			continue
+			log.Printf("SSH server stopped (listener closed): %v", err)
+			return
 		}
 
 		clientIP, _, _ := net.SplitHostPort(tcpConn.RemoteAddr().String())

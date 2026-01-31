@@ -1,6 +1,7 @@
 package deployment
 
 import (
+	"context"
 	"crypto/md5"
 	"fmt"
 	"io"
@@ -48,14 +49,21 @@ type Deployment struct {
 	Cmd           command.Command
 	dockerManager *docker_manager.DockerEnvironmentManager
 	configMutex   sync.RWMutex // dosya okuma/yazma için mutex
+	runCtx        context.Context
+	runCancel     context.CancelFunc
+	runDone       chan struct{}
 }
 
 var deployment *Deployment
 
 func Init(dockerManager *docker_manager.DockerEnvironmentManager) {
+	ctx, cancel := context.WithCancel(context.Background())
 	deployment = &Deployment{
 		dockerManager: dockerManager,
 		Cmd:           command.Command{},
+		runCtx:        ctx,
+		runCancel:     cancel,
+		runDone:       make(chan struct{}),
 	}
 }
 
@@ -99,13 +107,19 @@ func (d *Deployment) LoadConfig() error {
 }
 
 func (d *Deployment) Run() {
-	var wg sync.WaitGroup
+	defer close(d.runDone)
 	for {
+		select {
+		case <-d.runCtx.Done():
+			return
+		default:
+		}
 		if err := d.LoadConfig(); err != nil {
 			log.Println("Config load error:", err)
 			return
 		}
 
+		var wg sync.WaitGroup
 		wg.Add(len(d.Config.Projects))
 		for _, project := range d.Config.Projects {
 			go func(project Project, w *sync.WaitGroup) {
@@ -115,7 +129,21 @@ func (d *Deployment) Run() {
 		}
 
 		wg.Wait()
-		time.Sleep(time.Duration(d.Config.Settings.CheckTime) * time.Second)
+		select {
+		case <-d.runCtx.Done():
+			return
+		case <-time.After(time.Duration(d.Config.Settings.CheckTime) * time.Second):
+		}
+	}
+}
+
+// Shutdown Run() döngüsünü durdurur ve bitmesini bekler (graceful shutdown için).
+func (d *Deployment) Shutdown() {
+	if d.runCancel != nil {
+		d.runCancel()
+	}
+	if d.runDone != nil {
+		<-d.runDone
 	}
 }
 

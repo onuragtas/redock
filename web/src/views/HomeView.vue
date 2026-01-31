@@ -4,9 +4,9 @@ import BaseIcon from '@/components/BaseIcon.vue'
 import ApiService from '@/services/ApiService'
 import {
   mdiAlert,
+  mdiChevronRight as mdiArrowRight,
   mdiChevronLeft,
   mdiChevronRight,
-  mdiChevronRight as mdiArrowRight,
   mdiCloudDownload,
   mdiCog,
   mdiConsole,
@@ -18,9 +18,7 @@ import {
   mdiPlay,
   mdiRefresh,
   mdiServer,
-  mdiSpeedometer,
-  mdiStop,
-  mdiRefresh as mdiUpdate
+  mdiStop
 } from '@mdi/js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
@@ -34,6 +32,10 @@ const localIp = ref('')
 const containers = ref([])
 const systemStats = ref({
   cpu_percent: '0%',
+  current_version: '-',
+  uptime_formatted: '0s',
+  redock_uptime_formatted: '0s',
+  public_ip: '-',
   memory_percent: '0%',
   memory_used_gb: '0 GB',
   memory_total_gb: '0 GB',
@@ -75,6 +77,10 @@ const updateSystemStats = async () => {
     // Fallback to mock data if API fails
     systemStats.value = {
       cpu_percent: '25%',
+      current_version: '1.0.0',
+      uptime_formatted: '2d 5h 12m',
+      redock_uptime_formatted: '1h 23m',
+      public_ip: '-',
       memory_percent: '45%',
       memory_used_gb: '8.5 GB',
       memory_total_gb: '16 GB',
@@ -332,6 +338,8 @@ onUnmounted(() => {
           <div class="mt-4 lg:mt-0 bg-white/10 rounded-lg p-4 backdrop-blur-sm">
             <div class="text-sm text-blue-100">Server IP</div>
             <div class="text-lg font-mono font-semibold">{{ localIp || 'Loading...' }}</div>
+            <div class="text-sm text-blue-100 mt-2">Public IP</div>
+            <div class="text-lg font-mono font-semibold">{{ systemStats.public_ip || '—' }}</div>
           </div>
         </div>
       </div>
@@ -413,55 +421,33 @@ onUnmounted(() => {
       </div>
 
       <!-- Stats Grid -->
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <!-- Running Containers -->
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer hover:bg-gray-700" @click="setFilter('running')">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-400 text-sm">Running</p>
-              <p class="text-2xl font-bold text-green-400">{{ runningContainers }}</p>
-            </div>
-            <div class="p-3 bg-green-600/20 rounded-full">
-              <BaseIcon :path="mdiPlay" size="24" class="text-green-400" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Stopped Containers -->
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer hover:bg-gray-700" @click="setFilter('stopped')">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-400 text-sm">Stopped</p>
-              <p class="text-2xl font-bold text-red-400">{{ stoppedContainers }}</p>
-            </div>
-            <div class="p-3 bg-red-600/20 rounded-full">
-              <BaseIcon :path="mdiStop" size="24" class="text-red-400" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Total Containers -->
-        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700 cursor-pointer hover:bg-gray-700" @click="setFilter('all')">
-          <div class="flex items-center justify-between">
-            <div>
-              <p class="text-gray-400 text-sm">Total</p>
-              <p class="text-2xl font-bold text-blue-400">{{ totalContainers }}</p>
-            </div>
-            <div class="p-3 bg-blue-600/20 rounded-full">
-              <BaseIcon :path="mdiDocker" size="24" class="text-blue-400" />
-            </div>
-          </div>
-        </div>
-
-        <!-- CPU Usage -->
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Current Version -->
         <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-gray-400 text-sm">CPU Usage</p>
-              <p class="text-2xl font-bold text-yellow-400">{{ systemStats.cpu_percent }}</p>
+              <p class="text-gray-400 text-sm">Current Version</p>
+              <p class="text-2xl font-bold text-green-400">{{ systemStats.current_version }}</p>
             </div>
-            <div class="p-3 bg-yellow-600/20 rounded-full">
-              <BaseIcon :path="mdiSpeedometer" size="24" class="text-yellow-400" />
+          </div>
+        </div>
+
+        <!-- System Uptime -->
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-gray-400 text-sm">System Uptime</p>
+              <p class="text-2xl font-bold text-blue-400">{{ systemStats.uptime_formatted }}</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Redock Uptime -->
+        <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
+          <div class="flex items-center justify-between">
+            <div>
+              <p class="text-gray-400 text-sm">Redock Uptime</p>
+              <p class="text-2xl font-bold text-yellow-400">{{ systemStats.redock_uptime_formatted }}</p>
             </div>
           </div>
         </div>
@@ -476,7 +462,21 @@ onUnmounted(() => {
           </h2>
         </div>
         <div class="p-6">
-          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+            <!-- CPU Usage -->
+            <div class="space-y-3">
+              <div class="flex justify-between items-center">
+                <span class="text-sm text-gray-400">CPU Usage</span>
+                <span class="text-sm font-medium">{{ systemStats.cpu_percent }}</span>
+              </div>
+              <div class="w-full bg-gray-700 rounded-full h-3">
+                <div
+                  class="bg-yellow-500 h-3 rounded-full transition-all duration-300"
+                  :style="{ width: systemStats.cpu_percent }"
+                ></div>
+              </div>
+            </div>
+
             <!-- Memory Usage -->
             <div class="space-y-3">
               <div class="flex justify-between items-center">
@@ -568,14 +568,6 @@ onUnmounted(() => {
               <span>{{ userRegenerating ? 'Resetting…' : 'Reset Personal Development Containers' }}</span>
             </button>
 
-            <router-link
-              to="/exec"
-              class="flex items-center justify-center space-x-2 p-4 bg-cyan-600 hover:bg-cyan-700 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
-            >
-              <BaseIcon :path="mdiConsole" size="20" />
-              <span>SSH Console</span>
-            </router-link>
-
             <button
               :disabled="quickActions.regenerateXDebug"
               class="flex items-center justify-center space-x-2 p-4 bg-blue-600 hover:bg-blue-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
@@ -592,15 +584,6 @@ onUnmounted(() => {
             >
               <BaseIcon :path="mdiServer" size="20" />
               <span>Restart Nginx</span>
-            </button>
-
-            <button
-              :disabled="quickActions.selfUpdate"
-              class="flex items-center justify-center space-x-2 p-4 bg-purple-600 hover:bg-purple-700 disabled:bg-gray-600 rounded-lg transition-all duration-200 hover:transform hover:scale-105"
-              @click="executeQuickAction('selfUpdate')"
-            >
-              <BaseIcon :path="mdiUpdate" size="20" />
-              <span>Self Update</span>
             </button>
 
             <button

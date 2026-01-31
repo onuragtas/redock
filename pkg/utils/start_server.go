@@ -8,37 +8,52 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// ShutdownCallback is called before the server shuts down
+// ShutdownCallback is called when shutdown is requested (tüm portları kapatır + DB flush).
 var ShutdownCallback func()
+
+// RequestGracefulShutdown is set by StartServerWithGracefulShutdown. Kod içinden shutdown tetiklemek için (örn. update).
+// callback verilirse shutdown bittikten sonra çalışır (örn. UpdateWithRestart).
+var RequestGracefulShutdown func(callback func())
 
 // StartServerWithGracefulShutdown function for starting server with a graceful shutdown.
 func StartServerWithGracefulShutdown(a *fiber.App) {
-	// Create channel for idle connections.
 	idleConnsClosed := make(chan struct{})
+	shutdownRequest := make(chan func(), 1)
 
 	go func() {
 		sigint := make(chan os.Signal, 1)
-		signal.Notify(sigint, os.Interrupt) // Catch OS signals.
-		<-sigint
+		signal.Notify(sigint, os.Interrupt)
 
-		// Call shutdown callback first (database flush, cleanup, etc.)
+		var afterShutdown func()
+		select {
+		case <-sigint:
+			// SIGINT (Ctrl+C)
+		case afterShutdown = <-shutdownRequest:
+			// Kod içinden (örn. update)
+		}
+
+		// 1) Tüm portları kapat + DB flush
 		if ShutdownCallback != nil {
 			ShutdownCallback()
 		}
 
-		// Received an interrupt signal, shutdown.
+		// 2) Fiber shutdown
 		if err := a.Shutdown(); err != nil {
-			// Error from closing listeners, or context timeout:
 			log.Printf("Oops... Server is not shutting down! Reason: %v", err)
 		}
 
 		close(idleConnsClosed)
+
+		if afterShutdown != nil {
+			afterShutdown()
+		}
 	}()
 
-	// Build Fiber connection URL.
-	fiberConnURL, _ := ConnectionURLBuilder("fiber")
+	RequestGracefulShutdown = func(callback func()) {
+		shutdownRequest <- callback
+	}
 
-	// Run server.
+	fiberConnURL, _ := ConnectionURLBuilder("fiber")
 	if err := a.Listen(fiberConnURL); err != nil {
 		log.Printf("Oops... Server is not running! Reason: %v", err)
 	}
