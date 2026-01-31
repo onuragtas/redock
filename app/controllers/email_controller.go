@@ -524,9 +524,24 @@ func GetEmails(c *fiber.Ctx) error {
 		})
 	}
 
+	db := manager.GetDB()
+	var folderID uint
+	if fs := memory.Filter[*email_server.EmailFolder](db, "email_folders", func(f *email_server.EmailFolder) bool {
+		return f.MailboxID == uint(mailboxID) && f.Path == folder
+	}); len(fs) > 0 {
+		folderID = fs[0].ID
+	}
+	for _, e := range emails {
+		e.MailboxID = uint(mailboxID)
+		e.FolderID = folderID
+		e.CreatedAt = e.Date
+		e.UpdatedAt = e.Date
+	}
+
+	threads := email_server.GroupEmailsIntoThreads(emails)
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
-		"data":  emails,
+		"data":  threads,
 	})
 }
 

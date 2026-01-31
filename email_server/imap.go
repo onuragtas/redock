@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/emersion/go-imap/v2"
-	"github.com/emersion/go-imap/v2/imapclient"
+	"github.com/emersion/go-imap"
+	"github.com/emersion/go-imap/client"
 	"github.com/emersion/go-message/mail"
 )
 
@@ -39,13 +39,14 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 	config := c.manager.config
 	addr := fmt.Sprintf("localhost:%d", config.IMAPPort)
 
-	client, err := imapclient.DialInsecure(addr, nil)
+	cl, err := client.Dial(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to IMAP: %w", err)
 	}
-	defer client.Close()
+	defer cl.Logout()
+	defer cl.Close()
 
-	if err := client.Login(mailbox.Email, password).Wait(); err != nil {
+	if err := cl.Login(mailbox.Email, password); err != nil {
 		return nil, fmt.Errorf("IMAP login failed: %w", err)
 	}
 
@@ -53,110 +54,83 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 		folderPath = "INBOX"
 	}
 
-	selectCmd := client.Select(folderPath, nil)
-	mailboxData, err := selectCmd.Wait()
+	mbox, err := cl.Select(folderPath, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to select folder %s: %w", folderPath, err)
 	}
 
-	if mailboxData.NumMessages == 0 {
+	if mbox.Messages == 0 {
 		return []*Email{}, nil
 	}
 
 	start := uint32(1)
-	end := mailboxData.NumMessages
+	end := mbox.Messages
 	if limit > 0 && int(end) > limit {
 		start = end - uint32(limit) + 1
 	}
 
-	seqSet := imap.SeqSetNum(start, end)
+	bodySection := &imap.BodySectionName{}
+	items := []imap.FetchItem{imap.FetchEnvelope, imap.FetchFlags, imap.FetchUid, bodySection.FetchItem()}
 
-	// Tam mesajı (BODY[]) çek; gövde metni MIME parse ile alınacak
-	fetchOptions := &imap.FetchOptions{
-		Envelope: true,
-		BodySection: []*imap.FetchItemBodySection{
-			{}, // zero value = full message (BODY[])
-		},
-		Flags: true,
-		UID:   true,
-	}
+	seqSet := new(imap.SeqSet)
+	seqSet.AddRange(start, end)
 
-	fetchCmd := client.Fetch(seqSet, fetchOptions)
+	messages := make(chan *imap.Message, 50)
+	done := make(chan error, 1)
+	go func() {
+		done <- cl.Fetch(seqSet, items, messages)
+	}()
 
-	emails := []*Email{}
+	emails := make([]*Email, 0, int(end-start+1))
+	for msg := range messages {
+		email := &Email{Seen: false, Flagged: false}
 
-	for {
-		msg := fetchCmd.Next()
-		if msg == nil {
-			break
+		if msg.Uid > 0 {
+			email.UID = msg.Uid
 		}
-
-		email := &Email{
-			Seen:    false,
-			Flagged: false,
-		}
-
-		// Collect message data
-		buf, err := msg.Collect()
-		if err != nil {
-			log.Printf("⚠️  Failed to collect message: %v", err)
-			continue
-		}
-
-		// Parse collected data
-		if buf.UID > 0 {
-			email.UID = uint32(buf.UID)
-		}
-
-		if buf.Envelope != nil {
-			email.MessageID = buf.Envelope.MessageID
-			email.Subject = buf.Envelope.Subject
-			email.Date = buf.Envelope.Date
-			if len(buf.Envelope.InReplyTo) > 0 {
-				email.InReplyTo = strings.Join(buf.Envelope.InReplyTo, " ")
+		if msg.Envelope != nil {
+			email.MessageID = msg.Envelope.MessageId
+			email.Subject = msg.Envelope.Subject
+			email.Date = time.Time(msg.Envelope.Date)
+			email.InReplyTo = msg.Envelope.InReplyTo
+			if len(msg.Envelope.From) > 0 {
+				email.From = formatAddressV1(msg.Envelope.From[0])
 			}
-			if len(buf.Envelope.From) > 0 {
-				email.From = formatAddress(&buf.Envelope.From[0])
-			}
-			if len(buf.Envelope.To) > 0 {
-				toAddrs := make([]string, len(buf.Envelope.To))
-				for i := range buf.Envelope.To {
-					toAddrs[i] = formatAddress(&buf.Envelope.To[i])
+			if len(msg.Envelope.To) > 0 {
+				toAddrs := make([]string, len(msg.Envelope.To))
+				for i := range msg.Envelope.To {
+					toAddrs[i] = formatAddressV1(msg.Envelope.To[i])
 				}
 				email.To = strings.Join(toAddrs, ", ")
 			}
 		}
-
-		if len(buf.Flags) > 0 {
-			for _, flag := range buf.Flags {
-				switch flag {
-				case imap.FlagSeen:
-					email.Seen = true
-				case imap.FlagFlagged:
-					email.Flagged = true
-				}
+		for _, flag := range msg.Flags {
+			switch imap.CanonicalFlag(flag) {
+			case imap.SeenFlag:
+				email.Seen = true
+			case imap.FlaggedFlag:
+				email.Flagged = true
 			}
 		}
-
-		// Tam mesajı MIME parse et; text/plain, text/html, References ve ek sayısı
-		for _, bodyBuf := range buf.BodySection {
-			if len(bodyBuf.Bytes) == 0 {
-				continue
+		literal := msg.GetBody(bodySection)
+		if literal != nil {
+			raw, err := io.ReadAll(literal)
+			if err != nil {
+				log.Printf("⚠️  Failed to read message body: %v", err)
+			} else if len(raw) > 0 {
+				plain, html, references, attCount := extractBodyFromRawMessage(raw)
+				email.BodyPlain = plain
+				email.BodyHTML = html
+				email.References = references
+				email.ThreadID = computeThreadID(email.MessageID, references, email.InReplyTo)
+				email.AttachmentCount = attCount
+				email.HasAttachments = attCount > 0
 			}
-			plain, html, references, attCount := extractBodyFromRawMessage(bodyBuf.Bytes)
-			email.BodyPlain = plain
-			email.BodyHTML = html
-			email.References = references
-			email.ThreadID = computeThreadID(email.MessageID, references, email.InReplyTo)
-			email.AttachmentCount = attCount
-			email.HasAttachments = attCount > 0
-			break
 		}
-
 		emails = append(emails, email)
 	}
 
-	if err := fetchCmd.Close(); err != nil {
+	if err := <-done; err != nil {
 		log.Printf("⚠️  IMAP fetch error: %v", err)
 	}
 
@@ -164,7 +138,6 @@ func (c *IMAPClient) GetMessages(mailboxID uint, folderPath string, limit int) (
 }
 
 // GetThread returns all emails in the same thread as the message with the given UID, sorted by date (oldest first).
-// Thread, References/In-Reply-To zinciri takip edilerek toplanır; böylece aynı konuşmadaki tüm mesajlar gelir.
 func (c *IMAPClient) GetThread(mailboxID uint, folderPath string, threadUID uint32, _ int) ([]*Email, error) {
 	const threadScanLimit = 5000
 	all, err := c.GetMessages(mailboxID, folderPath, threadScanLimit)
@@ -236,8 +209,6 @@ func parseMessageIDList(s string) []string {
 	return ids
 }
 
-// computeThreadID returns a stable id for threading: first Message-ID in References, else In-Reply-To, else this message's ID.
-// In-Reply-To kullanımı sayesinde References boş olan cevaplar da üst mesajla aynı thread'e düşer.
 func computeThreadID(messageID, references, inReplyTo string) string {
 	ref := strings.TrimSpace(references)
 	if ref != "" {
@@ -292,25 +263,98 @@ func extractBodyFromRawMessage(raw []byte) (plain, html, references string, atta
 	return plain, html, references, attachmentCount
 }
 
-func formatAddress(addr *imap.Address) string {
+func formatAddressV1(addr *imap.Address) string {
 	if addr == nil {
 		return ""
 	}
-	email := addr.Mailbox + "@" + addr.Host
-	if addr.Name != "" {
-		return fmt.Sprintf("%s <%s>", addr.Name, email)
+	email := addr.MailboxName + "@" + addr.HostName
+	if addr.PersonalName != "" {
+		return fmt.Sprintf("%s <%s>", addr.PersonalName, email)
 	}
 	return email
 }
 
+// normalizeSubjectForThread konu satırından "Re:", "Fwd:" vb. kaldırıp thread gruplamada kullanılacak anahtarı döner.
+func normalizeSubjectForThread(subject string) string {
+	s := strings.TrimSpace(subject)
+	for {
+		lower := strings.ToLower(s)
+		trimmed := false
+		if strings.HasPrefix(lower, "re:") {
+			s = strings.TrimSpace(s[3:])
+			trimmed = true
+		}
+		if strings.HasPrefix(strings.ToLower(s), "fwd:") {
+			s = strings.TrimSpace(s[4:])
+			trimmed = true
+		}
+		if !trimmed {
+			break
+		}
+	}
+	return strings.TrimSpace(s)
+}
+
+// GroupEmailsIntoThreads mailleri thread_id'ye göre gruplar; thread_id eksik/yanlışsa konu (Re: temizlenmiş) ile gruplar.
+// Her thread tek bir root message_id ile etiketlenir; cevaplar da aynı thread_id'yi alır.
+func GroupEmailsIntoThreads(emails []*Email) []*EmailThread {
+	if len(emails) == 0 {
+		return nil
+	}
+	// Önce konuya göre grupla (References/InReplyTo boş olan cevaplar için)
+	bySubject := make(map[string][]*Email)
+	for _, e := range emails {
+		key := normalizeSubjectForThread(e.Subject)
+		if key == "" {
+			key = "(konu yok)"
+		}
+		bySubject[key] = append(bySubject[key], e)
+	}
+	// Her konu grubunda en eski mesajı root kabul et, thread_id'yi root'un message_id yap
+	for _, group := range bySubject {
+		sort.Slice(group, func(i, j int) bool { return group[i].Date.Before(group[j].Date) })
+		rootID := strings.Trim(group[0].MessageID, "<>")
+		for _, e := range group {
+			e.ThreadID = rootID
+		}
+	}
+	// thread_id'ye göre grupla, EmailThread olarak dön
+	byThread := make(map[string][]*Email)
+	for _, e := range emails {
+		tid := e.ThreadID
+		if tid == "" {
+			tid = normalizeID(e.MessageID)
+		}
+		byThread[tid] = append(byThread[tid], e)
+	}
+	var threads []*EmailThread
+	for tid, group := range byThread {
+		sort.Slice(group, func(i, j int) bool { return group[i].Date.Before(group[j].Date) })
+		latest := group[len(group)-1].Date
+		subject := group[0].Subject
+		if subject == "" {
+			subject = "(konu yok)"
+		}
+		threads = append(threads, &EmailThread{
+			ThreadID: tid,
+			Subject:  subject,
+			Date:     latest,
+			Count:    len(group),
+			Messages: group,
+		})
+	}
+	sort.Slice(threads, func(i, j int) bool { return threads[i].Date.After(threads[j].Date) })
+	return threads
+}
+
 type IMAPFolder struct {
-	Name       string `json:"name"`
-	Path       string `json:"path"`
-	Attributes []string `json:"attributes"`
-	Delimiter  string `json:"delimiter"`
-	HasChildren bool `json:"has_children"`
-	NoSelect    bool `json:"no_select"`
-	MessageCount uint32 `json:"message_count"`
+	Name          string   `json:"name"`
+	Path          string   `json:"path"`
+	Attributes    []string `json:"attributes"`
+	Delimiter     string   `json:"delimiter"`
+	HasChildren   bool     `json:"has_children"`
+	NoSelect      bool     `json:"no_select"`
+	MessageCount  uint32   `json:"message_count"`
 }
 
 func (c *IMAPClient) GetFolders(mailboxID uint) ([]*IMAPFolder, error) {
@@ -328,37 +372,33 @@ func (c *IMAPClient) GetFolders(mailboxID uint) ([]*IMAPFolder, error) {
 	config := c.manager.config
 	addr := fmt.Sprintf("localhost:%d", config.IMAPPort)
 
-	client, err := imapclient.DialInsecure(addr, nil)
+	cl, err := client.Dial(addr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to IMAP: %w", err)
 	}
-	defer client.Close()
+	defer cl.Logout()
+	defer cl.Close()
 
-	if err := client.Login(mailbox.Email, password).Wait(); err != nil {
+	if err := cl.Login(mailbox.Email, password); err != nil {
 		return nil, fmt.Errorf("IMAP login failed: %w", err)
 	}
 
-	// List all folders
-	listCmd := client.List("", "*", nil)
-	mailboxes, err := listCmd.Collect()
-	if err != nil {
-		return nil, fmt.Errorf("failed to list folders: %w", err)
-	}
+	mailboxes := make(chan *imap.MailboxInfo, 50)
+	done := make(chan error, 1)
+	go func() {
+		done <- cl.List("", "*", mailboxes)
+	}()
 
-	folders := make([]*IMAPFolder, 0)
-	for _, mbox := range mailboxes {
+	var folders []*IMAPFolder
+	for m := range mailboxes {
 		folder := &IMAPFolder{
-			Name:       mbox.Mailbox,
-			Path:       mbox.Mailbox,
-			Attributes: make([]string, 0),
-			Delimiter:  string(mbox.Delim),
+			Name:       m.Name,
+			Path:       m.Name,
+			Attributes: m.Attributes,
+			Delimiter:  m.Delimiter,
 		}
-
-		// Parse attributes
-		for _, attr := range mbox.Attrs {
-			attrStr := strings.ToLower(string(attr))
-			folder.Attributes = append(folder.Attributes, attrStr)
-			
+		for _, attr := range m.Attributes {
+			attrStr := strings.ToLower(attr)
 			if attrStr == "\\haschildren" {
 				folder.HasChildren = true
 			}
@@ -366,68 +406,53 @@ func (c *IMAPClient) GetFolders(mailboxID uint) ([]*IMAPFolder, error) {
 				folder.NoSelect = true
 			}
 		}
-
-		// Get message count for each folder (if selectable)
 		if !folder.NoSelect {
-			if selectData, err := client.Select(mbox.Mailbox, nil).Wait(); err == nil {
-				folder.MessageCount = selectData.NumMessages
+			if status, err := cl.Status(m.Name, []imap.StatusItem{imap.StatusMessages}); err == nil {
+				if n, ok := status.Items[imap.StatusMessages].(uint32); ok {
+					folder.MessageCount = n
+				}
 			}
 		}
-
 		folders = append(folders, folder)
+	}
+
+	if err := <-done; err != nil {
+		return nil, fmt.Errorf("failed to list folders: %w", err)
 	}
 
 	return folders, nil
 }
 
 func (c *IMAPClient) appendToFolder(email, password, folderName string, message []byte) error {
-	// Create context with timeout
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
-	
+
 	config := c.manager.config
 	addr := fmt.Sprintf("localhost:%d", config.IMAPPort)
 
-	// Use a channel to handle timeout
 	errChan := make(chan error, 1)
-	
 	go func() {
-		client, err := imapclient.DialInsecure(addr, nil)
+		cl, err := client.Dial(addr)
 		if err != nil {
 			errChan <- fmt.Errorf("failed to connect to IMAP: %w", err)
 			return
 		}
-		defer client.Close()
+		defer cl.Logout()
+		defer cl.Close()
 
-		if err := client.Login(email, password).Wait(); err != nil {
+		if err := cl.Login(email, password); err != nil {
 			errChan <- fmt.Errorf("IMAP login failed: %w", err)
 			return
 		}
 
-		// Append message to folder using IMAP APPEND command
-		appendOpts := &imap.AppendOptions{
-			Flags: []imap.Flag{imap.FlagSeen}, // Mark as read
-			Time:  time.Now(),
-		}
-
-		appendCmd := client.Append(folderName, int64(len(message)), appendOpts)
-		
-		// Write message
-		if _, err := appendCmd.Write(message); err != nil {
-			errChan <- fmt.Errorf("failed to write message: %w", err)
-			return
-		}
-		
-		// Wait for completion
-		if _, err := appendCmd.Wait(); err != nil {
+		literal := bytes.NewBuffer(message)
+		if err := cl.Append(folderName, []string{imap.SeenFlag}, time.Now(), literal); err != nil {
 			errChan <- fmt.Errorf("failed to append to %s: %w", folderName, err)
 			return
 		}
-
 		errChan <- nil
 	}()
-	
-	// Wait for either completion or timeout
+
 	select {
 	case err := <-errChan:
 		return err

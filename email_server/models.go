@@ -108,6 +108,15 @@ type Email struct {
 	FilePath        string     `json:"file_path"`
 }
 
+// EmailThread tek bir konu zincirini (thread) temsil eder; liste API'sinde gruplu dönüş için.
+type EmailThread struct {
+	ThreadID string    `json:"thread_id"`
+	Subject  string    `json:"subject"`
+	Date     time.Time `json:"date"`
+	Count    int       `json:"count"`
+	Messages []*Email  `json:"messages"`
+}
+
 type EmailAttachment struct {
 	memory.SoftDeleteEntity
 	EmailID         uint       `json:"email_id"`

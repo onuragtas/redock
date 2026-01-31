@@ -75,7 +75,8 @@ const isEditingIP = ref(false);
 
 const domains = ref([]);
 const mailboxes = ref([]);
-const emails = ref([]);
+/** API'den gelen thread listesi (her thread: { thread_id, subject, date, count, messages }) */
+const threads = ref([]);
 
 // Modals
 const isAddDomainModalActive = ref(false);
@@ -95,6 +96,8 @@ const threadLoading = ref(false);
 const expandedCardKeys = ref(new Set());
 /** Klasör listesinde hangi e-postalar açık (inline önizleme): uid set */
 const expandedListUids = ref(new Set());
+/** Thread listesinde hangi thread'ler açık (count > 1 olanlarda açılır/kapanır): thread_id set */
+const expandedThreadIds = ref(new Set());
 
 // Email folders (dynamically loaded from IMAP)
 const folders = ref([
@@ -155,6 +158,43 @@ const editMailboxForm = ref({
 // Computed
 const serverRunning = computed(() => serverStatus.value.is_running);
 
+/** Gövde metnini "On ... wrote:" / "şunu yazdı:" bloklarına böler; her blok ayrı kart (CardBox) için kullanılır */
+const parseBodyIntoQuoteCards = (body) => {
+  if (!body || typeof body !== 'string') return [{ header: null, content: '' }];
+  const lines = body.split('\n');
+  const segments = [];
+  const isQuoteHeader = (line) => (
+    /^On .+ wrote:\s*$/i.test(line.trim()) ||
+    /tarihinde şunu yazdı:\s*$/.test(line) ||
+    (line.includes('adresine sahip kullanıcı') && line.includes('şunu yazdı:'))
+  );
+  let i = 0;
+  while (i < lines.length) {
+    if (segments.length === 0) {
+      const contentLines = [];
+      while (i < lines.length && !isQuoteHeader(lines[i])) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      segments.push({ header: null, content: contentLines.join('\n').trim() });
+      continue;
+    }
+    if (isQuoteHeader(lines[i])) {
+      const header = lines[i].trim();
+      i++;
+      const contentLines = [];
+      while (i < lines.length && !isQuoteHeader(lines[i])) {
+        contentLines.push(lines[i]);
+        i++;
+      }
+      segments.push({ header, content: contentLines.join('\n').trim() });
+    } else {
+      i++;
+    }
+  }
+  return segments.filter((s) => s.content || s.header);
+};
+
 /** Tek e-posta gösterilirken gövde "On ... wrote:" bloklarına bölünmüş hali (her blok ayrı CardBox) */
 const bodySegments = computed(() =>
   parseBodyIntoQuoteCards(selectedEmail.value?.body_plain || '')
@@ -195,6 +235,30 @@ const toggleListRow = (uid, event) => {
   else next.add(uid);
   expandedListUids.value = next;
 };
+
+const toggleThreadRow = (threadId, event) => {
+  event?.stopPropagation();
+  const next = new Set(expandedThreadIds.value);
+  if (next.has(threadId)) next.delete(threadId);
+  else next.add(threadId);
+  expandedThreadIds.value = next;
+};
+
+/** Çok mesajlı thread ana satırına tıklanınca sağ panelde thread mesajlarını CardBox olarak açar */
+const openThreadInDetail = (thread) => {
+  if (!thread?.messages?.length) return;
+  const msgs = thread.messages;
+  const latest = msgs[msgs.length - 1];
+  selectedEmail.value = latest;
+  threadMessages.value = [...msgs];
+  showEmailDetail.value = true;
+  expandedCardKeys.value = new Set([`msg-${latest.uid}`]);
+};
+
+/** Toplam e-posta sayısı (thread'lerdeki mesaj toplamı) */
+const totalEmailCount = computed(() =>
+  threads.value.reduce((acc, t) => acc + (t.count || t.messages?.length || 0), 0)
+);
 
 // Methods
 const loadData = async () => {
@@ -247,8 +311,9 @@ const loadEmails = async (mailboxId, folder = 'INBOX') => {
       params: { folder, limit: 50 }
     });
     if (!response.data.error) {
-      emails.value = response.data.data || [];
+      threads.value = response.data.data || [];
       expandedListUids.value = new Set();
+      expandedThreadIds.value = new Set();
     }
   } catch (error) {
     console.error('Failed to load emails:', error);
@@ -722,43 +787,6 @@ const plainTextToHtml = (plain) => {
   return parts.join('');
 };
 
-/** Gövde metnini "On ... wrote:" / "şunu yazdı:" bloklarına böler; her blok ayrı kart (CardBox) için kullanılır */
-const parseBodyIntoQuoteCards = (body) => {
-  if (!body || typeof body !== 'string') return [{ header: null, content: '' }];
-  const lines = body.split('\n');
-  const segments = [];
-  const isQuoteHeader = (line) => (
-    /^On .+ wrote:\s*$/i.test(line.trim()) ||
-    /tarihinde şunu yazdı:\s*$/.test(line) ||
-    (line.includes('adresine sahip kullanıcı') && line.includes('şunu yazdı:'))
-  );
-  let i = 0;
-  while (i < lines.length) {
-    if (segments.length === 0) {
-      const contentLines = [];
-      while (i < lines.length && !isQuoteHeader(lines[i])) {
-        contentLines.push(lines[i]);
-        i++;
-      }
-      segments.push({ header: null, content: contentLines.join('\n').trim() });
-      continue;
-    }
-    if (isQuoteHeader(lines[i])) {
-      const header = lines[i].trim();
-      i++;
-      const contentLines = [];
-      while (i < lines.length && !isQuoteHeader(lines[i])) {
-        contentLines.push(lines[i]);
-        i++;
-      }
-      segments.push({ header, content: contentLines.join('\n').trim() });
-    } else {
-      i++;
-    }
-  }
-  return segments.filter((s) => s.content || s.header);
-};
-
 onMounted(() => {
   loadData();
 });
@@ -825,7 +853,7 @@ onMounted(() => {
         <div class="flex items-center justify-between">
           <div>
             <p class="text-sm text-gray-500 dark:text-gray-400">Emails</p>
-            <p class="text-2xl font-semibold mt-1">{{ emails.length }}</p>
+            <p class="text-2xl font-semibold mt-1">{{ totalEmailCount }}</p>
           </div>
           <BaseIcon :path="mdiEmailOpen" :size="48" class="text-orange-500" />
         </div>
@@ -1171,8 +1199,8 @@ onMounted(() => {
             >
               <BaseIcon :path="folder.icon" :class="folder.color" w="w-5" h="h-5" />
               <span class="flex-1">{{ folder.name }}</span>
-              <span v-if="folder.value === 'INBOX'" class="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded-full">
-                {{ emails.length }}
+              <span v-if="folder.value === selectedFolder" class="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded-full">
+                {{ totalEmailCount }}
               </span>
             </button>
           </nav>
@@ -1184,7 +1212,7 @@ onMounted(() => {
           <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div class="flex items-center gap-2">
               <h3 class="font-semibold text-lg">{{ folders.find(f => f.value === selectedFolder)?.name || 'Inbox' }}</h3>
-              <span class="text-sm text-gray-500">({{ emails.length }})</span>
+              <span class="text-sm text-gray-500">({{ totalEmailCount }} e-posta)</span>
             </div>
             <BaseButton :icon="mdiRefresh" color="light" small @click="loadEmails(selectedMailbox, selectedFolder)" />
           </div>
@@ -1198,7 +1226,7 @@ onMounted(() => {
           </div>
 
           <!-- Empty State -->
-          <div v-else-if="emails.length === 0" class="flex-1 flex items-center justify-center text-gray-500">
+          <div v-else-if="threads.length === 0" class="flex-1 flex items-center justify-center text-gray-500">
             <div class="text-center">
               <BaseIcon :path="mdiEmailOpen" class="w-16 h-16 mx-auto mb-4 text-gray-300" />
               <p class="text-lg font-medium mb-2">{{ selectedFolder }} klasöründe e-posta yok</p>
@@ -1206,92 +1234,128 @@ onMounted(() => {
             </div>
           </div>
 
-          <!-- Email List -->
+          <!-- Email List (thread gruplu; count > 1 ise açılır/kapanır) -->
           <div v-else class="flex-1 overflow-y-auto">
             <div
-              v-for="email in emails"
-              :key="email.uid"
-              :class="[
-                'border-b border-gray-100 dark:border-gray-700 transition-colors hover:bg-gray-50 dark:hover:bg-gray-700',
-                selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : '',
-                !email.seen ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
-              ]"
+              v-for="thread in threads"
+              :key="thread.thread_id"
+              class="border-b border-gray-100 dark:border-gray-700"
             >
-              <div
-                class="px-4 py-3 flex items-start gap-3 cursor-pointer"
-                @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
-              >
-                <!-- Açılır ok -->
-                <button
-                  type="button"
-                  class="mt-1 shrink-0 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
-                  :aria-label="expandedListUids.has(email.uid) ? 'Daralt' : 'Genişlet'"
-                  @click="toggleListRow(email.uid, $event)"
-                >
-                  <BaseIcon
-                    :path="expandedListUids.has(email.uid) ? mdiChevronUp : mdiChevronDown"
-                    class="text-gray-400"
-                    w="w-5"
-                    h="h-5"
-                  />
-                </button>
-                <!-- Star -->
-                <button class="mt-1 shrink-0" @click.stop="toggleStar(email)">
-                  <BaseIcon
-                    :path="email.flagged ? mdiStar : mdiStarOutline"
-                    :class="email.flagged ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'"
-                    w="w-5"
-                    h="h-5"
-                  />
-                </button>
-
-                <!-- Email Content -->
-                <div class="flex-1 min-w-0">
-                  <div class="flex items-center justify-between mb-1">
-                    <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
-                      {{ email.from || 'Bilinmeyen' }}
-                    </p>
-                    <span class="text-xs text-gray-500 ml-2 shrink-0">
-                      {{ formatTime(email.date) }}
-                    </span>
-                  </div>
-                  <p :class="['text-sm truncate mb-1', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
-                    {{ email.subject || '(Konu yok)' }}
-                  </p>
-                  <p class="text-sm text-gray-500 dark:text-gray-500 truncate">
-                    {{ email.snippet || (email.body_plain || '').substring(0, 100) || 'Önizleme yok' }}
-                  </p>
-                </div>
-
-                <!-- Attachment Icon -->
-                <BaseIcon
-                  v-if="email.has_attachments"
-                  :path="mdiAttachment"
-                  class="text-gray-400 mt-1 shrink-0"
-                  w="w-4"
-                  h="h-4"
-                />
-              </div>
-
-              <!-- Açıkken: önizleme / detay linki -->
-              <div
-                v-show="expandedListUids.has(email.uid)"
-                class="px-4 pb-3 pt-0 pl-[3.25rem] border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-slate-800/80"
-              >
-                <p class="text-xs text-gray-500 dark:text-gray-400 mb-1">
-                  {{ formatDate(email.date) }} · {{ email.to }}
-                </p>
-                <p class="text-sm text-gray-600 dark:text-gray-300 whitespace-pre-wrap line-clamp-4 break-words">
-                  {{ email.body_plain || email.snippet || 'İçerik yok' }}
-                </p>
-                <button
-                  type="button"
-                  class="mt-2 text-sm text-blue-600 dark:text-blue-400 hover:underline"
+              <!-- Tek mesajlı thread: tek satır, açılır/kapanır yok; tıklanınca sağda detay -->
+              <template v-if="thread.count === 1">
+                <div
+                  v-for="email in thread.messages"
+                  :key="email.uid"
+                  :class="[
+                    'px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700',
+                    selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : '',
+                    !email.seen ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
+                  ]"
                   @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
                 >
-                  Tam oku →
-                </button>
-              </div>
+                  <button class="mt-1 shrink-0" @click.stop="toggleStar(email)">
+                    <BaseIcon
+                      :path="email.flagged ? mdiStar : mdiStarOutline"
+                      :class="email.flagged ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'"
+                      w="w-5"
+                      h="h-5"
+                    />
+                  </button>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                      <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
+                        {{ email.from || 'Bilinmeyen' }}
+                      </p>
+                      <span class="text-xs text-gray-500 ml-2 shrink-0">{{ formatTime(email.date) }}</span>
+                    </div>
+                    <p :class="['text-sm truncate mb-1', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
+                      {{ email.subject || '(Konu yok)' }}
+                    </p>
+                    <p class="text-sm text-gray-500 dark:text-gray-500 truncate">
+                      {{ email.snippet || (email.body_plain || '').substring(0, 100) || 'Önizleme yok' }}
+                    </p>
+                  </div>
+                  <BaseIcon
+                    v-if="email.has_attachments"
+                    :path="mdiAttachment"
+                    class="text-gray-400 mt-1 shrink-0"
+                    w="w-4"
+                    h="h-4"
+                  />
+                </div>
+              </template>
+
+              <!-- Çok mesajlı thread: Chevron → liste açılır; satıra tıklanınca sağda detay (CardBox) -->
+              <template v-else>
+                <div
+                  :class="[
+                    'px-4 py-3 flex items-start gap-3 cursor-pointer transition-colors hover:bg-gray-50 dark:hover:bg-gray-700',
+                    selectedEmail && thread.messages.some(m => m.uid === selectedEmail.uid) ? 'bg-blue-50 dark:bg-blue-900/10' : '',
+                    thread.messages.some(m => !m.seen) ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
+                  ]"
+                  @click="openThreadInDetail(thread)"
+                >
+                  <button
+                    type="button"
+                    class="mt-1 shrink-0 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
+                    :aria-label="expandedThreadIds.has(thread.thread_id) ? 'Daralt' : 'Genişlet'"
+                    @click.stop="toggleThreadRow(thread.thread_id, $event)"
+                  >
+                    <BaseIcon
+                      :path="expandedThreadIds.has(thread.thread_id) ? mdiChevronUp : mdiChevronDown"
+                      class="text-gray-400"
+                      w="w-5"
+                      h="h-5"
+                    />
+                  </button>
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center justify-between mb-1">
+                      <p class="truncate font-medium text-gray-700 dark:text-gray-300">
+                        {{ thread.messages[0]?.from || 'Bilinmeyen' }}
+                      </p>
+                      <span class="text-xs text-gray-500 ml-2 shrink-0">{{ formatTime(thread.date) }}</span>
+                    </div>
+                    <p class="text-sm truncate mb-1 font-medium text-gray-600 dark:text-gray-400">
+                      {{ thread.subject || '(Konu yok)' }}
+                      <span class="text-gray-500 dark:text-gray-500 font-normal">({{ thread.count }})</span>
+                    </p>
+                    <p class="text-sm text-gray-500 truncate">
+                      {{ (thread.messages[0]?.body_plain || '').substring(0, 80) || 'Önizleme yok' }}
+                    </p>
+                  </div>
+                </div>
+                <!-- Chevron ile açılan inline liste -->
+                <div
+                  v-show="expandedThreadIds.has(thread.thread_id)"
+                  class="border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-slate-800/80"
+                >
+                  <div
+                    v-for="email in thread.messages"
+                    :key="email.uid"
+                    :class="[
+                      'px-4 py-2.5 pl-12 flex items-start gap-3 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-b-0 hover:bg-gray-100 dark:hover:bg-gray-700/50',
+                      selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : ''
+                    ]"
+                    @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
+                  >
+                    <button class="mt-0.5 shrink-0" @click.stop="toggleStar(email)">
+                      <BaseIcon
+                        :path="email.flagged ? mdiStar : mdiStarOutline"
+                        :class="email.flagged ? 'text-yellow-500' : 'text-gray-400 hover:text-yellow-500'"
+                        w="w-4"
+                        h="h-4"
+                      />
+                    </button>
+                    <div class="flex-1 min-w-0">
+                      <p :class="['text-sm truncate', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
+                        {{ email.from }} · {{ formatTime(email.date) }}
+                      </p>
+                      <p class="text-xs text-gray-500 truncate">{{ email.subject || '(Konu yok)' }}</p>
+                    </div>
+                    <BaseIcon v-if="email.has_attachments" :path="mdiAttachment" class="text-gray-400 shrink-0" w="w-4" h="h-4" />
+                  </div>
+                </div>
+              </template>
             </div>
           </div>
         </div>
