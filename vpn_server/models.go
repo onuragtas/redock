@@ -11,7 +11,7 @@ type VPNServer struct {
 	Name                string  `json:"name"`
 	Interface           string  `json:"interface"` // wg0, wg1, etc.
 	PublicKey           string  `json:"public_key"`
-	PrivateKey          string  `json:"-"` // encrypted, not returned in JSON
+	PrivateKey          string  `json:"private_key"` // persisted to disk; strip before API response
 	ListenPort          int     `json:"listen_port"`
 	Address             string  `json:"address"` // 10.0.0.1/24
 	Endpoint            string  `json:"endpoint"` // server.example.com:51820
@@ -31,7 +31,7 @@ type VPNUser struct {
 	Email              string     `json:"email,omitempty"`
 	FullName           string     `json:"full_name,omitempty"`
 	PublicKey          string     `json:"public_key"`
-	PrivateKey         string     `json:"-"` // encrypted, not returned in JSON
+	PrivateKey         string     `json:"private_key"` // persisted to disk; strip before API response
 	Address            string     `json:"address"` // 10.0.0.2/32
 	AllowedIPs         string     `json:"allowed_ips"`
 	DNS                string     `json:"dns,omitempty"` // Custom DNS (optional)
