@@ -11,8 +11,8 @@ import {
   mdiLanConnect,
   mdiLaptop,
   mdiNetworkOutline,
-  mdiPlaylistEdit,
   mdiRocket,
+  mdiScriptText,
   mdiServerNetwork,
   mdiWeb,
   mdiWrench
@@ -33,7 +33,7 @@ export default [
   { name: 'Terminal', path: '/exec', icon: mdiConsole },
   { name: 'Tunnel Proxy', path: '/tunnel-proxy', icon: mdiLanConnect },
   { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiWeb },
-  { name: 'Saved Commands', path: '/saved-commands', icon: mdiPlaylistEdit },
+  { name: 'Saved Commands', path: '/saved-commands', icon: mdiScriptText },
   { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck },
   { name: 'Updates', path: '/updates', icon: mdiDownload }
 ]

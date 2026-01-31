@@ -2,17 +2,19 @@
 import BaseIcon from '@/components/BaseIcon.vue'
 import menuAside from '@/menuAside.js'
 import ApiService from '@/services/ApiService'
+import { useLayoutStore } from '@/stores/layout'
 import { useTerminalStore } from '@/stores/terminalStore'
 import {
   mdiAccount,
   mdiBell,
   mdiChevronDown,
+  mdiChevronLeft,
+  mdiChevronRight,
   mdiClose,
   mdiConsole,
   mdiContentDuplicate,
   mdiDocker,
   mdiLogout,
-  mdiMagnify,
   mdiMenu,
   mdiMinus,
   mdiWindowMaximize
@@ -25,6 +27,7 @@ import { useRouter } from 'vue-router'
 
 const router = useRouter()
 const terminalStore = useTerminalStore()
+const layoutStore = useLayoutStore()
 
 // State
 const sidebarOpen = ref(false)
@@ -478,39 +481,57 @@ onMounted(() => {
 
 <template>
   <div class="min-h-screen bg-gray-950" @click="closeMenus">
-    <!-- Sidebar -->
+    <!-- Sidebar: mobilde aç/kapa; masaüstünde daraltınca sadece ikon (w-16), store'da kalıcı -->
     <div
       :class="[
-        'fixed inset-y-0 left-0 z-50 w-64 bg-gray-900/95 backdrop-blur-xl transform transition-transform duration-300 ease-in-out border-r border-gray-700/50',
-        sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
+        'fixed inset-y-0 left-0 z-50 bg-gray-900/95 backdrop-blur-xl transform transition-all duration-300 ease-in-out border-r border-gray-700/50',
+        layoutStore.sidebarCollapsed ? 'w-16' : 'w-64',
+        layoutStore.sidebarCollapsed ? (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0') : (sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0')
       ]"
       :style="{
         bottom: terminalStore.isTerminalVisible ? `${terminalStore.terminalHeight}px` : '0px'
       }"
     >
       <!-- Sidebar Header -->
-      <div class="flex items-center justify-between h-16 px-6 border-b border-gray-700/50">
-        <div class="flex items-center space-x-3">
-          <div class="w-8 h-8 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
+      <div
+        :class="[
+          'relative flex items-center h-16 border-b border-gray-700/50 transition-all duration-300',
+          layoutStore.sidebarCollapsed ? 'justify-center gap-2 px-0' : 'justify-between px-6'
+        ]"
+      >
+        <div :class="['flex items-center transition-all', layoutStore.sidebarCollapsed ? 'justify-center' : 'space-x-3']">
+          <div class="w-8 h-8 shrink-0 bg-gradient-to-br from-blue-500 to-purple-600 rounded-lg flex items-center justify-center">
             <BaseIcon :path="mdiDocker" size="20" class="text-white" />
           </div>
-          <div>
-            <h1 class="text-lg font-bold text-white">Redock</h1>
-            <p class="text-xs text-gray-400">DevStation</p>
+          <div v-show="!layoutStore.sidebarCollapsed" class="min-w-0">
+            <h1 class="text-lg font-bold text-white truncate">Redock</h1>
+            <p class="text-xs text-gray-400 truncate">DevStation</p>
           </div>
         </div>
 
-        <button
-          class="lg:hidden p-1 text-gray-400 hover:text-white rounded"
-          @click="toggleSidebar"
-        >
-          <BaseIcon :path="mdiClose" size="20" />
-        </button>
+        <div v-show="!layoutStore.sidebarCollapsed" class="flex items-center gap-1 shrink-0">
+          <button
+            class="hidden lg:flex p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-700/50 transition-colors"
+            aria-label="Menüyü daralt"
+            @click.stop="layoutStore.toggleSidebarCollapsed()"
+          >
+            <BaseIcon :path="mdiChevronLeft" size="20" />
+          </button>
+          <button
+            class="lg:hidden p-1 text-gray-400 hover:text-white rounded"
+            @click="toggleSidebar"
+          >
+            <BaseIcon :path="mdiClose" size="20" />
+          </button>
+        </div>
       </div>
 
       <!-- Navigation -->
       <nav
-        class="flex-1 px-4 py-6 space-y-2 overflow-y-auto"
+        :class="[
+          'flex-1 py-6 space-y-2 overflow-y-auto transition-all duration-300',
+          layoutStore.sidebarCollapsed ? 'px-2' : 'px-4'
+        ]"
         :style="{
           maxHeight: terminalStore.isTerminalVisible
             ? `calc(100vh - ${terminalStore.terminalHeight}px - 12rem)`
@@ -522,59 +543,58 @@ onMounted(() => {
           :key="item.path"
           :to="item.path"
           :class="[
-            'group flex items-center px-3 py-2.5 text-sm font-medium rounded-xl transition-all duration-200',
+            'group flex items-center rounded-xl transition-all duration-200',
+            layoutStore.sidebarCollapsed ? 'justify-center px-0 py-2.5' : 'px-3 py-2.5 text-sm font-medium',
             $route.path === item.path
               ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
               : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
           ]"
+          :title="layoutStore.sidebarCollapsed ? item.name : undefined"
         >
-          <BaseIcon :path="item.icon" size="20" class="mr-3" />
-          <span class="flex-1">{{ item.name }}</span>
+          <BaseIcon :path="item.icon" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
+          <span v-show="!layoutStore.sidebarCollapsed" class="flex-1 truncate">{{ item.name }}</span>
         </router-link>
       </nav>
 
       <!-- Sidebar Footer -->
-      <div class="absolute bottom-0 left-0 right-0 p-4 border-t border-gray-700/50 bg-gray-900/95">
+      <div
+        :class="[
+          'absolute left-0 right-0 border-t border-gray-700/50 bg-gray-900/95 transition-all duration-300',
+          layoutStore.sidebarCollapsed ? 'p-2' : 'p-4'
+        ]"
+      >
         <button
-          class="w-full flex items-center px-3 py-2.5 text-sm font-medium text-red-400 hover:text-white hover:bg-red-600/20 rounded-xl transition-all duration-200 border border-red-600/20"
+          :class="[
+            'w-full flex items-center text-red-400 hover:text-white hover:bg-red-600/20 rounded-xl transition-all duration-200 border border-red-600/20',
+            layoutStore.sidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5 text-sm font-medium'
+          ]"
+          title="Logout"
           @click="logout"
         >
-          <BaseIcon :path="mdiLogout" size="20" class="mr-3" />
-          <span>Logout</span>
+          <BaseIcon :path="mdiLogout" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
+          <span v-show="!layoutStore.sidebarCollapsed">Logout</span>
         </button>
       </div>
     </div>
 
-    <!-- Main Content -->
-    <div class="lg:ml-64">
+    <!-- Main Content: masaüstünde daraltılmışken ml-16, açıkken ml-64 -->
+    <div :class="layoutStore.sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'">
       <!-- Top Navigation -->
       <nav class="bg-gray-900/80 backdrop-blur-xl border-b border-gray-700/50 px-6 py-4 flex items-center justify-between h-16 sticky top-0 z-40">
-        <!-- Mobile menu button -->
+        <!-- Menü butonu: mobilde her zaman; masaüstünde sadece menü kapalıyken -->
         <button
-          class="lg:hidden p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors"
-          @click="toggleSidebar"
+          :class="[
+            'p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors',
+            layoutStore.sidebarCollapsed ? '' : 'lg:hidden'
+          ]"
+          :aria-label="layoutStore.sidebarCollapsed ? 'Menüyü aç' : 'Menü'"
+          @click="layoutStore.sidebarCollapsed ? layoutStore.toggleSidebarCollapsed() : toggleSidebar()"
         >
           <BaseIcon :path="mdiMenu" size="20" />
         </button>
 
-        <!-- Search -->
-        <div class="flex-1 max-w-md mx-auto lg:mx-4">
-          <div class="relative">
-            <BaseIcon
-              :path="mdiMagnify"
-              size="20"
-              class="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400"
-            />
-            <input
-              type="text"
-              placeholder="Search containers, environments, commands..."
-              class="w-full pl-10 pr-4 py-2 bg-gray-800/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 backdrop-blur-sm transition-all"
-            />
-          </div>
-        </div>
-
         <!-- Right side controls -->
-        <div class="flex items-center space-x-4">
+        <div class="flex flex-1 items-center justify-end space-x-4">
           <!-- Notifications -->
           <button class="relative p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors">
             <BaseIcon :path="mdiBell" size="20" />

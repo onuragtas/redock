@@ -1,14 +1,9 @@
-# This workflow will do a clean installation of node dependencies, cache/restore them, build the source code and run tests across different versions of node
-# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-nodejs
-
 name: Redock CI
 
 on:
   push:
     branches:
       - master
-    tags:
-      - "v*.*.*"
   workflow_dispatch:
     inputs:
       auto_increment:
@@ -19,11 +14,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    # Skip beta tags - they are handled by beta.yml workflow
-    if: "!contains(github.ref, 'beta')"
     env:
       CHECKOUT_REF: ${{ github.event_name == 'workflow_dispatch' && 'master' || github.ref }}
-      RELEASE_TAG: ${{ startsWith(github.ref, 'refs/tags/') && github.ref_name || '' }}
 
     steps:
       - name: Checkout code
@@ -92,24 +84,24 @@ jobs:
           git push origin "$RELEASE_TAG"
 
       - name: Build with Node.js
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         uses: actions/setup-node@v3
         with:
           node-version: 19
-      - if: startsWith(github.ref, 'refs/tags/')
+      - if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         run: |
           cd web
           npm install
           npm run build
 
       - name: Setup Go
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         uses: actions/setup-go@v4
         with:
           go-version: 1.21
 
       - name: Create Config
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         env:
           USER: ${{ secrets.USER }}
           PASSWORD: ${{ secrets.PASSWORD }}
@@ -125,7 +117,7 @@ jobs:
         shell: bash
 
       - name: Create version
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         run: |
           cat <<EOF > app_version.go
           package main
@@ -137,15 +129,15 @@ jobs:
         shell: bash
 
       - name: Build
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         run: go build -v ./...
 
       - name: Restore package-lock.json
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         run: git checkout -- web/package-lock.json
 
       - name: Run goreleaser/goreleaser-action@v5
-        if: startsWith(github.ref, 'refs/tags/')
+        if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         uses: goreleaser/goreleaser-action@v5
         with:
           distribution: goreleaser
