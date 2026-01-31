@@ -10,8 +10,13 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"redock/api_gateway"
 	"redock/app/controllers"
 	"redock/app/models"
+	"redock/deployment"
+	"redock/dns_server"
+	localproxy "redock/local_proxy"
+	"redock/php_debug_adapter"
 	"redock/platform/database"
 	"redock/ssh_server"
 	"runtime/debug"
@@ -118,17 +123,32 @@ func app() {
 	routes.CloudflareRoutes(app)       // Register Cloudflare routes for app.
 	routes.EmailRoutes(app)            // Register Email Server routes for app.
 
-	// Register shutdown callback for database flush
+	// Shutdown callback: tüm portları kapatan stop fonksiyonları + DB flush
 	utils.ShutdownCallback = func() {
+		stopAllServers()
 		if globalDB != nil {
 			_ = globalDB.Close()
 		}
 	}
-	routes.UpdateRoutes(app)           // Register Update routes for app.
+	routes.UpdateRoutes(app) // Register Update routes for app.
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))
 	utils.StartServerWithGracefulShutdown(app)
+}
+
+// stopAllServers tüm TCP/port dinleyicilerini kapatır (graceful shutdown için).
+func stopAllServers() {
+	deployment.GetDeployment().Shutdown()
+	if srv := dns_server.GetServer(); srv != nil {
+		_ = srv.Stop()
+	}
+	_ = api_gateway.GetGateway().Stop()
+	localproxy.GetLocalProxyManager().StopAll()
+	if a := php_debug_adapter.GetPHPDebugAdapter(); a != nil {
+		a.Stop()
+	}
+	ssh_server.StopServer()
 }
 
 func createAdmin() {

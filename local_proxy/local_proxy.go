@@ -67,6 +67,19 @@ func (lp *LocalProxy) StartAll() {
 	}
 }
 
+// StopAll tüm açık local proxy listener'ları kapatır (graceful shutdown için).
+func (lp *LocalProxy) StopAll() {
+	lock.Lock()
+	ports := make([]int, 0, len(lp.startedList))
+	for port := range lp.startedList {
+		ports = append(ports, port)
+	}
+	lock.Unlock()
+	for _, port := range ports {
+		lp.Stop(port)
+	}
+}
+
 func (lp *LocalProxy) Create(model Item) {
 	list := lp.GetList()
 

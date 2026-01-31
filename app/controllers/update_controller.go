@@ -10,6 +10,8 @@ import (
 	"runtime"
 	"time"
 
+	"redock/pkg/utils"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -210,19 +212,26 @@ func ApplyUpdate(c *fiber.Ctx) error {
 		})
 	}
 
-	// Start update in background
-	go func() {
-		updater := &selfupdate.Updater{
-			CurrentVersion: currentVersion,
-			BinURL:         downloadURL,
-			Dir:            "update/",
-			CmdName:        "/redock",
-		}
-
-		if err := updater.UpdateWithRestart(); err != nil {
-			log.Printf("❌ Update failed: %v", err)
-		}
-	}()
+	// Graceful shutdown tetikle; tüm portlar kapandıktan sonra self-update + restart
+	updater := &selfupdate.Updater{
+		CurrentVersion: currentVersion,
+		BinURL:         downloadURL,
+		Dir:            "update/",
+		CmdName:        "/redock",
+	}
+	if utils.RequestGracefulShutdown != nil {
+		utils.RequestGracefulShutdown(func() {
+			if err := updater.UpdateWithRestart(); err != nil {
+				log.Printf("❌ Update failed: %v", err)
+			}
+		})
+	} else {
+		go func() {
+			if err := updater.UpdateWithRestart(); err != nil {
+				log.Printf("❌ Update failed: %v", err)
+			}
+		}()
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
