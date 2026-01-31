@@ -1410,18 +1410,14 @@ onMounted(() => {
                     <div v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
                   </div>
                 </CardBox>
-                <!-- Plain gövde: "On ... wrote:" bloklarına göre her biri ayrı CardBox, açılır -->
+                <!-- Plain gövde: "On ... wrote:" bloklarına göre her biri ayrı CardBox, hep açık -->
                 <template v-else>
                   <CardBox
                     v-for="(seg, idx) in bodySegments"
                     :key="idx"
                     class="border-l-4 border-blue-500"
                   >
-                    <button
-                      type="button"
-                      class="w-full flex items-center gap-3 mb-0 text-left cursor-pointer hover:opacity-90"
-                      @click="toggleThreadCard('seg-' + idx)"
-                    >
+                    <div class="w-full flex items-center gap-3 mb-3">
                       <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
                         {{ idx === 0 ? getInitials(selectedEmail.from) : '…' }}
                       </div>
@@ -1430,14 +1426,8 @@ onMounted(() => {
                         <p v-else class="font-medium text-sm truncate text-gray-600 dark:text-gray-400">{{ seg.header }}</p>
                         <p v-if="idx === 0" class="text-xs text-gray-500">{{ formatDate(selectedEmail.date) }}</p>
                       </div>
-                      <BaseIcon
-                        :path="expandedCardKeys.has('seg-' + idx) ? mdiChevronUp : mdiChevronDown"
-                        class="shrink-0 text-gray-400"
-                        w="w-5"
-                        h="h-5"
-                      />
-                    </button>
-                    <div v-show="expandedCardKeys.has('seg-' + idx)" class="email-body-content text-sm mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                    </div>
+                    <div class="email-body-content text-sm pt-3 border-t border-gray-200 dark:border-gray-600">
                       <div v-if="seg.content" v-html="plainTextToHtml(seg.content)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
                       <p v-else class="text-gray-500 dark:text-gray-400">İçerik yok</p>
                     </div>
@@ -1450,11 +1440,7 @@ onMounted(() => {
                   :key="msg.uid"
                   class="border-l-4 border-blue-500"
                 >
-                  <button
-                    type="button"
-                    class="w-full flex items-center gap-3 mb-0 text-left cursor-pointer hover:opacity-90"
-                    @click="toggleThreadCard('msg-' + msg.uid)"
-                  >
+                  <div class="w-full flex items-center gap-3 mb-3">
                     <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center text-white text-sm font-bold shrink-0">
                       {{ getInitials(msg.from) }}
                     </div>
@@ -1462,14 +1448,8 @@ onMounted(() => {
                       <p class="font-medium text-sm truncate">{{ msg.from }}</p>
                       <p class="text-xs text-gray-500">{{ formatDate(msg.date) }}</p>
                     </div>
-                    <BaseIcon
-                      :path="expandedCardKeys.has('msg-' + msg.uid) ? mdiChevronUp : mdiChevronDown"
-                      class="shrink-0 text-gray-400"
-                      w="w-5"
-                      h="h-5"
-                    />
-                  </button>
-                  <div v-show="expandedCardKeys.has('msg-' + msg.uid)" class="email-body-content text-sm mt-3 pt-3 border-t border-gray-200 dark:border-gray-600">
+                  </div>
+                  <div class="email-body-content text-sm pt-3 border-t border-gray-200 dark:border-gray-600">
                     <div v-if="msg.body_html" v-html="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
                     <template v-else>
                       <div v-if="msg.body_plain" v-html="plainTextToHtml(msg.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
