@@ -1,8 +1,11 @@
 <script setup>
 import BaseIcon from '@/components/BaseIcon.vue'
+import CardBoxModal from '@/components/CardBoxModal.vue'
+import FormCheckRadio from '@/components/FormCheckRadio.vue'
 import menuAside from '@/menuAside.js'
 import ApiService from '@/services/ApiService'
 import { useLayoutStore } from '@/stores/layout'
+import { useMenuVisibilityStore } from '@/stores/menuVisibility'
 import { useTerminalStore } from '@/stores/terminalStore'
 import {
   mdiAccount,
@@ -11,6 +14,7 @@ import {
   mdiChevronLeft,
   mdiChevronRight,
   mdiClose,
+  mdiCog,
   mdiConsole,
   mdiContentDuplicate,
   mdiDocker,
@@ -28,9 +32,11 @@ import { useRouter } from 'vue-router'
 const router = useRouter()
 const terminalStore = useTerminalStore()
 const layoutStore = useLayoutStore()
+const menuVisibilityStore = useMenuVisibilityStore()
 
 // State
 const sidebarOpen = ref(false)
+const showMenuVisibilityModal = ref(false)
 const userMenuOpen = ref(false)
 const terminalContainerRef = ref(null)
 const activeTerminalElement = ref(null)
@@ -46,8 +52,9 @@ const userInfo = ref({ username: '-' }) // Default to '-' if API fails
 // Computed properties
 const activeTab = computed(() => terminalStore.getActiveTab)
 
-// Navigation items - imported from menuAside.js
-const navigationItems = menuAside
+const visibleMenuItems = computed(() =>
+  menuAside.filter((item) => menuVisibilityStore.isEnabled(item.path))
+)
 
 // Methods
 const toggleSidebar = () => {
@@ -539,7 +546,7 @@ onMounted(() => {
         }"
       >
         <router-link
-          v-for="item in navigationItems"
+          v-for="item in visibleMenuItems"
           :key="item.path"
           :to="item.path"
           :class="[
@@ -565,6 +572,17 @@ onMounted(() => {
       >
         <button
           :class="[
+            'w-full flex items-center text-gray-300 hover:text-white hover:bg-gray-700/50 rounded-xl transition-all duration-200 border border-gray-600/50 mb-2',
+            layoutStore.sidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5 text-sm font-medium'
+          ]"
+          title="Customize Menu"
+          @click="showMenuVisibilityModal = true"
+        >
+          <BaseIcon :path="mdiCog" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
+          <span v-show="!layoutStore.sidebarCollapsed">Customize Menu</span>
+        </button>
+        <button
+          :class="[
             'w-full flex items-center text-red-400 hover:text-white hover:bg-red-600/20 rounded-xl transition-all duration-200 border border-red-600/20',
             layoutStore.sidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5 text-sm font-medium'
           ]"
@@ -576,6 +594,37 @@ onMounted(() => {
         </button>
       </div>
     </div>
+
+    <!-- Menü görünürlük modal -->
+    <CardBoxModal
+      v-model="showMenuVisibilityModal"
+      title="Customize Menu"
+      button-label="Close"
+      :has-cancel="false"
+      :hide-buttons="false"
+      @confirm="showMenuVisibilityModal = false"
+    >
+      <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
+        Turn menu items on or off. New items are shown by default.
+      </p>
+      <div class="space-y-3 max-h-[60vh] overflow-y-auto">
+        <div
+          v-for="item in menuAside"
+          :key="item.path"
+          class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+        >
+          <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.name }}</span>
+          <FormCheckRadio
+            :name="'menu-' + item.path"
+            type="switch"
+            :model-value="menuVisibilityStore.isEnabled(item.path)"
+            :input-value="true"
+            label=""
+            @update:model-value="menuVisibilityStore.setEnabled(item.path, $event)"
+          />
+        </div>
+      </div>
+    </CardBoxModal>
 
     <!-- Main Content: masaüstünde daraltılmışken ml-16, açıkken ml-64 -->
     <div :class="layoutStore.sidebarCollapsed ? 'lg:ml-16' : 'lg:ml-64'">
