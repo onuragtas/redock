@@ -82,6 +82,10 @@ jobs:
           echo "Tagging $CURRENT_SHA with $RELEASE_TAG"
           git tag "$RELEASE_TAG" "$CURRENT_SHA"
           git push origin "$RELEASE_TAG"
+          
+          for t in $(git tag -l --points-at HEAD); do
+            case "$t" in *-beta*) git tag -d "$t" 2>/dev/null || true ;; esac
+          done
 
       - name: Build with Node.js
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
