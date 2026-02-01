@@ -16,10 +16,11 @@ const memoryMigrationsFile = "memory_migrations.json"
 
 // MemoryMigration defines a one-time migration for the memory database.
 // Migrations run in Version order; each runs at most once.
+// Up receives dataDir so migrations can read legacy JSON files (e.g. data/local_proxy.json).
 type MemoryMigration struct {
 	Version int
 	Name    string
-	Up      func(db *memory.Database) error
+	Up      func(db *memory.Database, dataDir string) error
 }
 
 // AppliedMigration records a migration that has been run (for state file).
@@ -61,7 +62,7 @@ func RunMemoryMigrations(db *memory.Database, dataDir string, migrations []Memor
 			continue
 		}
 		log.Printf("📦 Memory migration %d: %s", m.Version, m.Name)
-		if err := m.Up(db); err != nil {
+		if err := m.Up(db, dataDir); err != nil {
 			return fmt.Errorf("migration %d (%s): %w", m.Version, m.Name, err)
 		}
 		state.Applied = append(state.Applied, AppliedMigration{

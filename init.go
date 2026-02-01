@@ -143,6 +143,7 @@ func registerEntities(db *memory.Database) error {
 		{"users", func() error { return memory.Register[*models.User](db, "users") }},
 		{"saved_commands", func() error { return memory.Register[*database.SavedCommand](db, "saved_commands") }},
 		{"release_cache", func() error { return memory.Register[*cache_models.ReleaseCache](db, "release_cache") }},
+		{"local_proxy_items", func() error { return memory.Register[*localproxy.LocalProxyItem](db, "local_proxy_items") }},
 	}
 
 	for _, entity := range entities {

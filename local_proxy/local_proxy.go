@@ -1,12 +1,12 @@
 package localproxy
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	"os"
 	docker_manager "redock/docker-manager"
+	"redock/platform/database"
+	"redock/platform/memory"
 	"strconv"
 	"strings"
 	"sync"
@@ -25,6 +25,7 @@ type LocalProxy struct {
 	dockerManager *docker_manager.DockerEnvironmentManager
 }
 
+// Item is the API DTO for local proxy entries.
 type Item struct {
 	Name       string `json:"name"`
 	LocalPort  int    `json:"local_port"`
@@ -33,6 +34,19 @@ type Item struct {
 	Timeout    int    `json:"timeout"`
 	Started    bool   `json:"started"`
 }
+
+// LocalProxyItem is the in-memory entity for local proxy entries.
+type LocalProxyItem struct {
+	memory.BaseEntity
+	Name       string `json:"name"`
+	LocalPort  int    `json:"local_port"`
+	Host       string `json:"host"`
+	RemotePort int    `json:"remote_port"`
+	Timeout    int    `json:"timeout"`
+	Started    bool   `json:"started"`
+}
+
+const localProxyTable = "local_proxy_items"
 
 var localProxy *LocalProxy
 var lock = sync.Mutex{}
@@ -47,15 +61,20 @@ func GetLocalProxyManager() *LocalProxy {
 }
 
 func (lp *LocalProxy) GetList() []Item {
-	var list []Item
-	file, _ := os.ReadFile(lp.dockerManager.GetWorkDir() + "/data/local_proxy.json")
-	json.Unmarshal(file, &list)
+	db := database.GetMemoryDB()
+	entities := memory.FindAll[*LocalProxyItem](db, localProxyTable)
+	list := make([]Item, 0, len(entities))
+	for _, e := range entities {
+		list = append(list, Item{
+			Name:       e.Name,
+			LocalPort:  e.LocalPort,
+			Host:       e.Host,
+			RemotePort: e.RemotePort,
+			Timeout:    e.Timeout,
+			Started:    e.Started,
+		})
+	}
 	return list
-}
-
-func (lp *LocalProxy) SaveList(list []Item) {
-	file, _ := json.Marshal(list)
-	os.WriteFile(lp.dockerManager.GetWorkDir()+"/data/local_proxy.json", file, 0777)
 }
 
 func (lp *LocalProxy) StartAll() {
@@ -81,31 +100,36 @@ func (lp *LocalProxy) StopAll() {
 }
 
 func (lp *LocalProxy) Create(model Item) {
-	list := lp.GetList()
-
+	db := database.GetMemoryDB()
+	list := memory.FindAll[*LocalProxyItem](db, localProxyTable)
 	for _, item := range list {
 		if item.LocalPort == model.LocalPort {
 			return
 		}
 	}
-
-	list = append(list, model)
-	lp.SaveList(list)
+	entity := &LocalProxyItem{
+		Name:       model.Name,
+		LocalPort:  model.LocalPort,
+		Host:       model.Host,
+		RemotePort: model.RemotePort,
+		Timeout:    model.Timeout,
+		Started:    model.Started,
+	}
+	_ = memory.Create(db, localProxyTable, entity)
 }
 
 func (lp *LocalProxy) Delete(localPort int) {
 	if _, ok := lp.startedList[localPort]; ok {
 		lp.Stop(localPort)
 	}
-
-	list := lp.GetList()
-	for i, item := range list {
+	db := database.GetMemoryDB()
+	list := memory.FindAll[*LocalProxyItem](db, localProxyTable)
+	for _, item := range list {
 		if item.LocalPort == localPort {
-			list = append(list[:i], list[i+1:]...)
-			break
+			_ = memory.Delete[*LocalProxyItem](db, localProxyTable, item.GetID())
+			return
 		}
 	}
-	lp.SaveList(list)
 }
 
 func (lp *LocalProxy) Start(localPort int) {
@@ -175,10 +199,18 @@ func (lp *LocalProxy) start(localPort int) {
 }
 
 func (lp *LocalProxy) getProxy(localPort int) *Item {
-	list := localProxy.GetList()
-	for _, item := range list {
-		if item.LocalPort == localPort {
-			return &item
+	db := database.GetMemoryDB()
+	list := memory.FindAll[*LocalProxyItem](db, localProxyTable)
+	for _, e := range list {
+		if e.LocalPort == localPort {
+			return &Item{
+				Name:       e.Name,
+				LocalPort:  e.LocalPort,
+				Host:       e.Host,
+				RemotePort: e.RemotePort,
+				Timeout:    e.Timeout,
+				Started:    e.Started,
+			}
 		}
 	}
 	return nil
