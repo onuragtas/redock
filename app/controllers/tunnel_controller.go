@@ -9,6 +9,16 @@ import (
 	tunnel_models "github.com/onuragtas/tunnel-client/models"
 )
 
+const tunnelTokenHeader = "X-Tunnel-Token"
+
+func requireTunnelToken(c *fiber.Ctx) (string, bool) {
+	token := c.Get(tunnelTokenHeader)
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
 // UpdateDockerImages method to create a new user.
 // @Description Create a new user.
 // @Summary create a new user
@@ -21,7 +31,14 @@ import (
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func CheckUser(c *fiber.Ctx) error {
-	check := tunnel_proxy.GetTunnelProxy().CheckUser()
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
+	check := tunnel_proxy.GetTunnelProxy().CheckUser(token)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -140,6 +157,14 @@ func TunnelLogout(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func TunnelList(c *fiber.Ctx) error {
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
+
 	type DomainItem struct {
 		CreatedAt time.Time   `json:"CreatedAt"`
 		UpdatedAt time.Time   `json:"UpdatedAt"`
@@ -154,7 +179,7 @@ func TunnelList(c *fiber.Ctx) error {
 
 	var list []DomainItem
 
-	domains := tunnel_proxy.GetTunnelProxy().ListDomain()
+	domains := tunnel_proxy.GetTunnelProxy().ListDomain(token)
 	startedTunnels := tunnel_proxy.GetTunnelProxy().GetStartedList()
 
 	for _, v := range domains.Data.Domains {
@@ -197,18 +222,23 @@ func TunnelList(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func TunnelDelete(c *fiber.Ctx) error {
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
 
 	model := &tunnel_models.DomainItem{}
-	// Checking received data from JSON body.
 	if err := c.BodyParser(model); err != nil {
-		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
 
-	list := tunnel_proxy.GetTunnelProxy().DeleteDomain(strconv.Itoa(model.ID))
+	list := tunnel_proxy.GetTunnelProxy().DeleteDomain(strconv.Itoa(model.ID), token)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -229,18 +259,23 @@ func TunnelDelete(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func TunnelAdd(c *fiber.Ctx) error {
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
 
 	model := &tunnel_models.DomainItem{}
-	// Checking received data from JSON body.
 	if err := c.BodyParser(model); err != nil {
-		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
 
-	list := tunnel_proxy.GetTunnelProxy().AddDomain(model.Domain)
+	list := tunnel_proxy.GetTunnelProxy().AddDomain(model.Domain, token)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -261,10 +296,16 @@ func TunnelAdd(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func TunnelStart(c *fiber.Ctx) error {
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
+
 	model := &tunnel_models.Tunnel{}
-	// Checking received data from JSON body.
 	if err := c.BodyParser(model); err != nil {
-		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -273,7 +314,7 @@ func TunnelStart(c *fiber.Ctx) error {
 
 	list := []tunnel_models.Tunnel{*model}
 
-	tunnel_proxy.GetTunnelProxy().ListDomain()
+	tunnel_proxy.GetTunnelProxy().ListDomain(token)
 	tunnel_proxy.GetTunnelProxy().StartTunnel(list)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -295,10 +336,15 @@ func TunnelStart(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func TunnelStop(c *fiber.Ctx) error {
+	if _, ok := requireTunnelToken(c); !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
+
 	model := &tunnel_models.Tunnel{}
-	// Checking received data from JSON body.
 	if err := c.BodyParser(model); err != nil {
-		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -326,8 +372,15 @@ func TunnelStop(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func TunnelUserInfo(c *fiber.Ctx) error {
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
 
-	check := tunnel_proxy.GetTunnelProxy().UserInfo()
+	check := tunnel_proxy.GetTunnelProxy().UserInfo(token)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": !check.Success,
@@ -337,17 +390,23 @@ func TunnelUserInfo(c *fiber.Ctx) error {
 }
 
 func TunnelRenewDomain(c *fiber.Ctx) error {
+	token, ok := requireTunnelToken(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "X-Tunnel-Token required",
+		})
+	}
+
 	model := &tunnel_models.DomainItem{}
-	// Checking received data from JSON body.
 	if err := c.BodyParser(model); err != nil {
-		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
 
-	tunnel_proxy.GetTunnelProxy().RenewDomain(model.Domain)
+	tunnel_proxy.GetTunnelProxy().RenewDomain(model.Domain, token)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,

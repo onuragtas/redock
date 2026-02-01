@@ -2,13 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// EmailRoutes sets up email server routes
+// EmailRoutes sets up email server routes (JWT protected)
 func EmailRoutes(app *fiber.App) {
-	email := app.Group("/api/email")
+	email := app.Group("/api/email", middleware.JWTProtected())
 
 	// Server management
 	email.Get("/server/status", controllers.GetEmailServerStatus)

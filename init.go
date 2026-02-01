@@ -5,8 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"redock/api_gateway"
-	"redock/cloudflare"
 	"redock/app/cache_models"
+	"redock/app/models"
+	"redock/cloudflare"
 	"redock/deployment"
 	"redock/devenv"
 	"redock/dns_server"
@@ -15,6 +16,7 @@ import (
 	"redock/php_debug_adapter"
 	"redock/platform/database"
 	"redock/platform/memory"
+	"redock/platform/migrations"
 	"redock/saved_commands"
 	"redock/tunnel_proxy"
 	"redock/vpn_server"
@@ -65,6 +67,11 @@ func initialize() {
 	// Register all entity types
 	if err := registerEntities(db); err != nil {
 		log.Fatalf("Failed to register entities: %v", err)
+	}
+
+	// Run memory DB migrations (one-time data migrations)
+	if err := database.RunMemoryMigrations(db, dataDir, migrations.MemoryMigrations()); err != nil {
+		log.Fatalf("Failed to run memory migrations: %v", err)
 	}
 
 	go dockerEnvironmentManager.UpdateDocker()
@@ -133,6 +140,7 @@ func registerEntities(db *memory.Database) error {
 		{"email_server_configs", func() error { return memory.Register[*email_server.EmailServerConfig](db, "email_server_configs") }},
 		
 		// Other entities
+		{"users", func() error { return memory.Register[*models.User](db, "users") }},
 		{"saved_commands", func() error { return memory.Register[*database.SavedCommand](db, "saved_commands") }},
 		{"release_cache", func() error { return memory.Register[*cache_models.ReleaseCache](db, "release_cache") }},
 	}

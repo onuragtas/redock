@@ -3,6 +3,7 @@ package memory
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -82,9 +83,9 @@ func Register[T Entity](db *Database, tableName string) error {
 		indexType: entityType,
 	}
 
-	// Load existing data
+	// Load existing data; if format is invalid (e.g. legacy), use empty table
 	if err := table.load(db.baseDir); err != nil {
-		return fmt.Errorf("failed to load table %s: %w", tableName, err)
+		log.Printf("memory: failed to load table %s (using empty table): %v", tableName, err)
 	}
 
 	db.tables[tableName] = table

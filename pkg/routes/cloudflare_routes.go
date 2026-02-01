@@ -2,12 +2,13 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 func CloudflareRoutes(app *fiber.App) {
-	cloudflare := app.Group("/api/cloudflare")
+	cloudflare := app.Group("/api/cloudflare", middleware.JWTProtected())
 
 	// Account management
 	cloudflare.Post("/accounts", controllers.AddCloudflareAccount)

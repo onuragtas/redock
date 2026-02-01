@@ -22,17 +22,17 @@ const toast = useToast()
 const isRegisterMode = ref(false)
 const showPassword = ref(false)
 const loading = ref(false)
+const hasAnyUser = ref(true)
 
-// Login form
+// Login form (Redock: email + password)
 const loginForm = ref({
-  username: '',
+  email: '',
   password: ''
 })
 
-// Register form
+// Register form (Redock: email + password + user_role)
 const registerForm = ref({
   email: '',
-  username: '',
   password: '',
   confirmPassword: ''
 })
@@ -44,87 +44,93 @@ const togglePasswordVisibility = () => {
 
 const toggleMode = () => {
   isRegisterMode.value = !isRegisterMode.value
-  // Clear forms when switching
-  loginForm.value = { username: '', password: '' }
-  registerForm.value = { email: '', username: '', password: '', confirmPassword: '' }
+  loginForm.value = { email: '', password: '' }
+  registerForm.value = { email: '', password: '', confirmPassword: '' }
 }
 
 const handleLogin = async () => {
-  if (!loginForm.value.username.trim() || !loginForm.value.password.trim()) {
+  if (!loginForm.value.email.trim() || !loginForm.value.password.trim()) {
     toast.error('Please fill in all fields')
     return
   }
 
   loading.value = true
-  
   try {
-    const response = await ApiService.tunnelLogin(
-      loginForm.value.username, 
-      loginForm.value.password
-    )
-    
-    if (response.data.data.message) {
-      toast.error(response.data.data.message)
-    }
-    
-    if (response.data.data.token) {
+    const response = await ApiService.login(loginForm.value.email, loginForm.value.password)
+    const tokens = response.data?.tokens || response.data
+    const access = tokens?.access
+    const refresh = tokens?.refresh ?? tokens?.Refresh ?? ''
+    if (access) {
+      ApiService.setJWT(access, refresh)
       toast.success('Login successful!')
       router.push('/')
+    } else {
+      toast.error('Login failed. No token received.')
     }
   } catch (error) {
-    toast.error('Login failed. Please try again.')
+    const msg = error.response?.data?.msg || 'Login failed. Please try again.'
+    toast.error(msg)
   } finally {
     loading.value = false
   }
 }
 
 const handleRegister = async () => {
-  const { email, username, password, confirmPassword } = registerForm.value
-  
-  if (!email.trim() || !username.trim() || !password.trim() || !confirmPassword.trim()) {
+  const { email, password, confirmPassword } = registerForm.value
+  if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
     toast.error('Please fill in all fields')
     return
   }
-
   if (password !== confirmPassword) {
     toast.error('Passwords do not match')
     return
   }
-
   if (password.length < 6) {
     toast.error('Password must be at least 6 characters long')
     return
   }
 
   loading.value = true
-  
   try {
-    const response = await ApiService.tunnelRegister(email, username, password)
-    
-    if (response.data.data.message) {
-      toast.error(response.data.data.message)
-    }
-    
-    if (response.data.data.token) {
+    await ApiService.signUp(email, password, 'user')
+    const loginRes = await ApiService.login(email, password)
+    const tokens = loginRes.data?.tokens || loginRes.data
+    const access = tokens?.access
+    const refresh = tokens?.refresh ?? tokens?.Refresh ?? ''
+    if (access) {
+      ApiService.setJWT(access, refresh)
       toast.success('Registration successful!')
-      router.push('/dashboard')
+      router.push('/')
+    } else {
+      toast.success('Account created. Please sign in.')
+      hasAnyUser.value = true
+      isRegisterMode.value = false
     }
   } catch (error) {
-    toast.error('Registration failed. Please try again.')
+    const msg = error.response?.data?.msg || 'Registration failed. Please try again.'
+    toast.error(msg)
   } finally {
     loading.value = false
   }
 }
 
-// Check if already logged in
 onMounted(async () => {
   try {
-    const response = await ApiService.userInfo()
-    if (response.data.data.id > 0) {
-      router.push('/dashboard')
+    const setupRes = await ApiService.getAuthSetup()
+    hasAnyUser.value = setupRes.data?.data?.has_any_user ?? true
+  } catch (_) {
+    hasAnyUser.value = true
+  }
+  const jwt = ApiService.getJWT()
+  if (jwt) {
+    try {
+      const meRes = await ApiService.authMe()
+      if (meRes.data?.data?.id || meRes.data?.data?.email) {
+        router.push('/')
+      }
+    } catch (_) {
+      ApiService.clearJWT()
     }
-  } catch (error) {
-    // User not logged in, stay on login page
   }
 })
 </script>
@@ -170,21 +176,21 @@ onMounted(async () => {
         </div>
 
         <div class="p-6">
-          <!-- Login Form -->
-          <form v-if="!isRegisterMode" class="space-y-4" @submit.prevent="handleLogin">
-            <!-- Username -->
+          <!-- Login Form (show when not register mode, or when users exist so register is hidden) -->
+          <form v-if="!isRegisterMode || hasAnyUser" class="space-y-4" @submit.prevent="handleLogin">
+            <!-- Email -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Username</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">Email</label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <BaseIcon :path="mdiAccount" size="20" class="text-gray-400" />
                 </div>
                 <input
-                  v-model="loginForm.username"
-                  type="text"
+                  v-model="loginForm.email"
+                  type="email"
                   required
                   class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your username"
+                  placeholder="Enter your email"
                 />
               </div>
             </div>
@@ -229,7 +235,7 @@ onMounted(async () => {
             </button>
           </form>
 
-          <!-- Register Form -->
+          <!-- Register Form (only when no user exists) -->
           <form v-else class="space-y-4" @submit.prevent="handleRegister">
             <!-- Email -->
             <div>
@@ -244,23 +250,6 @@ onMounted(async () => {
                   required
                   class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
                   placeholder="Enter your email"
-                />
-              </div>
-            </div>
-
-            <!-- Username -->
-            <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Username</label>
-              <div class="relative">
-                <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <BaseIcon :path="mdiAccount" size="20" class="text-gray-400" />
-                </div>
-                <input
-                  v-model="registerForm.username"
-                  type="text"
-                  required
-                  class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Choose a username"
                 />
               </div>
             </div>
@@ -323,7 +312,7 @@ onMounted(async () => {
           </form>
 
           <!-- Toggle Mode -->
-          <div class="mt-6 pt-6 border-t border-gray-700 text-center">
+          <div v-if="!hasAnyUser" class="mt-6 pt-6 border-t border-gray-700 text-center">
             <p class="text-gray-400 mb-3">
               {{ isRegisterMode ? 'Already have an account?' : "Don't have an account?" }}
             </p>

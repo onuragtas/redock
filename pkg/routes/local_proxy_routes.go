@@ -2,14 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// TunnelRoutes func for describe group of private routes.
+// LocalProxyRoutes func for describe group of private routes (JWT protected).
 func LocalProxyRoutes(a *fiber.App) {
-	// Create routes group.
-	route := a.Group("/api/v1")
+	route := a.Group("/api/v1", middleware.JWTProtected())
 
 	route.Post("/local_proxy/create", controllers.LocalProxyCreate)
 	route.Get("/local_proxy/list", controllers.LocalProxyList)

@@ -2,13 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// DNSRoutes returns DNS server routes
+// DNSRoutes returns DNS server routes (JWT protected)
 func DNSRoutes(app *fiber.App) {
-	route := app.Group("/v1/dns")
+	route := app.Group("/v1/dns", middleware.JWTProtected())
 
 	// Config routes
 	route.Get("/config", controllers.GetDNSConfig)

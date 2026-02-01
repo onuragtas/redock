@@ -1,7 +1,7 @@
 package utils
 
 import (
-	"os"
+	"strconv"
 	"strings"
 
 	"github.com/gofiber/fiber/v2"
@@ -15,7 +15,25 @@ type TokenMetadata struct {
 	Expires     int64
 }
 
-// ExtractTokenMetadata func to extract metadata from JWT.
+// getClaimUserID extracts user ID from JWT claims (handles string, float64, int).
+func getClaimUserID(claims jwt.MapClaims) (int, bool) {
+	if id, ok := claims["id"]; ok && id != nil {
+		switch v := id.(type) {
+		case float64:
+			return int(v), true
+		case int:
+			return v, true
+		case string:
+			n, err := strconv.Atoi(v)
+			if err == nil {
+				return n, true
+			}
+		}
+	}
+	return 0, false
+}
+
+// ExtractTokenMetadata func to extract metadata from JWT (token must be valid and not expired).
 func ExtractTokenMetadata(c *fiber.Ctx) (*TokenMetadata, error) {
 	token, err := verifyToken(c)
 	if err != nil {
@@ -25,27 +43,51 @@ func ExtractTokenMetadata(c *fiber.Ctx) (*TokenMetadata, error) {
 	// Setting and checking token and credentials.
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if ok && token.Valid {
-		// User ID.
-		userID := claims["id"].(int)
+		userID, okID := getClaimUserID(claims)
+		if !okID {
+			return nil, err
+		}
 
 		// Expires time.
-		expires := int64(claims["exp"].(float64))
-
-		// User credentials.
-		credentials := map[string]bool{
-			"book:create": claims["book:create"].(bool),
-			"book:update": claims["book:update"].(bool),
-			"book:delete": claims["book:delete"].(bool),
-		}
+		exp, _ := claims["exp"].(float64)
+		expires := int64(exp)
 
 		return &TokenMetadata{
 			UserID:      userID,
-			Credentials: credentials,
+			Credentials: map[string]bool{},
 			Expires:     expires,
 		}, nil
 	}
 
 	return nil, err
+}
+
+// ExtractTokenMetadataIgnoringExpiry extracts metadata from JWT without validating expiry.
+// Used by token renew endpoint so expired access token can still provide user ID.
+func ExtractTokenMetadataIgnoringExpiry(c *fiber.Ctx) (*TokenMetadata, error) {
+	token, err := verifyToken(c)
+	if err != nil {
+		return nil, err
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, err
+	}
+
+	userID, okID := getClaimUserID(claims)
+	if !okID {
+		return nil, err
+	}
+
+	exp, _ := claims["exp"].(float64)
+	expires := int64(exp)
+
+	return &TokenMetadata{
+		UserID:      userID,
+		Credentials: map[string]bool{},
+		Expires:     expires,
+	}, nil
 }
 
 func extractToken(c *fiber.Ctx) string {
@@ -72,5 +114,5 @@ func verifyToken(c *fiber.Ctx) (*jwt.Token, error) {
 }
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
-	return []byte(os.Getenv("JWT_SECRET_KEY")), nil
+	return GetJWTSecretKey(), nil
 }

@@ -1,16 +1,47 @@
 package utils
 
 import (
-	"crypto/sha256"
+	"crypto/rand"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
+
+var (
+	jwtSecretKey   string
+	jwtRefreshSalt string
+)
+
+func init() {
+	// Restart sonrası da refresh çalışsın diye secret sabit: env'den veya rastgele.
+	if s := os.Getenv("JWT_SECRET_KEY"); s != "" {
+		jwtSecretKey = s
+	} else {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			panic("jwt: failed to generate secret: " + err.Error())
+		}
+		jwtSecretKey = hex.EncodeToString(b)
+	}
+	if s := os.Getenv("JWT_REFRESH_SALT"); s != "" {
+		jwtRefreshSalt = s
+	} else {
+		b := make([]byte, 32)
+		if _, err := rand.Read(b); err != nil {
+			panic("jwt: failed to generate refresh salt: " + err.Error())
+		}
+		jwtRefreshSalt = hex.EncodeToString(b)
+	}
+}
+
+// GetJWTSecretKey returns the in-memory JWT secret (same for sign + verify).
+func GetJWTSecretKey() []byte {
+	return []byte(jwtSecretKey)
+}
 
 // Tokens struct to describe tokens object.
 type Tokens struct {
@@ -24,14 +55,12 @@ func GenerateNewTokens(iId int, credentials []string) (*Tokens, error) {
 	// Generate JWT Access token.
 	accessToken, err := generateNewAccessToken(id, credentials)
 	if err != nil {
-		// Return token generation error.
 		return nil, err
 	}
 
-	// Generate JWT Refresh token.
-	refreshToken, err := generateNewRefreshToken()
+	// Generate JWT Refresh token (user_id + exp ile imzalı; renew sadece buna bakar).
+	refreshToken, err := generateNewRefreshToken(id)
 	if err != nil {
-		// Return token generation error.
 		return nil, err
 	}
 
@@ -42,67 +71,55 @@ func GenerateNewTokens(iId int, credentials []string) (*Tokens, error) {
 }
 
 func generateNewAccessToken(id string, credentials []string) (string, error) {
-	// Set secret key from .env file.
-	secret := os.Getenv("JWT_SECRET_KEY")
+	const accessTokenExpire = 1 * time.Minute // 1 saat
 
-	// Set expires minutes count for secret key from .env file.
-	minutesCount, _ := strconv.Atoi(os.Getenv("JWT_SECRET_KEY_EXPIRE_MINUTES_COUNT"))
-
-	// Create a new claims.
 	claims := jwt.MapClaims{}
-
-	// Set public claims:
 	claims["id"] = id
-	claims["exp"] = time.Now().Add(time.Minute * time.Duration(minutesCount)).Unix()
-	claims["book:create"] = false
-	claims["book:update"] = false
-	claims["book:delete"] = false
-
-	// Set private token credentials:
+	claims["exp"] = time.Now().Add(accessTokenExpire).Unix()
 	for _, credential := range credentials {
 		claims[credential] = true
 	}
 
-	// Create a new JWT access token with claims.
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-
-	// Generate token.
-	t, err := token.SignedString([]byte(secret))
+	t, err := token.SignedString([]byte(jwtSecretKey))
 	if err != nil {
-		// Return error, it JWT token generation failed.
 		return "", err
 	}
-
 	return t, nil
 }
 
-func generateNewRefreshToken() (string, error) {
-	// Create a new SHA256 hash.
-	hash := sha256.New()
+func generateNewRefreshToken(userID string) (string, error) {
+	const refreshTokenExpire = 24 * time.Hour // 1 gün
 
-	// Create a new now date and time string with salt.
-	refresh := os.Getenv("JWT_REFRESH_KEY") + time.Now().String()
+	claims := jwt.MapClaims{}
+	claims["id"] = userID
+	claims["exp"] = time.Now().Add(refreshTokenExpire).Unix()
 
-	// See: https://pkg.go.dev/io#Writer.Write
-	_, err := hash.Write([]byte(refresh))
-	if err != nil {
-		// Return error, it refresh token generation failed.
-		return "", err
-	}
-
-	// Set expires hours count for refresh key from .env file.
-	hoursCount, _ := strconv.Atoi(os.Getenv("JWT_REFRESH_KEY_EXPIRE_HOURS_COUNT"))
-
-	// Set expiration time.
-	expireTime := fmt.Sprint(time.Now().Add(time.Hour * time.Duration(hoursCount)).Unix())
-
-	// Create a new refresh token (sha256 string with salt + expire time).
-	t := hex.EncodeToString(hash.Sum(nil)) + "." + expireTime
-
-	return t, nil
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	return token.SignedString([]byte(jwtRefreshSalt))
 }
 
-// ParseRefreshToken func for parse second argument from refresh token.
-func ParseRefreshToken(refreshToken string) (int64, error) {
-	return strconv.ParseInt(strings.Split(refreshToken, ".")[1], 0, 64)
+// ParseRefreshToken verifies refresh token JWT (signature + exp), returns user ID.
+// Önemli olan refresh token'ın expire olmaması ve kullanıcıya bağlı olması; renew sadece buna bakar.
+func ParseRefreshToken(refreshToken string) (userID int, err error) {
+	token, err := jwt.Parse(refreshToken, func(t *jwt.Token) (interface{}, error) {
+		return []byte(jwtRefreshSalt), nil
+	})
+	if err != nil {
+		return 0, err
+	}
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok || !token.Valid {
+		return 0, fmt.Errorf("invalid refresh token")
+	}
+	id, ok := claims["id"].(string)
+	if !ok || id == "" {
+		return 0, fmt.Errorf("invalid refresh token claims")
+	}
+	var uid int
+	uid, err = strconv.Atoi(id)
+	if err != nil {
+		return 0, err
+	}
+	return uid, nil
 }

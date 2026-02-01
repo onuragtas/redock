@@ -2,15 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// DeploymentRoutes func for describe group of deployment routes.
+// DeploymentRoutes func for describe group of deployment routes (JWT protected).
 func DeploymentRoutes(a *fiber.App) {
-	// Create routes group.
-	route := a.Group("/api/v1/deployment")
-
+	route := a.Group("/api/v1/deployment", middleware.JWTProtected())
 	route.Get("/list", controllers.DeploymentList)
 	route.Post("/add", controllers.DeploymentAdd)
 	route.Post("/update", controllers.DeploymentUpdate)

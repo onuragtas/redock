@@ -7,15 +7,16 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// PrivateRoutes func for describe group of private routes.
+// PrivateRoutes func for describe group of private routes (all require JWT).
 func PrivateRoutes(a *fiber.App) {
-	// Create routes group.
-	route := a.Group("/api/v1")
+	// Create routes group with JWT protection for all private routes.
+	route := a.Group("/api/v1", middleware.JWTProtected())
 
-	// Routes for POST method:
-	//route.Post("/book", middleware.JWTProtected(), controllers.CreateBook)           // create a new book
-	route.Post("/user/sign/out", middleware.JWTProtected(), controllers.UserSignOut) // de-authorization user
-	route.Post("/token/renew", middleware.JWTProtected(), controllers.RenewTokens)   // renew Access & Refresh tokens
+	// Auth: current user from JWT
+	route.Get("/auth/me", controllers.AuthMe)
+	// User / token
+	route.Post("/user/sign/out", controllers.UserSignOut)
+	// Docker
 	route.Get("/docker/env", controllers.GetEnv)
 	route.Post("/docker/env", controllers.SetEnv)
 	route.Post("/docker/regenerate", controllers.Regenerate)

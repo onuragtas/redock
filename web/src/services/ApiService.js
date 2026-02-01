@@ -1,6 +1,10 @@
 import axios from "axios";
 import VueAxios from "vue-axios";
 
+const REDOCK_JWT_KEY = 'redock_jwt';
+const REDOCK_REFRESH_KEY = 'redock_refresh';
+const TUNNEL_TOKEN_KEY = 'tunnel_token';
+
 /**
  * @description service to call HTTP request via Axios
  */
@@ -18,26 +22,139 @@ class ApiService {
     ApiService.vueInstance.axios.defaults.headers.common["Accept"] = "application/json";
   }
 
+  static getJWT() {
+    return localStorage.getItem(REDOCK_JWT_KEY) || '';
+  }
+
+  static getRefreshToken() {
+    return localStorage.getItem(REDOCK_REFRESH_KEY) || '';
+  }
+
+  static setJWT(access, refresh = '') {
+    if (access) localStorage.setItem(REDOCK_JWT_KEY, access);
+    // refresh undefined ise mevcut refresh'e dokunma (bazı çağrılar sadece access geçebilir)
+    if (refresh !== undefined) {
+      if (refresh) localStorage.setItem(REDOCK_REFRESH_KEY, refresh);
+      else localStorage.removeItem(REDOCK_REFRESH_KEY);
+    }
+  }
+
+  static clearJWT() {
+    localStorage.removeItem(REDOCK_JWT_KEY);
+    localStorage.removeItem(REDOCK_REFRESH_KEY);
+  }
+
+  static getTunnelToken() {
+    return localStorage.getItem(TUNNEL_TOKEN_KEY) || '';
+  }
+
+  static setTunnelToken(token) {
+    if (token) localStorage.setItem(TUNNEL_TOKEN_KEY, token);
+    else localStorage.removeItem(TUNNEL_TOKEN_KEY);
+  }
+
+  static clearTunnelToken() {
+    localStorage.removeItem(TUNNEL_TOKEN_KEY);
+  }
+
   static setupInterceptors() {
+    ApiService.vueInstance.axios.interceptors.request.use((config) => {
+      const jwt = ApiService.getJWT();
+      if (jwt) {
+        config.headers.Authorization = `Bearer ${jwt}`;
+      }
+      const tunnelToken = ApiService.getTunnelToken();
+      if (tunnelToken && (config.url || '').includes('/tunnel/')) {
+        config.headers['X-Tunnel-Token'] = tunnelToken;
+      }
+      return config;
+    });
+
+    ApiService.vueInstance.axios.interceptors.response.use(
+      (response) => response,
+      async (error) => {
+        if (!error.response || error.response.status !== 401) {
+          return Promise.reject(error);
+        }
+        const isTunnelRequest = (error.config?.url || '').includes('/tunnel/');
+        // Tunnel 401 = tunnel token yok; sayfada tunnel login gösterilir, Redock login'e atma.
+        if (isTunnelRequest) {
+          return Promise.reject(error);
+        }
+        // Retry sonrası yine 401 = döngüye girme, login'e at.
+        if (error.config?._retriedAfterRefresh) {
+          ApiService.clearJWT();
+          if (!window.location.hash.includes('/login') && !window.location.pathname.includes('/login')) {
+            window.location.hash = '#/login';
+          }
+          return Promise.reject(error);
+        }
+        // Renew endpoint 401 = refresh başarısız; login'e at.
+        const isRenewRequest = (error.config?.url || '').includes('/token/renew');
+        if (isRenewRequest) {
+          ApiService.clearJWT();
+          if (!window.location.hash.includes('/login') && !window.location.pathname.includes('/login')) {
+            window.location.hash = '#/login';
+          }
+          return Promise.reject(error);
+        }
+        const refreshToken = ApiService.getRefreshToken();
+        if (!refreshToken) {
+          ApiService.clearJWT();
+          if (!window.location.hash.includes('/login') && !window.location.pathname.includes('/login')) {
+            window.location.hash = '#/login';
+          }
+          return Promise.reject(error);
+        }
+        const baseURL = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''));
+        const doRefresh = () =>
+          ApiService.vueInstance.axios
+            .post(baseURL + '/api/v1/token/renew', { refresh_token: refreshToken }, { _isRenewRequest: true })
+            .then((res) => {
+              const data = res.data;
+              if (data?.tokens?.access) {
+                return { access: data.tokens.access, refresh: data.tokens.refresh || '' };
+              }
+              throw new Error('Renew failed');
+            });
+        // Aynı anda gelen tüm 401'ler tek bir refresh'i bekler; refresh bitince hepsi yeni token ile retry edilir.
+        if (!ApiService._refreshingPromise) {
+          ApiService._refreshingPromise = doRefresh().catch((e) => {
+            ApiService._refreshingPromise = null;
+            ApiService.clearJWT();
+            if (!window.location.hash.includes('/login') && !window.location.pathname.includes('/login')) {
+              window.location.hash = '#/login';
+            }
+            throw e;
+          });
+        }
+        const retryPromise = ApiService._refreshingPromise.then((tokens) => {
+          ApiService.setJWT(tokens.access, tokens.refresh);
+          error.config.headers = error.config.headers || {};
+          error.config.headers.Authorization = 'Bearer ' + tokens.access;
+          error.config._retriedAfterRefresh = true;
+          return ApiService.vueInstance.axios.request(error.config);
+        });
+        // Bu isteğin retry'ı bittikten sonra _refreshingPromise'ı sıfırla; böylece sonraki 401'ler yeni refresh tetikler.
+        return retryPromise
+          .catch(() => Promise.reject(error))
+          .finally(() => {
+            ApiService._refreshingPromise = null;
+          });
+      }
+    );
+
     ApiService.vueInstance.axios.interceptors.request.use(async (config) => {
       if (config.skipPrecheck) return config;
-      
-      // Login sayfasındaysa authentication kontrolü yapma
       if (window.location.hash.includes('/login') || window.location.pathname.includes('/login')) {
         return config;
       }
-      
-      try {
-        const resource = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''));
-        const response = await ApiService.vueInstance.axios.get(resource + '/api/v1/tunnel/user_info', { skipPrecheck: true });
-        if (response.data.data.id > 0) {
-          return config;
-        } else {
-          window.location.hash = '#/login';
-        }
-      } catch (e) {
+      const jwt = ApiService.getJWT();
+      if (!jwt) {
         window.location.hash = '#/login';
+        return config;
       }
+      return config;
     });
   }
 
@@ -73,8 +190,16 @@ class ApiService {
     return ApiService.vueInstance.axios.delete(url, ApiService.mergeOptions(options, skipPrecheck));
   }
 
+  static async getAuthSetup() {
+    return await this.get('/api/v1/auth/setup', { skipPrecheck: true });
+  }
+
+  static async authMe() {
+    return await this.get('/api/v1/auth/me', { skipPrecheck: true });
+  }
+
   static async userInfo() {
-    return await this.get('/api/v1/tunnel/user_info', { skipPrecheck: true });
+    return await this.authMe();
   }
 
   static async getAllSavedCommands() {
@@ -97,12 +222,18 @@ class ApiService {
     return await this.delete(`/api/v1/saved_commands/${id}`);
   }
 
-  static async login(login, pass) {
-    const parameters = {
-      email: login,
-      password: pass
-    };
-    return await this.post('/api/v1/user/sign/in', parameters);
+  static async login(email, password) {
+    const parameters = { email, password };
+    return await this.post('/api/v1/user/sign/in', parameters, { skipPrecheck: true });
+  }
+
+  static async signUp(email, password, userRole = 'user') {
+    return await this.post('/api/v1/user/sign/up', { email, password, user_role: userRole }, { skipPrecheck: true });
+  }
+
+  static logout() {
+    ApiService.clearJWT();
+    // Tunnel token'ı Redock logout'ta silmiyoruz; kullanıcı tekrar giriş yapsa tunnel tarafı değişmez.
   }
 
   static async getEnv() {
