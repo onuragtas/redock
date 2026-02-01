@@ -322,11 +322,6 @@ func (t *Table) load(baseDir string) error {
 	}
 
 	var wrapper struct {
-		Meta struct {
-			Version        int       `json:"version"`
-			LastMigration  string    `json:"last_migration"`
-			MigratedAt     time.Time `json:"migrated_at"`
-		} `json:"_meta"`
 		Data []json.RawMessage `json:"data"`
 	}
 
@@ -390,21 +385,9 @@ func (t *Table) save(baseDir string) error {
 		entities = append(entities, entity)
 	}
 
-	// Wrap with metadata
 	wrapper := struct {
-		Meta struct {
-			Version       int       `json:"version"`
-			LastMigration string    `json:"last_migration"`
-			UpdatedAt     time.Time `json:"updated_at"`
-		} `json:"_meta"`
 		Data []interface{} `json:"data"`
-	}{
-		Data: entities,
-	}
-
-	wrapper.Meta.Version = 5
-	wrapper.Meta.LastMigration = "005_vpn_server"
-	wrapper.Meta.UpdatedAt = time.Now()
+	}{Data: entities}
 
 	// Marshal with indentation
 	jsonData, err := json.MarshalIndent(wrapper, "", "  ")
