@@ -184,7 +184,9 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
     // WebSocket connection with auto-reconnect
     const connectWebSocket = () => {
       let wsUrl = window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''))
-      wsUrl = 'ws://' + wsUrl + '/ws/' + tab.containerId
+      wsUrl = 'ws://' + wsUrl + '/ws/' + (tab.containerId || '')
+      const token = ApiService.getJWT()
+      if (token) wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token)
 
       const socket = new WebSocket(wsUrl)
 
