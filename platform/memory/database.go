@@ -118,6 +118,30 @@ func Create[T Entity](db *Database, tableName string, entity T) error {
 	return nil
 }
 
+// CreatePreserveTimestamps inserts a new entity with auto-increment ID but does not overwrite CreatedAt/UpdatedAt.
+// Used by migrations that import existing data (e.g. JSONL) where timestamps must be preserved.
+func CreatePreserveTimestamps[T Entity](db *Database, tableName string, entity T) error {
+	db.mutex.RLock()
+	table, exists := db.tables[tableName]
+	db.mutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("table %s not found", tableName)
+	}
+
+	table.mutex.Lock()
+	defer table.mutex.Unlock()
+
+	id := atomic.AddUint32(&table.nextID, 1)
+	entity.SetID(uint(id))
+	// Do not call SetTimestamps — entity keeps existing CreatedAt/UpdatedAt
+
+	table.data[uint(id)] = entity
+	table.dirty = true
+
+	return nil
+}
+
 // Update updates an existing entity
 func Update[T Entity](db *Database, tableName string, entity T) error {
 	db.mutex.RLock()

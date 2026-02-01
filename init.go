@@ -109,6 +109,7 @@ func registerEntities(db *memory.Database) error {
 		{"dns_client_settings", func() error { return memory.Register[*dns_server.DNSClientSettings](db, "dns_client_settings") }},
 		{"dns_client_rules", func() error { return memory.Register[*dns_server.DNSClientDomainRule](db, "dns_client_rules") }},
 		{"dns_rewrites", func() error { return memory.Register[*dns_server.DNSRewrite](db, "dns_rewrites") }},
+		{"dns_query_logs", func() error { return memory.Register[*dns_server.DNSQueryLog](db, "dns_query_logs") }},
 		
 		// VPN entities
 		{"vpn_servers", func() error { return memory.Register[*vpn_server.VPNServer](db, "vpn_servers") }},

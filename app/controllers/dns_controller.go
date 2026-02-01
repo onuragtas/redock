@@ -593,35 +593,10 @@ func GetDNSQueryLogs(c *fiber.Ctx) error {
 		limit = 50
 	}
 
-	// Read logs from JSONL files (last 24 hours)
-	logs := []dns_server.DNSQueryLog{}
+	// Read logs from memory DB (last 24h, already sorted newest first)
 	since := time.Now().Add(-24 * time.Hour)
-	
-	logWriter := server.GetLogWriter()
-	if logWriter == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Log writer not initialized",
-		})
-	}
-	
-	err := logWriter.ReadLogs(since, func(log dns_server.DNSQueryLog) error {
-		logs = append(logs, log)
-		return nil
-	})
-	
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to read logs: " + err.Error(),
-		})
-	}
-	
-	// Sort by time descending (newest first)
-	sort.Slice(logs, func(i, j int) bool {
-		return logs[i].CreatedAt.After(logs[j].CreatedAt)
-	})
-	
+	logs := server.GetLogsFromMemory(since)
+
 	// Pagination
 	total := len(logs)
 	start := (page - 1) * limit
@@ -817,26 +792,17 @@ func GetDNSClientSettings(c *fiber.Ctx) error {
 		IsBanned     bool      `json:"is_banned"`
 	}
 
-	// Aggregate client stats from JSONL files (last 24 hours)
+	// Aggregate client stats from memory DB (last 24 hours)
 	clientMap := make(map[string]*ClientStats)
 	since := time.Now().Add(-24 * time.Hour)
-	
-	logWriter := server.GetLogWriter()
-	if logWriter == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Log writer not initialized",
-		})
-	}
-	
-	err := logWriter.ReadLogs(since, func(log dns_server.DNSQueryLog) error {
+	logs := server.GetLogsFromMemory(since)
+	for _, log := range logs {
 		if _, exists := clientMap[log.ClientIP]; !exists {
 			clientMap[log.ClientIP] = &ClientStats{
 				IP:       log.ClientIP,
 				LastSeen: log.CreatedAt,
 			}
 		}
-		
 		stats := clientMap[log.ClientIP]
 		stats.QueryCount++
 		if log.Blocked {
@@ -845,17 +811,8 @@ func GetDNSClientSettings(c *fiber.Ctx) error {
 		if log.CreatedAt.After(stats.LastSeen) {
 			stats.LastSeen = log.CreatedAt
 		}
-		
-		return nil
-	})
-	
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to read logs: " + err.Error(),
-		})
 	}
-	
+
 	// Convert map to slice
 	var clients []ClientStats
 	for _, stats := range clientMap {

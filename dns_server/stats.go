@@ -8,10 +8,9 @@ import (
 	"time"
 )
 
-// StatsCollector collects DNS statistics (in-memory + JSONL)
+// StatsCollector collects DNS statistics (in-memory + memory DB)
 type StatsCollector struct {
-	db        *memory.Database
-	logWriter *DNSLogWriter
+	db *memory.Database
 
 	// In-memory counters (lock-free) - reset on restart
 	totalQueries      int64
@@ -46,14 +45,23 @@ func NewStatsCollector(db *memory.Database) *StatsCollector {
 	}
 }
 
-// SetLogWriter sets the log writer for reading historical data
-func (s *StatsCollector) SetLogWriter(lw *DNSLogWriter) {
-	s.logWriter = lw
+// readLogsFromMemory reads logs from memory DB with CreatedAt >= since and calls fn for each.
+func (s *StatsCollector) readLogsFromMemory(since time.Time, fn func(DNSQueryLog) error) error {
+	all := memory.FindAll[*DNSQueryLog](s.db, "dns_query_logs")
+	for _, l := range all {
+		if l.CreatedAt.Before(since) {
+			continue
+		}
+		if err := fn(*l); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// UpdateDailyStats aggregates daily statistics from JSONL logs
+// UpdateDailyStats aggregates daily statistics from memory DB logs
 func (s *StatsCollector) UpdateDailyStats() {
-	if s.logWriter == nil {
+	if s.db == nil {
 		return
 	}
 
@@ -97,9 +105,8 @@ func (s *StatsCollector) aggregateDayStats(date time.Time) *DailyStats {
 		TopClients:  make(map[string]int64),
 	}
 
-	// Read logs for this day
-	err := s.logWriter.ReadLogs(startOfDay, func(log DNSQueryLog) error {
-		// Only process logs from this specific day
+	// Read logs for this day from memory DB
+	err := s.readLogsFromMemory(startOfDay, func(log DNSQueryLog) error {
 		if log.CreatedAt.Before(startOfDay) || log.CreatedAt.After(endOfDay) {
 			return nil
 		}
@@ -204,25 +211,21 @@ func (s *StatsCollector) GetRealtimeStats() RealtimeStats {
 	}
 }
 
-// calculateActiveClients counts unique clients from last hour (JSONL or in-memory)
+// calculateActiveClients counts unique clients from last hour (from memory DB)
 func (s *StatsCollector) calculateActiveClients() int64 {
-	if s.logWriter == nil {
-		// Fallback: use in-memory tracking
+	if s.db == nil {
 		s.topDomainsMutex.RLock()
 		count := int64(len(s.topClients))
 		s.topDomainsMutex.RUnlock()
 		return count
 	}
 
-	// Count unique clients from last hour (from JSONL)
 	uniqueClients := make(map[string]bool)
 	since := time.Now().Add(-1 * time.Hour)
-
-	_ = s.logWriter.ReadLogs(since, func(log DNSQueryLog) error {
+	_ = s.readLogsFromMemory(since, func(log DNSQueryLog) error {
 		uniqueClients[log.ClientIP] = true
 		return nil
 	})
-
 	return int64(len(uniqueClients))
 }
 
@@ -347,18 +350,16 @@ func (s *StatsCollector) GetLast30Days() []*DailyStats {
 	return s.GetDailyStatsRange(monthAgo, now)
 }
 
-// GetQueryHistory returns query history (hourly aggregation from JSONL)
+// GetQueryHistory returns query history (hourly aggregation from memory DB)
 func (s *StatsCollector) GetQueryHistory(hours int) []QueryHistoryPoint {
-	if s.logWriter == nil || hours <= 0 {
+	if s.db == nil || hours <= 0 {
 		return []QueryHistoryPoint{}
 	}
 
 	since := time.Now().Add(-time.Duration(hours) * time.Hour)
-
-	// Aggregate by hour
 	hourlyStats := make(map[string]*QueryHistoryPoint)
 
-	err := s.logWriter.ReadLogs(since, func(log DNSQueryLog) error {
+	err := s.readLogsFromMemory(since, func(log DNSQueryLog) error {
 		// Truncate to hour
 		hourKey := log.CreatedAt.Truncate(time.Hour).Format(time.RFC3339)
 
