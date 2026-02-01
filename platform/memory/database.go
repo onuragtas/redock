@@ -386,8 +386,14 @@ func (t *Table) save(baseDir string) error {
 	}
 
 	wrapper := struct {
+		Meta struct {
+			UpdatedAt time.Time `json:"updated_at"`
+		} `json:"_meta"`
 		Data []interface{} `json:"data"`
-	}{Data: entities}
+	}{
+		Data: entities,
+	}
+	wrapper.Meta.UpdatedAt = time.Now()
 
 	// Marshal with indentation
 	jsonData, err := json.MarshalIndent(wrapper, "", "  ")
