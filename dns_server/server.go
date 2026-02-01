@@ -198,6 +198,13 @@ func (s *DNSServer) Start() error {
 		return fmt.Errorf("DNS server is disabled in configuration")
 	}
 
+	// Recreate context and log channel if we were stopped previously (Stop() sets logChannel to nil)
+	if s.logChannel == nil {
+		s.ctx, s.cancel = context.WithCancel(context.Background())
+		s.logChannel = make(chan DNSQueryLog, 1000)
+		go s.logWriter()
+	}
+
 	// Start UDP server
 	if err := s.startUDPServer(); err != nil {
 		return fmt.Errorf("failed to start UDP server: %w", err)
@@ -231,7 +238,7 @@ func (s *DNSServer) Start() error {
 	return nil
 }
 
-// Stop stops all DNS servers
+// Stop stops all DNS servers. Safe to call multiple times (idempotent).
 func (s *DNSServer) Stop() error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
@@ -243,8 +250,11 @@ func (s *DNSServer) Stop() error {
 	// Cancel context to stop log writer goroutine (it will flush remaining logs)
 	s.cancel()
 
-	// Close channel to drain remaining logs (logWriter will process them before exiting)
-	close(s.logChannel)
+	// Close channel only once (avoid "close of closed channel" when Stop is called concurrently or twice)
+	if s.logChannel != nil {
+		close(s.logChannel)
+		s.logChannel = nil
+	}
 
 	s.stopUDPServer()
 	s.stopTCPServer()
@@ -486,8 +496,10 @@ func (s *DNSServer) logQuery(clientIP, domain, qtype string, response *dns.Msg, 
 		Cached:       cached,
 	}
 
-	// Non-blocking send to channel (drop if channel full to avoid DNS slowdown)
+	// Non-blocking send to channel (drop if channel full or server stopping)
 	select {
+	case <-s.ctx.Done():
+		// Server stopping, skip log to avoid send on closed channel
 	case s.logChannel <- logEntry:
 		// Log sent successfully
 	default:
