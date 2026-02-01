@@ -241,9 +241,9 @@ onMounted(() => {
               <!-- Description -->
               <div
                 v-if="update.description"
-                class="mt-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg text-sm text-gray-700 dark:text-gray-300 max-h-32 overflow-y-auto"
+                class="mt-3 p-3 bg-gray-50 dark:bg-gray-900/50 rounded-lg text-sm text-gray-700 dark:text-gray-300 max-h-32 overflow-y-auto whitespace-pre-wrap"
               >
-                <div class="prose dark:prose-invert max-w-none text-sm" v-html="update.description"></div>
+                {{ update.description }}
               </div>
             </div>
 
