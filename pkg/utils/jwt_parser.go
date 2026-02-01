@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"strconv"
 	"strings"
 
@@ -115,4 +116,20 @@ func verifyToken(c *fiber.Ctx) (*jwt.Token, error) {
 
 func jwtKeyFunc(token *jwt.Token) (interface{}, error) {
 	return GetJWTSecretKey(), nil
+}
+
+// VerifyAccessTokenString parses and validates an access token string (e.g. from query param).
+// Returns the JWT and nil if valid and not expired; otherwise error.
+func VerifyAccessTokenString(tokenString string) (*jwt.Token, error) {
+	if tokenString == "" {
+		return nil, fmt.Errorf("empty token")
+	}
+	token, err := jwt.Parse(tokenString, jwtKeyFunc)
+	if err != nil {
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, fmt.Errorf("invalid token")
+	}
+	return token, nil
 }

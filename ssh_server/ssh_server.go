@@ -95,7 +95,7 @@ func (t *SSHClient) Start() {
 
 	config.AddHostKey(private)
 
-	listener, err := net.Listen("tcp4", "0.0.0.0:2222")
+	listener, err := net.Listen("tcp4", "127.0.0.1:2222")
 	if err != nil {
 		log.Fatalf("Failed to listen on 2222 (%s)", err)
 	}
@@ -104,7 +104,7 @@ func (t *SSHClient) Start() {
 	t.listener = listener
 	t.mu.Unlock()
 
-	log.Print("Listening on 2222...")
+	log.Print("Listening on 127.0.0.1:2222 (localhost only, WebSocket bridge only)")
 	for {
 		tcpConn, err := listener.Accept()
 		if err != nil {
