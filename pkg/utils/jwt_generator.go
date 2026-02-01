@@ -71,7 +71,7 @@ func GenerateNewTokens(iId int, credentials []string) (*Tokens, error) {
 }
 
 func generateNewAccessToken(id string, credentials []string) (string, error) {
-	const accessTokenExpire = 1 * time.Minute // 1 saat
+	const accessTokenExpire = 60 * time.Minute // 1 saat
 
 	claims := jwt.MapClaims{}
 	claims["id"] = id
