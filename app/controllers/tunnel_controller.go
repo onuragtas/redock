@@ -551,7 +551,6 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 		domainUserID = 0
 	}
 	type Body struct {
-		Domain   string `json:"domain"`   // subdomain
 		Protocol string `json:"protocol"` // optional; default "all" (HTTP+HTTPS+TCP+UDP)
 	}
 	var body Body
@@ -561,13 +560,6 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	subdomain := strings.TrimSpace(body.Domain)
-	if subdomain == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   "domain required",
-		})
-	}
 	cfg := tunnel_server.GetConfig()
 	if cfg == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -575,10 +567,11 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 			"msg":   "tunnel server config not loaded",
 		})
 	}
-	if tunnel_server.FindDomainBySubdomain(subdomain) != nil {
-		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+	subdomain, err := tunnel_server.GenerateRandomSubdomain()
+	if err != nil || subdomain == "" {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   "domain already exists",
+			"msg":   "could not generate unique subdomain: " + err.Error(),
 		})
 	}
 	port, err := tunnel_server.NextPortForDomain()
@@ -797,11 +790,10 @@ func TunnelProxyDomainsList(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"error": out.Error, "data": out.Data})
 }
 
-// TunnelProxyDomainCreate: internal proxy POST /tunnel/domains (body: server_id, domain, protocol)
+// TunnelProxyDomainCreate: internal proxy POST /tunnel/domains (body: server_id, protocol). Subdomain is generated on the tunnel server.
 func TunnelProxyDomainCreate(c *fiber.Ctx) error {
 	var body struct {
 		ServerID uint   `json:"server_id"`
-		Domain   string `json:"domain"`
 		Protocol string `json:"protocol"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -810,10 +802,11 @@ func TunnelProxyDomainCreate(c *fiber.Ctx) error {
 	if body.ServerID == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "server_id required"})
 	}
-	payload := fiber.Map{"domain": body.Domain, "protocol": body.Protocol}
-	if body.Protocol == "" {
-		payload["protocol"] = "http"
+	protocol := body.Protocol
+	if protocol == "" {
+		protocol = "all"
 	}
+	payload := fiber.Map{"protocol": protocol}
 	raw, _ := json.Marshal(payload)
 	return proxyHandler(c, body.ServerID, http.MethodPost, "/api/v1/tunnel/domains", raw)
 }

@@ -473,8 +473,9 @@ class ApiService {
   }
 
   static async tunnelDomainCreate(data, serverId) {
-    if (serverId) return this.post('/api/v1/tunnel/client/proxy/domains', { server_id: serverId, domain: data?.domain, protocol: data?.protocol });
-    return this.post('/api/v1/tunnel/domains', data);
+    const payload = { protocol: data?.protocol || 'all' };
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/domains', { server_id: serverId, ...payload });
+    return this.post('/api/v1/tunnel/domains', payload);
   }
 
   static async tunnelDomainDelete(id, serverId) {

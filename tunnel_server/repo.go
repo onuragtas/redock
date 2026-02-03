@@ -1,6 +1,9 @@
 package tunnel_server
 
 import (
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
 	"redock/platform/database"
 	"redock/platform/memory"
 	"strings"
@@ -56,6 +59,23 @@ func FindDomainBySubdomain(subdomain string) *TunnelDomain {
 		}
 	}
 	return nil
+}
+
+// GenerateRandomSubdomain returns a random subdomain (e.g. "a1b2c3d4") that does not already exist. Max 20 attempts.
+func GenerateRandomSubdomain() (string, error) {
+	const length = 8
+	const maxAttempts = 20
+	b := make([]byte, length/2)
+	for i := 0; i < maxAttempts; i++ {
+		if _, err := rand.Read(b); err != nil {
+			return "", err
+		}
+		sub := hex.EncodeToString(b)
+		if FindDomainBySubdomain(sub) == nil {
+			return sub, nil
+		}
+	}
+	return "", fmt.Errorf("could not generate unique subdomain after %d attempts", maxAttempts)
 }
 
 // FindDomainByFullDomain finds a domain by full domain (e.g. myapp.example.com).
