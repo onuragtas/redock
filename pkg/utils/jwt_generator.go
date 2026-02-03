@@ -32,8 +32,6 @@ func init() {
 
 // GetJWTSecretKey returns the in-memory JWT secret (same for sign + verify).
 func GetJWTSecretKey() []byte {
-	log.Println("jwtSecretKey", jwtSecretKey)
-	log.Println("jwtRefreshSalt", jwtRefreshSalt)
 	return []byte(jwtSecretKey)
 }
 
