@@ -526,14 +526,34 @@ func (g *Gateway) startLocked() error {
 	}()
 
 	// Start HTTPS if enabled. Use GetCertificate so renewed certs are picked up without restart.
-	if g.config.HTTPSEnabled && g.config.TLSCertFile != "" && g.config.TLSKeyFile != "" {
+	// Prefer per-domain cert (data/certs/<domain>.crt) when client SNI matches SingleDomainCertDomains.
+	hasMainCert := g.config.TLSCertFile != "" && g.config.TLSKeyFile != ""
+	hasSingleCerts := g.config.LetsEncrypt != nil && len(g.config.LetsEncrypt.SingleDomainCertDomains) > 0
+	if g.config.HTTPSEnabled && (hasMainCert || hasSingleCerts) {
 		g.tlsConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				sni := hello.ServerName
 				g.mu.RLock()
+				var singleDomains []string
+				if g.config.LetsEncrypt != nil {
+					singleDomains = g.config.LetsEncrypt.SingleDomainCertDomains
+				}
 				certFile := g.config.TLSCertFile
 				keyFile := g.config.TLSKeyFile
+				workDir := g.workDir
 				g.mu.RUnlock()
+				for _, d := range singleDomains {
+					if d == sni {
+						certPath := filepath.Join(workDir, "data", "certs", SanitizeDomainForCertFile(sni)+".crt")
+						keyPath := filepath.Join(workDir, "data", "certs", SanitizeDomainForCertFile(sni)+".key")
+						cert, err := tls.LoadX509KeyPair(certPath, keyPath)
+						if err != nil {
+							return nil, err
+						}
+						return &cert, nil
+					}
+				}
 				if certFile == "" || keyFile == "" {
 					return nil, fmt.Errorf("TLS cert/key not configured")
 				}
