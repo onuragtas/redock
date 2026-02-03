@@ -1,11 +1,10 @@
 package controllers
 
 import (
-	"time"
-
 	"redock/app/models"
 	"redock/pkg/utils"
 	"redock/platform/database"
+	"redock/platform/memory"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -46,13 +45,11 @@ func UserSignUp(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
+	db := database.GetMemoryDB()
+	if db == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "database not initialized",
 		})
 	}
 
@@ -68,9 +65,6 @@ func UserSignUp(c *fiber.Ctx) error {
 
 	// Create a new user struct.
 	user := &models.User{}
-
-	// Set initialized default data for user:
-	user.CreatedAt = time.Now()
 	user.Email = signUp.Email
 	user.PasswordHash = utils.GeneratePassword(signUp.Password)
 	user.UserStatus = 1 // 0 == blocked, 1 == active
@@ -86,7 +80,7 @@ func UserSignUp(c *fiber.Ctx) error {
 	}
 
 	// Create a new user with validated data.
-	if err := db.CreateUser(user); err != nil {
+	if err := memory.Create(db, "users", user); err != nil {
 		// Return status 500 and create user process error.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -94,14 +88,14 @@ func UserSignUp(c *fiber.Ctx) error {
 		})
 	}
 
-	// Delete password hash field from JSON view.
-	user.PasswordHash = ""
+	responseUser := *user
+	responseUser.PasswordHash = ""
 
 	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"user":  user,
+		"user":  responseUser,
 	})
 }
 
@@ -128,25 +122,23 @@ func UserSignIn(c *fiber.Ctx) error {
 		})
 	}
 
-	// Create database connection.
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		// Return status 500 and database connection error.
+	db := database.GetMemoryDB()
+	if db == nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "database not initialized",
 		})
 	}
 
 	// Get user by email.
-	foundedUser, err := db.GetUserByEmail(signIn.Email)
-	if err != nil {
-		// Return, if user not found.
+	users := memory.Where[*models.User](db, "users", "Email", signIn.Email)
+	if len(users) == 0 {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "user with the given email is not found",
 		})
 	}
+	foundedUser := *users[0]
 
 	// Compare given user password with stored in found user.
 	compareUserPassword := utils.ComparePasswords(foundedUser.PasswordHash, signIn.Password)
@@ -169,7 +161,7 @@ func UserSignIn(c *fiber.Ctx) error {
 	}
 
 	// Generate a new pair of access and refresh tokens.
-	tokens, err := utils.GenerateNewTokens(foundedUser.ID, credentials)
+	tokens, err := utils.GenerateNewTokens(int(foundedUser.ID), credentials)
 	if err != nil {
 		// Return status 500 and token generation error.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
@@ -199,8 +191,70 @@ func UserSignIn(c *fiber.Ctx) error {
 // @Security ApiKeyAuth
 // @Router /v1/user/sign/out [post]
 func UserSignOut(c *fiber.Ctx) error {
-	// Get claims from JWT.
-
 	// Return status 204 no content.
 	return c.SendStatus(fiber.StatusNoContent)
+}
+
+// AuthSetup returns whether any user exists (for register visibility on login page).
+// @Description Returns has_any_user for login page register visibility.
+// @Summary auth setup - has any user
+// @Tags Auth
+// @Produce json
+// @Success 200 {object} map[string]interface{}
+// @Router /v1/auth/setup [get]
+func AuthSetup(c *fiber.Ctx) error {
+	db := database.GetMemoryDB()
+	if db == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "database not initialized",
+		})
+	}
+	hasAnyUser := len(memory.FindAll[*models.User](db, "users")) > 0
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data": fiber.Map{
+			"has_any_user": hasAnyUser,
+		},
+	})
+}
+
+// AuthMe returns the current user from JWT (for "girişli mi?" check).
+// @Description Returns current user from JWT.
+// @Summary auth me - current user
+// @Tags Auth
+// @Security ApiKeyAuth
+// @Produce json
+// @Success 200 {object} models.User
+// @Router /v1/auth/me [get]
+func AuthMe(c *fiber.Ctx) error {
+	claims, err := utils.ExtractTokenMetadata(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	db := database.GetMemoryDB()
+	if db == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "database not initialized",
+		})
+	}
+	userPtr, err := memory.FindByID[*models.User](db, "users", uint(claims.UserID))
+	if err != nil || userPtr == nil || userPtr.Email == "" {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "user not found",
+		})
+	}
+	user := *userPtr
+	user.PasswordHash = ""
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  user,
+	})
 }

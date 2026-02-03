@@ -20,7 +20,7 @@ require (
 	github.com/kr/binarydist v0.1.0
 	github.com/miekg/dns v1.1.62
 	github.com/onuragtas/command v1.0.22
-	github.com/onuragtas/tunnel-client v1.0.57
+	github.com/onuragtas/tunnel-client v1.0.59
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.11.1

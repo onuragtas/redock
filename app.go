@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"embed"
-	"errors"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,16 +11,13 @@ import (
 	"os"
 	"redock/api_gateway"
 	"redock/app/controllers"
-	"redock/app/models"
 	"redock/deployment"
 	"redock/dns_server"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
-	"redock/platform/database"
 	"redock/ssh_server"
 	"runtime/debug"
 	"strings"
-	"time"
 
 	"redock/pkg/configs"
 	"redock/pkg/middleware"
@@ -82,14 +78,26 @@ func app() {
 	// Define a new Fiber app with config.
 	app := fiber.New(config)
 
-	createAdmin()
-
 	// Middlewares.
 	middleware.FiberMiddleware(app) // Register Fiber's middleware for app.
 
-	// Access file "image.png" under `assets/` directory via URL: `http://<server>/assets/image.png`.
-	// Without `PathPrefix`, you have to access it via URL:
-	// `http://<server>/assets/assets/image.png`.
+	// API routes first so /api/v1/* is not 404 from static filesystem.
+	routes.PublicRoutes(app)
+	routes.PrivateRoutes(app)
+	routes.TunnelRoutes(app)
+	routes.LocalProxyRoutes(app)
+	routes.PHPXDebugAdapterRoutes(app)
+	routes.SavedCommandRoutes(app)
+	routes.WebSocketRoutes(app)
+	routes.DeploymentRoutes(app)
+	routes.UsageRoutes(app)
+	routes.APIGatewayRoutes(app)
+	routes.DNSRoutes(app)
+	routes.SetupVPNRoutes(app)
+	routes.CloudflareRoutes(app)
+	routes.EmailRoutes(app)
+	routes.UpdateRoutes(app)
+	// Static SPA after routes.
 	app.Use("/", filesystem.New(filesystem.Config{
 		Root:       http.FS(embedDirStatic),
 		PathPrefix: "web/dist",
@@ -107,22 +115,6 @@ func app() {
 
 	go ssh_server.NewSSHClient().Start()
 
-	// Routes.
-	routes.PublicRoutes(app)           // Register a public routes for app.
-	routes.PrivateRoutes(app)          // Register a private routes for app.
-	routes.TunnelRoutes(app)           // Register a tunnel routes for app.
-	routes.LocalProxyRoutes(app)       // Register a local proxy routes for app.
-	routes.PHPXDebugAdapterRoutes(app) // Register a local proxy routes for app.
-	routes.SavedCommandRoutes(app)     // Register a local proxy routes for app.
-	routes.WebSocketRoutes(app)        // Register a websocket routes for app.
-	routes.DeploymentRoutes(app)       // Register a deployment routes for app.
-	routes.UsageRoutes(app)            // Register a usage routes for app.
-	routes.APIGatewayRoutes(app)       // Register API Gateway routes for app.
-	routes.DNSRoutes(app)              // Register DNS Server routes for app.
-	routes.SetupVPNRoutes(app)         // Register VPN Server routes for app.
-	routes.CloudflareRoutes(app)       // Register Cloudflare routes for app.
-	routes.EmailRoutes(app)            // Register Email Server routes for app.
-
 	// Shutdown callback: tüm portları kapatan stop fonksiyonları + DB flush
 	utils.ShutdownCallback = func() {
 		stopAllServers()
@@ -130,7 +122,6 @@ func app() {
 			_ = globalDB.Close()
 		}
 	}
-	routes.UpdateRoutes(app) // Register Update routes for app.
 
 	// Start server (with or without graceful shutdown).
 	log.Println("Server is running on http://" + os.Getenv("REDOCK_HOST") + ":" + os.Getenv("REDOCK_PORT"))
@@ -149,35 +140,6 @@ func stopAllServers() {
 		a.Stop()
 	}
 	ssh_server.StopServer()
-}
-
-func createAdmin() {
-	db, err := database.OpenDBConnection()
-	if err != nil {
-		log.Fatalln(errors.New("database connection error"))
-	}
-
-	findUser, err := db.UserQueries.GetUserByEmail("admin")
-
-	if findUser.Email != "" {
-		return
-	}
-
-	// Create a new user struct.
-	user := &models.User{}
-
-	// Set initialized default data for user:
-	user.CreatedAt = time.Now()
-	user.Email = "admin"
-	user.PasswordHash = utils.GeneratePassword("admin")
-	user.UserStatus = 1 // 0 == blocked, 1 == active
-	user.UserRole = "admin"
-
-	// Create a new user with validated data.
-	if err := db.CreateUser(user); err != nil {
-		log.Fatalln(errors.New("database error"))
-	}
-
 }
 
 // Docker container'da komut çalıştıran fonksiyon

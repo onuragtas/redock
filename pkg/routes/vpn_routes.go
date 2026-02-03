@@ -2,13 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// SetupVPNRoutes sets up VPN server routes
+// SetupVPNRoutes sets up VPN server routes (JWT protected)
 func SetupVPNRoutes(app *fiber.App) {
-	vpn := app.Group("/v1/vpn")
+	vpn := app.Group("/v1/vpn", middleware.JWTProtected())
 
 	// Server management
 	vpn.Get("/servers", controllers.GetVPNServers)

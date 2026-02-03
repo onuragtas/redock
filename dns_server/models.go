@@ -51,18 +51,17 @@ type DNSCustomFilter struct {
 	IsWildcard bool   `json:"is_wildcard"`
 }
 
-// DNSQueryLog represents a logged DNS query (JSONL format, not in generic DB)
+// DNSQueryLog represents a logged DNS query (stored in memory DB for fast /logs; retention 24h)
 type DNSQueryLog struct {
-	ID           uint      `json:"id"`
-	CreatedAt    time.Time `json:"created_at"`
-	ClientIP     string    `json:"client_ip"`
-	Domain       string    `json:"domain"`
-	QueryType    string    `json:"query_type"` // A, AAAA, CNAME, MX, etc.
-	Response     string    `json:"response"`
-	Blocked      bool      `json:"blocked"`
-	BlockReason  string    `json:"block_reason,omitempty"`
-	ResponseTime int       `json:"response_time"` // milliseconds
-	Cached       bool      `json:"cached"`
+	memory.BaseEntity
+	ClientIP     string `json:"client_ip"`
+	Domain       string `json:"domain"`
+	QueryType    string `json:"query_type"` // A, AAAA, CNAME, MX, etc.
+	Response     string `json:"response"`
+	Blocked      bool   `json:"blocked"`
+	BlockReason  string `json:"block_reason,omitempty"`
+	ResponseTime int    `json:"response_time"` // milliseconds
+	Cached       bool   `json:"cached"`
 }
 
 // DNSStatistics represents aggregated statistics (computed in-memory, not stored)

@@ -322,7 +322,9 @@ export default {
       if (!(this.containerId == undefined || this.containerId == '')) {
         url += '/' + this.containerId;
       }
-      
+      const token = ApiService.getJWT();
+      if (token) url += (url.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token);
+
       tab.socket = new WebSocket(url);
       
       tab.socket.onopen = () => {

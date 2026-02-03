@@ -130,12 +130,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
           BETA_TAG: ${{ steps.version.outputs.BETA_TAG }}
         run: |
+          PREV_TAG=$(git tag --sort=-version:refname | grep -v "^$BETA_TAG$" | head -n 1)
+          COMMITS=$(git log $PREV_TAG..$BETA_TAG --pretty=format:"- %s" 2>/dev/null || git log -20 --pretty=format:"- %s")
           gh release edit "$BETA_TAG" --prerelease --title "🧪 Beta Release $BETA_TAG" --notes "
           ## 🧪 Beta Release
           
           This is a **beta release** for testing purposes.
           
           **⚠️ Warning:** Beta releases may contain bugs and are not recommended for production use.
+          
+          ### Changes
+          $COMMITS
           
           ### How to use:
           1. Download the appropriate binary for your platform

@@ -68,23 +68,20 @@ const toggleUserMenu = () => {
 const logout = async () => {
   try {
     await ApiService.tunnelLogout()
-    router.push('/login')
-  } catch (error) {
-    console.error('Logout failed:', error)
-    router.push('/login')
-  }
+  } catch (_) {}
+  ApiService.logout()
+  router.push('/login')
 }
 
-// Get user info
+// Get user info (Redock JWT auth/me)
 const getUserInfo = async () => {
   try {
-    const response = await ApiService.get('/api/v1/tunnel/user_info')
-    if (response.data && response.data.data && response.data.data.username) {
-      userInfo.value = response.data.data
+    const response = await ApiService.authMe()
+    if (response.data && response.data.data && (response.data.data.email || response.data.data.id)) {
+      userInfo.value = { ...response.data.data, username: response.data.data.email }
     }
   } catch (error) {
-    // Keep default 'Admin' if API fails
-    console.warn('Failed to fetch user info, using default:', error)
+    console.warn('Failed to fetch user info:', error)
   }
 }
 
@@ -187,7 +184,9 @@ const initializeTerminalInstance = async (tab, terminalElement) => {
     // WebSocket connection with auto-reconnect
     const connectWebSocket = () => {
       let wsUrl = window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : ''))
-      wsUrl = 'ws://' + wsUrl + '/ws/' + tab.containerId
+      wsUrl = 'ws://' + wsUrl + '/ws/' + (tab.containerId || '')
+      const token = ApiService.getJWT()
+      if (token) wsUrl += (wsUrl.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(token)
 
       const socket = new WebSocket(wsUrl)
 

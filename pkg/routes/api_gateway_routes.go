@@ -2,14 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// APIGatewayRoutes func for describe group of API Gateway routes.
+// APIGatewayRoutes func for describe group of API Gateway routes (JWT protected).
 func APIGatewayRoutes(a *fiber.App) {
-	// Create routes group.
-	route := a.Group("/api/v1")
+	route := a.Group("/api/v1", middleware.JWTProtected())
 
 	// Gateway control
 	route.Get("/api_gateway/config", controllers.APIGatewayGetConfig)

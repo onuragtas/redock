@@ -3,6 +3,7 @@ package memory
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -82,9 +83,9 @@ func Register[T Entity](db *Database, tableName string) error {
 		indexType: entityType,
 	}
 
-	// Load existing data
+	// Load existing data; if format is invalid (e.g. legacy), use empty table
 	if err := table.load(db.baseDir); err != nil {
-		return fmt.Errorf("failed to load table %s: %w", tableName, err)
+		log.Printf("memory: failed to load table %s (using empty table): %v", tableName, err)
 	}
 
 	db.tables[tableName] = table
@@ -110,6 +111,30 @@ func Create[T Entity](db *Database, tableName string, entity T) error {
 	
 	now := time.Now()
 	entity.SetTimestamps(now, now)
+
+	table.data[uint(id)] = entity
+	table.dirty = true
+
+	return nil
+}
+
+// CreatePreserveTimestamps inserts a new entity with auto-increment ID but does not overwrite CreatedAt/UpdatedAt.
+// Used by migrations that import existing data (e.g. JSONL) where timestamps must be preserved.
+func CreatePreserveTimestamps[T Entity](db *Database, tableName string, entity T) error {
+	db.mutex.RLock()
+	table, exists := db.tables[tableName]
+	db.mutex.RUnlock()
+
+	if !exists {
+		return fmt.Errorf("table %s not found", tableName)
+	}
+
+	table.mutex.Lock()
+	defer table.mutex.Unlock()
+
+	id := atomic.AddUint32(&table.nextID, 1)
+	entity.SetID(uint(id))
+	// Do not call SetTimestamps — entity keeps existing CreatedAt/UpdatedAt
 
 	table.data[uint(id)] = entity
 	table.dirty = true
@@ -321,11 +346,6 @@ func (t *Table) load(baseDir string) error {
 	}
 
 	var wrapper struct {
-		Meta struct {
-			Version        int       `json:"version"`
-			LastMigration  string    `json:"last_migration"`
-			MigratedAt     time.Time `json:"migrated_at"`
-		} `json:"_meta"`
 		Data []json.RawMessage `json:"data"`
 	}
 
@@ -389,20 +409,14 @@ func (t *Table) save(baseDir string) error {
 		entities = append(entities, entity)
 	}
 
-	// Wrap with metadata
 	wrapper := struct {
 		Meta struct {
-			Version       int       `json:"version"`
-			LastMigration string    `json:"last_migration"`
-			UpdatedAt     time.Time `json:"updated_at"`
+			UpdatedAt time.Time `json:"updated_at"`
 		} `json:"_meta"`
 		Data []interface{} `json:"data"`
 	}{
 		Data: entities,
 	}
-
-	wrapper.Meta.Version = 5
-	wrapper.Meta.LastMigration = "005_vpn_server"
 	wrapper.Meta.UpdatedAt = time.Now()
 
 	// Marshal with indentation

@@ -2,14 +2,14 @@ package routes
 
 import (
 	"redock/app/controllers"
+	"redock/pkg/middleware"
 
 	"github.com/gofiber/fiber/v2"
 )
 
-// PHPXDebugAdapterRoutes func for describe group of private routes.
+// PHPXDebugAdapterRoutes func for describe group of private routes (JWT protected).
 func PHPXDebugAdapterRoutes(a *fiber.App) {
-	// Create routes group.
-	route := a.Group("/api/v1")
+	route := a.Group("/api/v1", middleware.JWTProtected())
 
 	route.Get("/php_xdebug_adapter/settings", controllers.GetXDebugAdapterSettings)
 	route.Post("/php_xdebug_adapter/add", controllers.AddXDebugAdapterListener)

@@ -22,8 +22,16 @@ func GetTunnelProxy() *TunnelProxy {
 	return &proxy
 }
 
-func (t *TunnelProxy) CheckUser() bool {
-	return t.client.CheckUser()
+// tokenPtr returns *string for tunnel-client; boş token için nil döner.
+func tokenPtr(token string) *string {
+	if token == "" {
+		return nil
+	}
+	return &token
+}
+
+func (t *TunnelProxy) CheckUser(token string) bool {
+	return t.client.CheckUser(tokenPtr(token))
 }
 
 func (t *TunnelProxy) Login(username, password string) models.Login {
@@ -38,16 +46,16 @@ func (t *TunnelProxy) Register(username, password, email string) models.Register
 	return t.client.Register(username, password, email)
 }
 
-func (t *TunnelProxy) ListDomain() models.Domain {
-	return t.client.ListDomain()
+func (t *TunnelProxy) ListDomain(token string) models.Domain {
+	return t.client.ListDomain(tokenPtr(token))
 }
 
-func (t *TunnelProxy) DeleteDomain(id string) models.Response {
-	return t.client.DeleteDomain([]string{id})
+func (t *TunnelProxy) DeleteDomain(id string, token string) models.Response {
+	return t.client.DeleteDomain([]string{id}, tokenPtr(token))
 }
 
-func (t *TunnelProxy) AddDomain(domain string) interface{} {
-	return t.client.CreateDomain(domain)
+func (t *TunnelProxy) AddDomain(domain string, token string) interface{} {
+	return t.client.CreateDomain(domain, tokenPtr(token))
 }
 
 func (t *TunnelProxy) StartTunnel(list []models.Tunnel) {
@@ -67,10 +75,10 @@ func (t *TunnelProxy) GetStartedList() tunnel.StartedTunnels {
 	return t.client.GetStartedTunnels()
 }
 
-func (t *TunnelProxy) UserInfo() models.UserInfo {
-	return t.client.UserInfo()
+func (t *TunnelProxy) UserInfo(token string) models.UserInfo {
+	return t.client.UserInfo(tokenPtr(token))
 }
 
-func (t *TunnelProxy) RenewDomain(domain string) {
-	t.client.RenewDomain(domain)
+func (t *TunnelProxy) RenewDomain(domain string, token string) {
+	t.client.RenewDomain(domain, tokenPtr(token))
 }

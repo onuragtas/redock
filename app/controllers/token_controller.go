@@ -1,16 +1,16 @@
 package controllers
 
 import (
-	"time"
-
 	"redock/app/models"
 	"redock/pkg/utils"
 	"redock/platform/database"
+	"redock/platform/memory"
 
 	"github.com/gofiber/fiber/v2"
 )
 
 // RenewTokens method for renew access and refresh tokens.
+// Sadece refresh_token gerekir; access token expire olsa da renew çalışır. Önemli olan refresh token'ın expire olmaması ve kullanıcıya bağlı olması.
 // @Description Renew access and refresh tokens.
 // @Summary renew access and refresh tokens
 // @Tags Token
@@ -18,38 +18,9 @@ import (
 // @Produce json
 // @Param refresh_token body string true "Refresh token"
 // @Success 200 {string} status "ok"
-// @Security ApiKeyAuth
 // @Router /v1/token/renew [post]
 func RenewTokens(c *fiber.Ctx) error {
-	// Get now time.
-	now := time.Now().Unix()
-
-	// Get claims from JWT.
-	claims, err := utils.ExtractTokenMetadata(c)
-	if err != nil {
-		// Return status 500 and JWT parse error.
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// Set expiration time from JWT data of current user.
-	expiresAccessToken := claims.Expires
-
-	// Checking, if now time greather than Access token expiration time.
-	if now > expiresAccessToken {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-			"error": true,
-			"msg":   "unauthorized, check expiration time of your token",
-		})
-	}
-
-	// Create a new renew refresh token struct.
 	renew := &models.Renew{}
-
-	// Checking received data from JSON body.
 	if err := c.BodyParser(renew); err != nil {
 		// Return, if JSON data is not correct.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -58,74 +29,54 @@ func RenewTokens(c *fiber.Ctx) error {
 		})
 	}
 
-	// Set expiration time from Refresh token of current user.
-	expiresRefreshToken, err := utils.ParseRefreshToken(renew.RefreshToken)
+	// Refresh token'ı doğrula (imza + süre); user_id döner. Expire veya hatalıysa 401.
+	userID, err := utils.ParseRefreshToken(renew.RefreshToken)
 	if err != nil {
-		// Return status 400 and error message.
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "unauthorized, your session was ended earlier",
+		})
+	}
+
+	db := database.GetMemoryDB()
+	if db == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "database not initialized",
+		})
+	}
+
+	userPtr, err := memory.FindByID[*models.User](db, "users", uint(userID))
+	if err != nil || userPtr == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "user with the given ID is not found",
+		})
+	}
+	foundedUser := *userPtr
+
+	credentials, err := utils.GetCredentialsByRole(foundedUser.UserRole)
+	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
 
-	// Checking, if now time greather than Refresh token expiration time.
-	if now < expiresRefreshToken {
-		// Define user ID.
-		userID := claims.UserID
-
-		// Create database connection.
-		db, err := database.OpenDBConnection()
-		if err != nil {
-			// Return status 500 and database connection error.
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": true,
-				"msg":   err.Error(),
-			})
-		}
-
-		// Get user by ID.
-		foundedUser, err := db.GetUserByID(userID)
-		if err != nil {
-			// Return, if user not found.
-			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
-				"error": true,
-				"msg":   "user with the given ID is not found",
-			})
-		}
-
-		// Get role credentials from founded user.
-		credentials, err := utils.GetCredentialsByRole(foundedUser.UserRole)
-		if err != nil {
-			// Return status 400 and error message.
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": true,
-				"msg":   err.Error(),
-			})
-		}
-
-		// Generate JWT Access & Refresh tokens.
-		tokens, err := utils.GenerateNewTokens(userID, credentials)
-		if err != nil {
-			// Return status 500 and token generation error.
-			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-				"error": true,
-				"msg":   err.Error(),
-			})
-		}
-
-		return c.JSON(fiber.Map{
-			"error": false,
-			"msg":   nil,
-			"tokens": fiber.Map{
-				"access":  tokens.Access,
-				"refresh": tokens.Refresh,
-			},
-		})
-	} else {
-		// Return status 401 and unauthorized error message.
-		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+	tokens, err := utils.GenerateNewTokens(userID, credentials)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
-			"msg":   "unauthorized, your session was ended earlier",
+			"msg":   err.Error(),
 		})
 	}
+
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"tokens": fiber.Map{
+			"access":  tokens.Access,
+			"refresh": tokens.Refresh,
+		},
+	})
 }

@@ -104,8 +104,12 @@ const checkLogin = async () => {
 const loginSubmit = async () => {
   try {
     const response = await ApiService.tunnelLogin(credentials.value.username, credentials.value.password)
-    login.value = response.data.data.login
-    if (login.value) {
+    if (response?.data?.data?.token) {
+      ApiService.setTunnelToken(response.data.data.token)
+    }
+    // Backend data'da login alanı yok; token varsa veya success ise giriş başarılı say
+    if (!response?.data?.error && (response?.data?.data?.token || response?.data?.data)) {
+      login.value = true
       await tunnelList()
     }
   } catch (error) {
@@ -116,10 +120,15 @@ const loginSubmit = async () => {
 const registerSubmit = async () => {
   try {
     const response = await ApiService.tunnelRegister(credentials.value.email, credentials.value.username, credentials.value.password)
-    login.value = response.data.data.login
-    isRegisterModalActive.value = false
-    if (login.value) {
+    if (response?.data?.data?.token) {
+      ApiService.setTunnelToken(response.data.data.token)
+    }
+    if (!response?.data?.error && (response?.data?.data?.token || response?.data?.data)) {
+      login.value = true
+      isRegisterModalActive.value = false
       await tunnelList()
+    } else {
+      isRegisterModalActive.value = false
     }
   } catch (error) {
     console.error('Registration failed:', error)
@@ -129,6 +138,7 @@ const registerSubmit = async () => {
 const logoutSubmit = async () => {
   try {
     await ApiService.tunnelLogout()
+    ApiService.clearTunnelToken()
     login.value = false
     proxies.value = []
     credentials.value = { username: '', password: '', email: '' }
@@ -140,6 +150,7 @@ const logoutSubmit = async () => {
     isDeleteModalActive.value = false
   } catch (error) {
     console.error('Logout failed:', error)
+    ApiService.clearTunnelToken()
   }
 }
 

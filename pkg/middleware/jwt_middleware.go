@@ -1,7 +1,9 @@
 package middleware
 
 import (
-	"os"
+	"strings"
+
+	"redock/pkg/utils"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -13,7 +15,7 @@ import (
 func JWTProtected() func(*fiber.Ctx) error {
 	// Create config for JWT authentication middleware.
 	config := jwtMiddleware.Config{
-		SigningKey:   jwtMiddleware.SigningKey{Key: []byte(os.Getenv("JWT_SECRET_KEY"))},
+		SigningKey:   jwtMiddleware.SigningKey{Key: utils.GetJWTSecretKey()},
 		ContextKey:   "jwt", // used in private routes
 		ErrorHandler: jwtError,
 	}
@@ -35,4 +37,25 @@ func jwtError(c *fiber.Ctx, err error) error {
 		"error": true,
 		"msg":   err.Error(),
 	})
+}
+
+// WebSocketAccessToken requires a valid access token for WebSocket upgrade.
+// Token can be sent as query param "token" or "access_token", or as "Authorization: Bearer <token>".
+func WebSocketAccessToken() func(*fiber.Ctx) error {
+	return func(c *fiber.Ctx) error {
+		tokenStr := c.Query("token")
+		if tokenStr == "" {
+			tokenStr = c.Query("access_token")
+		}
+		if tokenStr == "" {
+			tokenStr = strings.TrimPrefix(c.Get("Authorization"), "Bearer ")
+		}
+		if _, err := utils.VerifyAccessTokenString(tokenStr); err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": true,
+				"msg":   "invalid or missing access token",
+			})
+		}
+		return c.Next()
+	}
 }
