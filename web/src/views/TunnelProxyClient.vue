@@ -77,11 +77,11 @@ const create = ref({
 });
 
 const start = ref({
-  localIp: "127.0.0.1",
   destinationIp: "127.0.0.1",
-  localPort: 80,
+  destinationPort: 80,
   localUdpIp: "127.0.0.1",
   localUdpPort: "",
+  sourceBindIp: "",
   hostRewrite: ""
 });
 
@@ -304,14 +304,18 @@ const startModal = (data) => {
 
 const startSubmit = async () => {
   try {
+    const tcpIp = (start.value.destinationIp || "").trim();
+    const tcpPort = parseInt(start.value.destinationPort) || 0;
     const data = {
       DomainId: startDomain.value.id,
       Domain: startDomain.value.domain,
-      LocalIp: start.value.localIp,
-      DestinationIp: start.value.destinationIp,
-      LocalPort: parseInt(start.value.localPort) || 0,
+      LocalIp: tcpIp,
+      DestinationIp: tcpIp,
+      DestinationPort: tcpPort,
+      LocalPort: tcpPort,
       LocalUdpIp: (start.value.localUdpIp || "").trim(),
       LocalUdpPort: parseInt(start.value.localUdpPort) || 0,
+      SourceBindIp: (start.value.sourceBindIp || "").trim(),
       HostRewrite: (start.value.hostRewrite || "").trim()
     };
     await ApiService.tunnelStart(data, selectedServerId.value);
@@ -1152,88 +1156,83 @@ onMounted(async () => {
     has-cancel
     @confirm="startSubmit"
   >
-    <form class="space-y-6">
-      <div
-        class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6"
-      >
-        <h4
-          class="font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center"
-        >
-          <BaseIcon :path="mdiTunnel" size="20" class="mr-2" />
-          {{ startDomain.domain }}
-        </h4>
-        <p class="text-sm text-blue-600 dark:text-blue-300">
-          Configure tunnel endpoints.
-        </p>
+    <form class="start-tunnel-form">
+      <!-- Domain header -->
+      <div class="start-tunnel-header">
+        <div class="start-tunnel-header-icon">
+          <BaseIcon :path="mdiTunnel" size="24" />
+        </div>
+        <div class="start-tunnel-header-text">
+          <span class="start-tunnel-domain">{{ startDomain.domain }}</span>
+          <span class="start-tunnel-subtitle">Configure where to forward traffic</span>
+        </div>
       </div>
 
-      <FormField label="Local TCP IP" help="Target IP for TCP tunnel (optional; for UDP-only fill the fields below)">
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
-            <BaseIcon :path="mdiLan" size="20" class="text-slate-400" />
-          </div>
-          <FormControl
-            v-model="start.localIp"
-            placeholder="127.0.0.1"
-            class="pl-10"
-          />
+      <!-- TCP forwarding -->
+      <div class="start-tunnel-section">
+        <h5 class="start-tunnel-section-title">TCP / HTTP</h5>
+        <div class="start-tunnel-row">
+          <FormField label="Target IP" help="IP to forward traffic to (e.g. 127.0.0.1 or 192.168.1.100)">
+            <FormControl
+              v-model="start.destinationIp"
+              placeholder="127.0.0.1"
+            />
+          </FormField>
+          <FormField label="Port">
+            <FormControl
+              v-model="start.destinationPort"
+              type="number"
+              placeholder="80"
+              class="w-full"
+            />
+          </FormField>
         </div>
-      </FormField>
+      </div>
 
-      <FormField label="Target IP" help="Target server IP">
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
-            <BaseIcon :path="mdiServer" size="20" class="text-slate-400" />
-          </div>
-          <FormControl
-            v-model="start.destinationIp"
-            placeholder="192.168.1.100"
-            class="pl-10"
-          />
+      <!-- UDP forwarding -->
+      <div class="start-tunnel-section">
+        <h5 class="start-tunnel-section-title">UDP (optional)</h5>
+        <div class="start-tunnel-row">
+          <FormField label="Target IP">
+            <FormControl
+              v-model="start.localUdpIp"
+              placeholder="127.0.0.1"
+            />
+          </FormField>
+          <FormField label="Port">
+            <FormControl
+              v-model="start.localUdpPort"
+              type="number"
+              placeholder="53"
+              class="w-full"
+            />
+          </FormField>
         </div>
-      </FormField>
+      </div>
 
-      <FormField label="Local Port" help="Local TCP port (optional; for UDP-only fill only the fields below)">
-        <div class="relative">
-          <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
-            <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
-          </div>
+      <!-- Advanced -->
+      <div class="start-tunnel-section start-tunnel-section-advanced">
+        <h5 class="start-tunnel-section-title">Advanced</h5>
+        <FormField
+          label="Source bind IP"
+          help="Local IP to use when connecting to target (leave empty for default)"
+        >
           <FormControl
-            v-model="start.localPort"
-            type="number"
-            placeholder="80"
-            class="pl-10"
+            v-model="start.sourceBindIp"
+            placeholder="e.g. 10.0.0.2"
           />
-        </div>
-      </FormField>
-
-      <FormField label="Local UDP IP" help="Target IP for UDP tunnel (optional)">
-        <FormControl
-          v-model="start.localUdpIp"
-          placeholder="127.0.0.1"
-          class="pl-10"
-        />
-      </FormField>
-      <FormField label="Local UDP Port" help="Target port for UDP tunnel (e.g. 53 for DNS)">
-        <FormControl
-          v-model="start.localUdpPort"
-          type="number"
-          placeholder=""
-          class="pl-10"
-        />
-      </FormField>
-
-      <FormField
-        v-if="['http', 'https', 'all'].includes(startDomain.protocol)"
-        label="Host Rewrite (optional)"
-        help="Override Host header when proxying (e.g. order.test.com). Leave empty to clear."
-      >
-        <FormControl
-          v-model="start.hostRewrite"
-          placeholder="backend.example.com"
-          class="pl-10"
-        />
-      </FormField>
+        </FormField>
+        <FormField
+          v-if="['http', 'https', 'all'].includes(startDomain.protocol)"
+          label="Host rewrite"
+          help="Override Host header (e.g. backend.example.com). Empty = no override."
+        >
+          <FormControl
+            v-model="start.hostRewrite"
+            placeholder="backend.example.com"
+          />
+        </FormField>
+      </div>
     </form>
   </CardBoxModal>
 
@@ -1290,6 +1289,108 @@ onMounted(async () => {
   }
   to {
     transform: rotate(360deg);
+  }
+}
+
+/* Start Tunnel modal */
+.start-tunnel-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.start-tunnel-form :deep(.mb-6) {
+  margin-bottom: 0.5rem;
+}
+.start-tunnel-form :deep(.mb-2) {
+  margin-bottom: 0.375rem;
+}
+.start-tunnel-form :deep(.mt-1) {
+  margin-top: 0.25rem;
+}
+.start-tunnel-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: linear-gradient(135deg, rgb(59 130 246 / 0.08) 0%, rgb(99 102 241 / 0.06) 100%);
+  border: 1px solid rgb(59 130 246 / 0.2);
+  border-radius: 0.75rem;
+}
+.dark .start-tunnel-header {
+  background: linear-gradient(135deg, rgb(59 130 246 / 0.12) 0%, rgb(99 102 241 / 0.08) 100%);
+  border-color: rgb(59 130 246 / 0.25);
+}
+.start-tunnel-header-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.75rem;
+  height: 2.75rem;
+  background: rgb(59 130 246 / 0.15);
+  border-radius: 0.5rem;
+  color: rgb(37 99 235);
+}
+.dark .start-tunnel-header-icon {
+  background: rgb(59 130 246 / 0.2);
+  color: rgb(96 165 250);
+}
+.start-tunnel-header-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+  min-width: 0;
+}
+.start-tunnel-domain {
+  font-weight: 600;
+  font-size: 1.0625rem;
+  color: rgb(30 58 138);
+  letter-spacing: -0.01em;
+}
+.dark .start-tunnel-domain {
+  color: rgb(191 219 254);
+}
+.start-tunnel-subtitle {
+  font-size: 0.8125rem;
+  color: rgb(71 85 105);
+}
+.dark .start-tunnel-subtitle {
+  color: rgb(148 163 184);
+}
+.start-tunnel-section {
+  padding: 0.6rem 0;
+  border-bottom: 1px solid rgb(226 232 240);
+}
+.dark .start-tunnel-section {
+  border-bottom-color: rgb(51 65 85);
+}
+.start-tunnel-section:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.start-tunnel-section-advanced {
+  padding-top: 0.5rem;
+}
+.start-tunnel-section-title {
+  margin: 0 0 0.5rem 0;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: rgb(100 116 139);
+}
+.dark .start-tunnel-section-title {
+  color: rgb(148 163 184);
+}
+.start-tunnel-row {
+  display: grid;
+  grid-template-columns: 1fr 6rem;
+  gap: 0.75rem;
+  align-items: start;
+}
+@media (max-width: 420px) {
+  .start-tunnel-row {
+    grid-template-columns: 1fr;
   }
 }
 </style>

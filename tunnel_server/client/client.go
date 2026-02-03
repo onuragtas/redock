@@ -33,10 +33,12 @@ type Config struct {
 	Token string
 	// Domain is subdomain or full domain to bind (e.g. "myapp" or "myapp.tnpx.org").
 	Domain string
-	// LocalTCPAddr is the local address for TCP forwarding (e.g. "127.0.0.1:8080"). Empty to disable TCP.
+	// LocalTCPAddr is the destination address for TCP forwarding (e.g. "127.0.0.1:8080" or "192.168.1.100:80"). Empty to disable TCP.
 	LocalTCPAddr string
-	// LocalUDPAddr is the local address for UDP forwarding (e.g. "127.0.0.1:53"). Empty to disable UDP.
+	// LocalUDPAddr is the destination address for UDP forwarding (e.g. "127.0.0.1:53"). Empty to disable UDP.
 	LocalUDPAddr string
+	// SourceBindIP is the local IP to bind when connecting to LocalTCPAddr/LocalUDPAddr (outbound source). Empty = system default.
+	SourceBindIP string
 	// HostRewrite is sent to the daemon on BIND to set/clear the route's Host header override (HTTP/HTTPS only). Empty clears.
 	HostRewrite string
 }
@@ -249,9 +251,13 @@ func (c *Client) handleNewStream(streamID uint32) {
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}
-	backend, err := net.DialTimeout("tcp", c.cfg.LocalTCPAddr, 10*time.Second)
+	dialer := &net.Dialer{Timeout: 10 * time.Second}
+	if c.cfg.SourceBindIP != "" {
+		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(c.cfg.SourceBindIP)}
+	}
+	backend, err := dialer.Dial("tcp", c.cfg.LocalTCPAddr)
 	if err != nil {
-		log.Printf("tunnel_client: dial local %s: %v", c.cfg.LocalTCPAddr, err)
+		log.Printf("tunnel_client: dial %s (source %s): %v", c.cfg.LocalTCPAddr, c.cfg.SourceBindIP, err)
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}
@@ -319,10 +325,14 @@ func (c *Client) forwardUDPToLocal(streamID uint32, data []byte) {
 	c.udpSocketsMu.Lock()
 	uc, ok := c.udpSockets[streamID]
 	if !ok {
-		uc, err = net.ListenUDP("udp", nil)
+		var localAddr *net.UDPAddr
+		if c.cfg.SourceBindIP != "" {
+			localAddr = &net.UDPAddr{IP: net.ParseIP(c.cfg.SourceBindIP), Port: 0}
+		}
+		uc, err = net.ListenUDP("udp", localAddr)
 		if err != nil {
 			c.udpSocketsMu.Unlock()
-			log.Printf("tunnel_client: listen udp: %v", err)
+			log.Printf("tunnel_client: listen udp (source %s): %v", c.cfg.SourceBindIP, err)
 			return
 		}
 		c.udpSockets[streamID] = uc
