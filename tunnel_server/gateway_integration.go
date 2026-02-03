@@ -34,6 +34,21 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	if cfg == nil {
 		return fmt.Errorf("gateway config copy failed")
 	}
+	// JSON copy can have nil slices if config file had null; ensure we can append and refreshServicesAndRoutes works.
+	if cfg.Services == nil {
+		cfg.Services = []api_gateway.Service{}
+	}
+	if cfg.Routes == nil {
+		cfg.Routes = []api_gateway.Route{}
+	}
+	if cfg.TCPRoutes == nil {
+		cfg.TCPRoutes = []api_gateway.TCPRoute{}
+	}
+	if cfg.UDPRoutes == nil {
+		cfg.UDPRoutes = []api_gateway.UDPRoute{}
+	}
+	// Gateway must be enabled so UpdateConfig restarts it and StartAll() actually starts listeners.
+	cfg.Enabled = true
 
 	// HTTP/HTTPS: Service + Route
 	if needHTTP {
@@ -80,9 +95,6 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 			Enabled:    true,
 		}
 		cfg.Services = append(cfg.Services, tcpSvc)
-		if cfg.TCPRoutes == nil {
-			cfg.TCPRoutes = []api_gateway.TCPRoute{}
-		}
 		cfg.TCPRoutes = append(cfg.TCPRoutes, tcpRoute)
 		d.GatewayTCPServiceID = tcpSvc.ID
 		d.GatewayTCPRouteID = tcpRoute.ID
@@ -107,9 +119,6 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 			Enabled:    true,
 		}
 		cfg.Services = append(cfg.Services, udpSvc)
-		if cfg.UDPRoutes == nil {
-			cfg.UDPRoutes = []api_gateway.UDPRoute{}
-		}
 		cfg.UDPRoutes = append(cfg.UDPRoutes, udpRoute)
 		d.GatewayUDPServiceID = udpSvc.ID
 		d.GatewayUDPRouteID = udpRoute.ID
