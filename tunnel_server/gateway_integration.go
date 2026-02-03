@@ -3,6 +3,7 @@ package tunnel_server
 import (
 	"fmt"
 	"log"
+	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -152,6 +153,19 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	return nil
 }
 
+// waitForDNSResolvable waits until the domain has A/AAAA records (DNS propagated) or timeout. Returns true if resolved.
+func waitForDNSResolvable(domain string, maxWait time.Duration, interval time.Duration) bool {
+	deadline := time.Now().Add(maxWait)
+	for time.Now().Before(deadline) {
+		addrs, err := net.LookupHost(domain)
+		if err == nil && len(addrs) > 0 {
+			return true
+		}
+		time.Sleep(interval)
+	}
+	return false
+}
+
 // addTunnelDomainToLetsEncrypt adds fullDomain to the gateway's Let's Encrypt domain list (if not already present) and requests a new certificate.
 func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 	cfg := gw.GetConfig()
@@ -197,6 +211,12 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 			return
 		}
 		time.Sleep(pollInterval)
+	}
+
+	// Wait for DNS to be visible (record may have just been created; propagation delay)
+	if !waitForDNSResolvable(fullDomain, 90*time.Second, 5*time.Second) {
+		log.Printf("tunnel_server: DNS for %s did not resolve in time, skipping certificate request (retry later from UI if needed)", fullDomain)
+		return
 	}
 
 	// Request certificate only for this domain (faster; no re-validation of existing domains)
