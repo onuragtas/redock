@@ -18,7 +18,7 @@ import (
 	"redock/platform/memory"
 	"redock/platform/migrations"
 	"redock/saved_commands"
-	"redock/tunnel_proxy"
+	"redock/tunnel_server"
 	"redock/vpn_server"
 	"time"
 
@@ -81,7 +81,7 @@ func initialize() {
 		go dockerEnvironmentManager.CheckLocalIpAndRegenerate()
 	}
 	devenv.Init(dockerEnvironmentManager)
-	tunnel_proxy.Init(dockerEnvironmentManager)
+	tunnel_server.Init(dockerEnvironmentManager)
 	localproxy.Init(dockerEnvironmentManager)
 	php_debug_adapter.Init(dockerEnvironmentManager)
 	saved_commands.Init(dockerEnvironmentManager)
@@ -145,6 +145,12 @@ func registerEntities(db *memory.Database) error {
 		{"saved_commands", func() error { return memory.Register[*database.SavedCommand](db, "saved_commands") }},
 		{"release_cache", func() error { return memory.Register[*cache_models.ReleaseCache](db, "release_cache") }},
 		{"local_proxy_items", func() error { return memory.Register[*localproxy.LocalProxyItem](db, "local_proxy_items") }},
+		// Tunnel server
+		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
+		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},
+		{"tunnel_users", func() error { return memory.Register[*tunnel_server.TunnelUser](db, "tunnel_users") }},
+		{"tunnel_server_credentials", func() error { return memory.Register[*tunnel_server.TunnelServerCredential](db, "tunnel_server_credentials") }},
+		{"tunnel_servers", func() error { return memory.Register[*tunnel_server.TunnelServer](db, "tunnel_servers") }},
 	}
 
 	for _, entity := range entities {

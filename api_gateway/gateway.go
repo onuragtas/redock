@@ -334,6 +334,8 @@ func (g *Gateway) loadConfig() {
 			Enabled:          false,
 			Services:         []Service{},
 			Routes:           []Route{},
+			UDPRoutes:        []UDPRoute{},
+			TCPRoutes:        []TCPRoute{},
 			ClientSecurity:   defaultClientSecurityConfig(),
 		}
 		g.refreshClientSecurity()
@@ -353,6 +355,8 @@ func (g *Gateway) loadConfig() {
 			Enabled:          false,
 			Services:         []Service{},
 			Routes:           []Route{},
+			UDPRoutes:        []UDPRoute{},
+			TCPRoutes:        []TCPRoute{},
 		}
 		g.refreshClientSecurity()
 		g.loadBlockList()
@@ -534,6 +538,20 @@ func (g *Gateway) startLocked() error {
 					}
 				}()
 			}
+		}
+	}
+
+	// Start UDP route listeners
+	for _, r := range g.config.UDPRoutes {
+		if r.Enabled {
+			go g.runUDPRoute(r, g.stopChan)
+		}
+	}
+
+	// Start TCP route listeners
+	for _, r := range g.config.TCPRoutes {
+		if r.Enabled {
+			go g.runTCPRoute(r, g.stopChan)
 		}
 	}
 
@@ -1785,6 +1803,104 @@ func (g *Gateway) DeleteRoute(routeID string) error {
 	}
 
 	return fmt.Errorf("route with ID %s not found", routeID)
+}
+
+// ListUDPRoutes returns all UDP routes from the current config.
+func (g *Gateway) ListUDPRoutes() []UDPRoute {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil || len(g.config.UDPRoutes) == 0 {
+		return nil
+	}
+	out := make([]UDPRoute, len(g.config.UDPRoutes))
+	copy(out, g.config.UDPRoutes)
+	return out
+}
+
+// AddUDPRoute adds a new UDP route and restarts the gateway if running.
+func (g *Gateway) AddUDPRoute(route UDPRoute) error {
+	g.mu.RLock()
+	for _, r := range g.config.UDPRoutes {
+		if r.ID == route.ID {
+			g.mu.RUnlock()
+			return fmt.Errorf("UDP route with ID %s already exists", route.ID)
+		}
+	}
+	if _, ok := g.services[route.ServiceID]; !ok {
+		g.mu.RUnlock()
+		return fmt.Errorf("service %s not found", route.ServiceID)
+	}
+	cfgCopy := *g.config
+	cfgCopy.UDPRoutes = make([]UDPRoute, len(g.config.UDPRoutes)+1)
+	copy(cfgCopy.UDPRoutes, g.config.UDPRoutes)
+	cfgCopy.UDPRoutes[len(cfgCopy.UDPRoutes)-1] = route
+	g.mu.RUnlock()
+
+	return g.UpdateConfig(&cfgCopy)
+}
+
+// RemoveUDPRoute removes a UDP route by ID and restarts the gateway if running.
+func (g *Gateway) RemoveUDPRoute(routeID string) error {
+	g.mu.RLock()
+	for i, r := range g.config.UDPRoutes {
+		if r.ID == routeID {
+			cfgCopy := *g.config
+			cfgCopy.UDPRoutes = append(append([]UDPRoute{}, g.config.UDPRoutes[:i]...), g.config.UDPRoutes[i+1:]...)
+			g.mu.RUnlock()
+			return g.UpdateConfig(&cfgCopy)
+		}
+	}
+	g.mu.RUnlock()
+	return fmt.Errorf("UDP route with ID %s not found", routeID)
+}
+
+// ListTCPRoutes returns all TCP routes from the current config.
+func (g *Gateway) ListTCPRoutes() []TCPRoute {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil || len(g.config.TCPRoutes) == 0 {
+		return nil
+	}
+	out := make([]TCPRoute, len(g.config.TCPRoutes))
+	copy(out, g.config.TCPRoutes)
+	return out
+}
+
+// AddTCPRoute adds a new TCP route and restarts the gateway if running.
+func (g *Gateway) AddTCPRoute(route TCPRoute) error {
+	g.mu.RLock()
+	for _, r := range g.config.TCPRoutes {
+		if r.ID == route.ID {
+			g.mu.RUnlock()
+			return fmt.Errorf("TCP route with ID %s already exists", route.ID)
+		}
+	}
+	if _, ok := g.services[route.ServiceID]; !ok {
+		g.mu.RUnlock()
+		return fmt.Errorf("service %s not found", route.ServiceID)
+	}
+	cfgCopy := *g.config
+	cfgCopy.TCPRoutes = make([]TCPRoute, len(g.config.TCPRoutes)+1)
+	copy(cfgCopy.TCPRoutes, g.config.TCPRoutes)
+	cfgCopy.TCPRoutes[len(cfgCopy.TCPRoutes)-1] = route
+	g.mu.RUnlock()
+
+	return g.UpdateConfig(&cfgCopy)
+}
+
+// RemoveTCPRoute removes a TCP route by ID and restarts the gateway if running.
+func (g *Gateway) RemoveTCPRoute(routeID string) error {
+	g.mu.RLock()
+	for i, r := range g.config.TCPRoutes {
+		if r.ID == routeID {
+			cfgCopy := *g.config
+			cfgCopy.TCPRoutes = append(append([]TCPRoute{}, g.config.TCPRoutes[:i]...), g.config.TCPRoutes[i+1:]...)
+			g.mu.RUnlock()
+			return g.UpdateConfig(&cfgCopy)
+		}
+	}
+	g.mu.RUnlock()
+	return fmt.Errorf("TCP route with ID %s not found", routeID)
 }
 
 // refreshRoutes rebuilds and sorts the routes slice (must be called with lock held)

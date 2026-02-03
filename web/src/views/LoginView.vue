@@ -2,14 +2,14 @@
 import BaseIcon from '@/components/BaseIcon.vue'
 import ApiService from '@/services/ApiService'
 import {
-    mdiAccount,
-    mdiAccountPlus,
-    mdiDocker,
-    mdiEmail,
-    mdiEye,
-    mdiEyeOff,
-    mdiLock,
-    mdiLogin
+  mdiAccount,
+  mdiAccountPlus,
+  mdiDocker,
+  mdiEmail,
+  mdiEye,
+  mdiEyeOff,
+  mdiLock,
+  mdiLogin
 } from '@mdi/js'
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
@@ -26,8 +26,8 @@ const hasAnyUser = ref(true)
 
 // Login form (Redock: email + password)
 const loginForm = ref({
-  email: '',
-  password: ''
+  email: 'agtasonur@gmail.com',
+  password: 'onuragtas100'
 })
 
 // Register form (Redock: email + password + user_role)

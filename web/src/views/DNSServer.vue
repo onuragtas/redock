@@ -415,15 +415,15 @@ const updateRewrite = async () => {
   try {
     const response = await ApiService.put(`/v1/dns/rewrites/${editingRewrite.value.id}`, editingRewrite.value)
     if (response.data && !response.data.error) {
-      toast.success('DNS Rewrite güncellendi')
+      toast.success('DNS Rewrite updated')
       await fetchRewrites()
       isEditRewriteModalActive.value = false
       editingRewrite.value = null
     } else {
-      toast.error('Rewrite güncellenemedi: ' + (response.data.msg || 'Bilinmeyen hata'))
+      toast.error('Failed to update rewrite: ' + (response.data.msg || 'Unknown error'))
     }
   } catch (error) {
-    toast.error('Rewrite güncellenemedi: ' + error.message)
+    toast.error('Failed to update rewrite: ' + error.message)
   }
   loading.value = false
 }
@@ -638,7 +638,7 @@ const toggleClientMenu = (clientIP) => {
 
 // Lifecycle hooks
 onMounted(async () => {
-  // Tüm verileri paralel çek (daha hızlı yükleme)
+  // Fetch all data in parallel (faster load)
   await Promise.all([
     fetchStatus(),
     fetchConfig(),
@@ -1312,7 +1312,7 @@ const deleteClientBan = async (clientIP) => {
 
       <div class="mt-6 space-y-4">
         <div v-if="rewrites.length === 0" class="text-center py-12 text-slate-500">
-          Henüz DNS rewrite kuralı eklenmemiş
+          No DNS rewrite rules added yet
         </div>
 
         <div v-for="rewrite in rewrites" :key="rewrite.id" class="group relative bg-slate-50 dark:bg-slate-800/50 rounded-lg p-6 hover:shadow-md transition-all border border-slate-200 dark:border-slate-700">
@@ -1414,7 +1414,7 @@ const deleteClientBan = async (clientIP) => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Client IP, Domain veya Response içinde ara..."
+            placeholder="Search by client IP, domain or response..."
             class="w-full pl-10 pr-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
           />
           <div v-if="searchQuery" class="absolute inset-y-0 right-0 pr-3 flex items-center">
@@ -1429,7 +1429,7 @@ const deleteClientBan = async (clientIP) => {
           </div>
         </div>
         <div v-if="searchQuery" class="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          {{ filteredQueryLogs.length }} sonuç bulundu ({{ queryLogs.length }} toplam)
+          {{ filteredQueryLogs.length }} result(s) ({{ queryLogs.length }} total)
         </div>
       </div>
 
@@ -1440,8 +1440,8 @@ const deleteClientBan = async (clientIP) => {
 
       <div v-else-if="searchQuery && filteredQueryLogs.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiMagnify" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500">Arama için sonuç bulunamadı</p>
-        <p class="text-sm text-slate-400 mt-2">"{{ searchQuery }}" için eşleşen log yok</p>
+        <p class="text-slate-500">No results for search</p>
+        <p class="text-sm text-slate-400 mt-2">No logs matching "{{ searchQuery }}"</p>
       </div>
 
       <div v-else class="mt-4 overflow-x-auto">
@@ -1472,7 +1472,7 @@ const deleteClientBan = async (clientIP) => {
                 >
                   {{ log.response.length > 40 ? log.response.substring(0, 40) + '...' : log.response }}
                   
-                  <!-- Tooltip (hover'da görünür) -->
+                  <!-- Tooltip (visible on hover) -->
                   <span 
                     v-if="log.response.length > 40"
                     class="invisible group-hover:visible absolute z-50 left-0 top-full mt-1 px-3 py-2 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-lg shadow-xl max-w-sm break-all whitespace-normal pointer-events-none"
@@ -1791,8 +1791,8 @@ const deleteClientBan = async (clientIP) => {
           placeholder="1.1.1.1:53&#10;8.8.8.8:53"
         />
         <p class="text-xs text-gray-500 mt-1">
-          DNS sunucularının yönlendirileceği upstream DNS sunucuları. 
-          Varsayılan: Cloudflare (1.1.1.1), Google (8.8.8.8), Quad9 (9.9.9.9)
+          Upstream DNS servers to forward queries to. 
+          Default: Cloudflare (1.1.1.1), Google (8.8.8.8), Quad9 (9.9.9.9)
         </p>
       </FormField>
 
@@ -1944,53 +1944,53 @@ const deleteClientBan = async (clientIP) => {
     <!-- Add DNS Rewrite Modal -->
     <CardBoxModal
       v-model="isAddRewriteModalActive"
-      title="DNS Rewrite Ekle"
+      title="Add DNS Rewrite"
       has-cancel
-      button-label="Ekle"
+      button-label="Add"
       @confirm="addRewrite"
     >
       <div class="space-y-4">
         <!-- Domain Field with Info -->
-        <FormField label="Alan Adı (Domain)">
-          <FormControl v-model="newRewrite.domain" placeholder="example.org veya *.example.org" required />
+        <FormField label="Domain Name">
+          <FormControl v-model="newRewrite.domain" placeholder="example.org or *.example.org" required />
           <div class="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-700 dark:text-blue-300">
-            <div class="font-medium mb-1">Örnekler:</div>
+            <div class="font-medium mb-1">Examples:</div>
             <ul class="list-disc list-inside space-y-1 text-xs">
-              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">example.org</code> - Sadece bu domain</li>
-              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">*.example.org</code> - Tüm subdomain'ler (api.example.org, cdn.example.org, vb.)</li>
+              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">example.org</code> - This domain only</li>
+              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">*.example.org</code> - All subdomains (api.example.org, cdn.example.org, etc.)</li>
             </ul>
           </div>
         </FormField>
 
         <!-- Answer/Target Field with Info -->
-        <FormField label="Hedef (IP Adresi / Domain)">
-          <FormControl v-model="newRewrite.answer" placeholder="192.168.1.1 veya target.example.com" required />
+        <FormField label="Target (IP Address / Domain)">
+          <FormControl v-model="newRewrite.answer" placeholder="192.168.1.1 or target.example.com" required />
           <div class="mt-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-sm text-emerald-700 dark:text-emerald-300">
-            <div class="font-medium mb-1">Kullanım:</div>
+            <div class="font-medium mb-1">Usage:</div>
             <ul class="list-disc list-inside space-y-1 text-xs">
-              <li><strong>IP Adresi:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">192.168.1.100</code> - Bu IP'ye yönlendir</li>
-              <li><strong>Domain:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">real.example.com</code> - CNAME kaydı oluştur</li>
-              <li><strong>Özel:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">A</code> - Upstream'den gelen A kayıtlarını koru</li>
-              <li><strong>Özel:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">AAAA</code> - Upstream'den gelen AAAA kayıtlarını koru</li>
+              <li><strong>IP Address:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">192.168.1.100</code> - Resolve to this IP</li>
+              <li><strong>Domain:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">real.example.com</code> - Create CNAME record</li>
+              <li><strong>Special:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">A</code> - Preserve A records from upstream</li>
+              <li><strong>Special:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">AAAA</code> - Preserve AAAA records from upstream</li>
             </ul>
           </div>
         </FormField>
 
         <!-- Type Field -->
-        <FormField label="Kayıt Tipi">
+        <FormField label="Record Type">
           <select v-model="newRewrite.type" class="w-full px-3 py-2 border dark:border-slate-600 rounded bg-white dark:bg-slate-800">
             <option value="A">A (IPv4)</option>
             <option value="AAAA">AAAA (IPv6)</option>
             <option value="CNAME">CNAME (Alias)</option>
           </select>
           <div class="mt-1 text-xs text-slate-500">
-            IP adresi için A/AAAA, domain için CNAME seçin
+            Choose A/AAAA for IP address, CNAME for domain
           </div>
         </FormField>
 
         <!-- Comment Field -->
-        <FormField label="Açıklama (Opsiyonel)">
-          <FormControl v-model="newRewrite.comment" placeholder="Bu rewrite kuralı hakkında not..." />
+        <FormField label="Description (Optional)">
+          <FormControl v-model="newRewrite.comment" placeholder="Note about this rewrite rule..." />
         </FormField>
 
         <!-- Enabled Checkbox -->
@@ -1999,7 +1999,7 @@ const deleteClientBan = async (clientIP) => {
             v-model="newRewrite.enabled"
             name="rewrite_enabled"
             type="checkbox"
-            label="Kuralı aktif et"
+            label="Enable rule"
           />
         </FormField>
       </div>
@@ -2008,21 +2008,21 @@ const deleteClientBan = async (clientIP) => {
     <!-- Edit DNS Rewrite Modal -->
     <CardBoxModal
       v-model="isEditRewriteModalActive"
-      title="DNS Rewrite Düzenle"
+      title="Edit DNS Rewrite"
       has-cancel
-      button-label="Güncelle"
+      button-label="Update"
       @confirm="updateRewrite"
     >
       <div v-if="editingRewrite" class="space-y-4">
-        <FormField label="Alan Adı (Domain)">
-          <FormControl v-model="editingRewrite.domain" placeholder="example.org veya *.example.org" required />
+        <FormField label="Domain Name">
+          <FormControl v-model="editingRewrite.domain" placeholder="example.org or *.example.org" required />
         </FormField>
 
-        <FormField label="Hedef (IP Adresi / Domain)">
-          <FormControl v-model="editingRewrite.answer" placeholder="192.168.1.1 veya target.example.com" required />
+        <FormField label="Target (IP Address / Domain)">
+          <FormControl v-model="editingRewrite.answer" placeholder="192.168.1.1 or target.example.com" required />
         </FormField>
 
-        <FormField label="Kayıt Tipi">
+        <FormField label="Record Type">
           <select v-model="editingRewrite.type" class="w-full px-3 py-2 border dark:border-slate-600 rounded bg-white dark:bg-slate-800">
             <option value="A">A (IPv4)</option>
             <option value="AAAA">AAAA (IPv6)</option>
@@ -2030,8 +2030,8 @@ const deleteClientBan = async (clientIP) => {
           </select>
         </FormField>
 
-        <FormField label="Açıklama (Opsiyonel)">
-          <FormControl v-model="editingRewrite.comment" placeholder="Bu rewrite kuralı hakkında not..." />
+        <FormField label="Description (Optional)">
+          <FormControl v-model="editingRewrite.comment" placeholder="Note about this rewrite rule..." />
         </FormField>
 
         <FormField label="Durum">
@@ -2039,7 +2039,7 @@ const deleteClientBan = async (clientIP) => {
             v-model="editingRewrite.enabled"
             name="edit_rewrite_enabled"
             type="checkbox"
-            label="Kuralı aktif et"
+            label="Enable rule"
           />
         </FormField>
       </div>
@@ -2072,7 +2072,7 @@ const deleteClientBan = async (clientIP) => {
         </p>
       </div>
       <p class="text-xs text-slate-500 mt-2">
-        Metni seçip kopyalayabilirsiniz (Ctrl+C / Cmd+C)
+        You can select and copy the text (Ctrl+C / Cmd+C)
       </p>
     </CardBoxModal>
   </div>

@@ -54,6 +54,24 @@ type HealthCheck struct {
 	UnhealthyThreshold int    `json:"unhealthy_threshold"` // number of failures before marking unhealthy
 }
 
+// UDPRoute maps a UDP listen port to a backend service (for UDP proxying).
+type UDPRoute struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	ListenPort int    `json:"listen_port"` // UDP port the gateway listens on
+	ServiceID  string `json:"service_id"`  // ID of the backend service (Host:Port, Protocol=udp)
+	Enabled    bool   `json:"enabled"`
+}
+
+// TCPRoute maps a TCP listen port to a backend service (raw TCP forwarding, e.g. for tunnel).
+type TCPRoute struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	ListenPort int    `json:"listen_port"` // TCP port the gateway listens on
+	ServiceID  string `json:"service_id"`  // ID of the backend service (Host:Port)
+	Enabled    bool   `json:"enabled"`
+}
+
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
 	HTTPPort         int                   `json:"http_port"`
@@ -64,6 +82,8 @@ type GatewayConfig struct {
 	LetsEncrypt      *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
 	Services         []Service             `json:"services"`
 	Routes           []Route               `json:"routes"`
+	UDPRoutes       []UDPRoute             `json:"udp_routes,omitempty"`
+	TCPRoutes       []TCPRoute             `json:"tcp_routes,omitempty"`
 	GlobalRateLimit  *RateLimitConfig      `json:"global_rate_limit,omitempty"`
 	LogLevel         string                `json:"log_level"`
 	AccessLogEnabled bool                  `json:"access_log_enabled"`

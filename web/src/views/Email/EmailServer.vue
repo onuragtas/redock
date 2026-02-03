@@ -1221,7 +1221,7 @@ onMounted(() => {
           <div v-if="loading" class="flex-1 flex items-center justify-center text-gray-500">
             <div class="text-center">
               <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p>E-postalar yükleniyor...</p>
+              <p>Loading emails...</p>
             </div>
           </div>
 
@@ -1564,7 +1564,7 @@ onMounted(() => {
     >
       <FormField label="Alıcı">
         <FormControl v-model="newEmail.to" placeholder="alici@example.com (virgülle birden fazla)" />
-        <p class="text-xs text-gray-500 mt-1">Birden fazla alıcı için virgül veya noktalı virgül kullanın</p>
+        <p class="text-xs text-gray-500 mt-1">Use comma or semicolon for multiple recipients</p>
       </FormField>
       <FormField label="Konu">
         <FormControl v-model="newEmail.subject" placeholder="Konu" />

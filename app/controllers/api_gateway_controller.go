@@ -628,6 +628,85 @@ func APIGatewayDeleteRoute(c *fiber.Ctx) error {
 	})
 }
 
+// APIGatewayListUDPRoutes returns all UDP routes
+func APIGatewayListUDPRoutes(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	routes := gw.ListUDPRoutes()
+	if routes == nil {
+		routes = []api_gateway.UDPRoute{}
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"data":  routes,
+	})
+}
+
+// APIGatewayAddUDPRoute adds a new UDP route (gateway restarts if running)
+func APIGatewayAddUDPRoute(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	route := &api_gateway.UDPRoute{}
+	if err := c.BodyParser(route); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	if route.ID == "" {
+		route.ID = uuid.New().String()
+	}
+	if err := gw.AddUDPRoute(*route); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "UDP route added successfully",
+		"data":  gw.GetConfig().UDPRoutes,
+	})
+}
+
+// APIGatewayRemoveUDPRoute removes a UDP route by ID (gateway restarts if running)
+func APIGatewayRemoveUDPRoute(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	id := c.Params("id")
+	if id == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "id is required",
+		})
+	}
+	if err := gw.RemoveUDPRoute(id); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "UDP route removed successfully",
+	})
+}
+
 // APIGatewayTestUpstream tests connectivity to an upstream service
 // @Description Test connectivity to an upstream service
 // @Summary test upstream
