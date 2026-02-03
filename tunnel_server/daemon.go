@@ -314,12 +314,19 @@ func writeFrame(conn net.Conn, payload []byte) error {
 }
 
 func handleControlMessage(c *Client, body []byte) {
-	text := strings.TrimSpace(string(body))
+	text := string(body)
 	parts := strings.SplitN(text, " ", 2)
 	cmd := strings.ToUpper(strings.TrimSpace(parts[0]))
 	arg := ""
 	if len(parts) > 1 {
-		arg = strings.TrimSpace(parts[1])
+		arg = parts[1]
+		// BIND arg is "domain\thost_rewrite"; TrimSpace would remove the tab so we'd lose "empty host_rewrite" case.
+		if cmd != "BIND" {
+			arg = strings.TrimSpace(arg)
+		} else {
+			arg = strings.TrimSuffix(arg, "\n")
+			arg = strings.TrimSuffix(arg, "\r")
+		}
 	}
 	switch cmd {
 	case "BIND":
