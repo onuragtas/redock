@@ -29,11 +29,18 @@ const serverName = computed(() => {
   return typeof n === "string" ? n : "Tunnel server";
 });
 
-// Callback URL is built from current origin so redirect always hits backend (no long URL in query).
+// Origin where the Redock app runs; callback must point there (tunnel-auth may run on tunnel server).
+const redirectOrigin = computed(() => {
+  const o = route.query.redirect_origin;
+  return typeof o === "string" ? o.trim() : "";
+});
+
+// Callback URL must target the Redock app backend, not the tunnel server (use redirect_origin from client).
 const callbackUrl = computed(() => {
   if (!state.value || !baseUrl.value) return "";
+  const origin = redirectOrigin.value || window.location.origin;
   return (
-    window.location.origin +
+    origin.replace(/\/$/, "") +
     "/api/v1/tunnel/auth/callback?state=" +
     encodeURIComponent(state.value)
   );
@@ -68,14 +75,14 @@ const submit = async () => {
         credentials.value.username,
         credentials.value.password
       );
-      token = res?.data?.data?.token;
+      token = res?.data?.data?.token ?? res?.data?.token;
     } else {
       const res = await ApiService.tunnelLoginExternal(
         baseUrl.value,
         credentials.value.username,
         credentials.value.password
       );
-      token = res?.data?.data?.token;
+      token = res?.data?.data?.token ?? res?.data?.token;
     }
     if (!token) {
       errorMsg.value = "Login or registration failed; no token received.";

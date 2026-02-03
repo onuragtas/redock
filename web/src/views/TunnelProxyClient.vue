@@ -532,11 +532,13 @@ const goToTunnelAuth = async () => {
       return;
     }
     const baseUrl = getEffectiveBaseUrl(server);
+    const redirectOrigin = typeof window !== "undefined" ? window.location.origin : "";
     const params = new URLSearchParams({
       state: String(state),
       server_id: String(server.id),
       base_url: baseUrl,
-      server_name: server.name || "Tunnel server"
+      server_name: server.name || "Tunnel server",
+      redirect_origin: redirectOrigin
     });
     const authUrl = baseUrl.replace(/\/$/, "") + "/#/tunnel-auth?" + params.toString();
     window.location.href = authUrl;
