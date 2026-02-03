@@ -159,16 +159,15 @@ type GraylogConfig struct {
 
 // LetsEncryptConfig represents Let's Encrypt certificate configuration
 type LetsEncryptConfig struct {
-	Enabled                 bool     `json:"enabled"`
-	Email                   string   `json:"email"`
-	Domains                 []string `json:"domains"`
-	SingleDomainCertDomains []string `json:"single_domain_cert_domains,omitempty"` // Domains with their own cert file (data/certs/<domain>.crt) for faster single-domain issuance
-	Staging                 bool     `json:"staging"`           // Use staging server for testing
-	AutoRenew               bool     `json:"auto_renew"`        // Auto-renew before expiry
-	RenewBeforeDays         int      `json:"renew_before_days"` // Days before expiry to renew
-	LastRenewAt             string   `json:"last_renew_at,omitempty"`
-	ExpiresAt               string   `json:"expires_at,omitempty"`
-	CertificateReady        bool     `json:"certificate_ready"`
+	Enabled          bool     `json:"enabled"`
+	Email            string   `json:"email"`
+	Domains          []string `json:"domains"`
+	Staging          bool     `json:"staging"`           // Use staging server for testing
+	AutoRenew        bool     `json:"auto_renew"`        // Auto-renew before expiry
+	RenewBeforeDays  int      `json:"renew_before_days"` // Days before expiry to renew
+	LastRenewAt      string   `json:"last_renew_at,omitempty"`
+	ExpiresAt        string   `json:"expires_at,omitempty"`
+	CertificateReady bool     `json:"certificate_ready"`
 }
 
 // RateLimitConfig represents global rate limiting configuration

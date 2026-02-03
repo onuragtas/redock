@@ -3,7 +3,6 @@ package tunnel_server
 import (
 	"fmt"
 	"log"
-	"net"
 	"strconv"
 	"strings"
 	"time"
@@ -153,20 +152,7 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	return nil
 }
 
-// waitForDNSResolvable waits until the domain has A/AAAA records (DNS propagated) or timeout. Returns true if resolved.
-func waitForDNSResolvable(domain string, maxWait time.Duration, interval time.Duration) bool {
-	deadline := time.Now().Add(maxWait)
-	for time.Now().Before(deadline) {
-		addrs, err := net.LookupHost(domain)
-		if err == nil && len(addrs) > 0 {
-			return true
-		}
-		time.Sleep(interval)
-	}
-	return false
-}
-
-// addTunnelDomainToLetsEncrypt adds fullDomain to the gateway's Let's Encrypt domain list (if not already present) and requests a new certificate.
+// addTunnelDomainToLetsEncrypt adds fullDomain to the gateway's Let's Encrypt domain list (if not already present) and requests a new certificate (one bulk SAN request for all domains).
 func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 	cfg := gw.GetConfig()
 	if cfg == nil || cfg.LetsEncrypt == nil || !cfg.LetsEncrypt.Enabled {
@@ -184,18 +170,16 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 	domains := make([]string, 0, len(cfg.LetsEncrypt.Domains)+1)
 	domains = append(domains, cfg.LetsEncrypt.Domains...)
 	domains = append(domains, fullDomain)
-	singleDomainCerts := append([]string(nil), cfg.LetsEncrypt.SingleDomainCertDomains...)
 	leCopy := &api_gateway.LetsEncryptConfig{
-		Enabled:                 cfg.LetsEncrypt.Enabled,
-		Email:                   cfg.LetsEncrypt.Email,
-		Domains:                 domains,
-		SingleDomainCertDomains: singleDomainCerts,
-		Staging:                 cfg.LetsEncrypt.Staging,
-		AutoRenew:               cfg.LetsEncrypt.AutoRenew,
-		RenewBeforeDays:         cfg.LetsEncrypt.RenewBeforeDays,
-		LastRenewAt:             cfg.LetsEncrypt.LastRenewAt,
-		ExpiresAt:               cfg.LetsEncrypt.ExpiresAt,
-		CertificateReady:        cfg.LetsEncrypt.CertificateReady,
+		Enabled:          cfg.LetsEncrypt.Enabled,
+		Email:            cfg.LetsEncrypt.Email,
+		Domains:          domains,
+		Staging:          cfg.LetsEncrypt.Staging,
+		AutoRenew:        cfg.LetsEncrypt.AutoRenew,
+		RenewBeforeDays:  cfg.LetsEncrypt.RenewBeforeDays,
+		LastRenewAt:      cfg.LetsEncrypt.LastRenewAt,
+		ExpiresAt:        cfg.LetsEncrypt.ExpiresAt,
+		CertificateReady: cfg.LetsEncrypt.CertificateReady,
 	}
 	if err := gw.ConfigureLetsEncrypt(leCopy); err != nil {
 		log.Printf("tunnel_server: add domain to Let's Encrypt config: %v", err)
@@ -213,17 +197,12 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 		time.Sleep(pollInterval)
 	}
 
-	// Wait for DNS to be visible (record may have just been created; propagation delay)
-	if !waitForDNSResolvable(fullDomain, 90*time.Second, 5*time.Second) {
-		log.Printf("tunnel_server: DNS for %s did not resolve in time, skipping certificate request (retry later from UI if needed)", fullDomain)
-	}
-
-	// Request certificate only for this domain (faster; no re-validation of existing domains)
-	if err := gw.RequestCertificateForSingleDomain(fullDomain); err != nil {
-		log.Printf("tunnel_server: request single-domain certificate for %s: %v", fullDomain, err)
+	// Request certificate for full domain list (one SAN cert: tls.crt / tls.key)
+	if err := gw.RequestCertificateWithConfig(leCopy); err != nil {
+		log.Printf("tunnel_server: request certificate for %s (full list): %v", fullDomain, err)
 		return
 	}
-	log.Printf("tunnel_server: Let's Encrypt single-domain certificate obtained for %s", fullDomain)
+	log.Printf("tunnel_server: Let's Encrypt certificate updated to include %s", fullDomain)
 }
 
 // removeTunnelDomainFromLetsEncrypt removes fullDomain from the gateway's Let's Encrypt domain list.
@@ -246,29 +225,21 @@ func removeTunnelDomainFromLetsEncrypt(gw *api_gateway.Gateway, fullDomain strin
 	if len(newDomains) == len(cfg.LetsEncrypt.Domains) {
 		return
 	}
-	var newSingle []string
-	for _, d := range cfg.LetsEncrypt.SingleDomainCertDomains {
-		if strings.TrimSpace(d) != fullDomain {
-			newSingle = append(newSingle, d)
-		}
-	}
 	leCopy := &api_gateway.LetsEncryptConfig{
-		Enabled:                 cfg.LetsEncrypt.Enabled,
-		Email:                   cfg.LetsEncrypt.Email,
-		Domains:                 newDomains,
-		SingleDomainCertDomains: newSingle,
-		Staging:                 cfg.LetsEncrypt.Staging,
-		AutoRenew:               cfg.LetsEncrypt.AutoRenew,
-		RenewBeforeDays:         cfg.LetsEncrypt.RenewBeforeDays,
-		LastRenewAt:             cfg.LetsEncrypt.LastRenewAt,
-		ExpiresAt:               cfg.LetsEncrypt.ExpiresAt,
-		CertificateReady:        cfg.LetsEncrypt.CertificateReady,
+		Enabled:          cfg.LetsEncrypt.Enabled,
+		Email:            cfg.LetsEncrypt.Email,
+		Domains:          newDomains,
+		Staging:          cfg.LetsEncrypt.Staging,
+		AutoRenew:        cfg.LetsEncrypt.AutoRenew,
+		RenewBeforeDays:  cfg.LetsEncrypt.RenewBeforeDays,
+		LastRenewAt:      cfg.LetsEncrypt.LastRenewAt,
+		ExpiresAt:        cfg.LetsEncrypt.ExpiresAt,
+		CertificateReady: cfg.LetsEncrypt.CertificateReady,
 	}
 	if err := gw.ConfigureLetsEncrypt(leCopy); err != nil {
 		log.Printf("tunnel_server: remove domain from Let's Encrypt config: %v", err)
 		return
 	}
-	gw.DeleteSingleDomainCertFiles(fullDomain)
 	log.Printf("tunnel_server: %s removed from Let's Encrypt domain list", fullDomain)
 }
 

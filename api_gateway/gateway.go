@@ -526,42 +526,14 @@ func (g *Gateway) startLocked() error {
 	}()
 
 	// Start HTTPS if enabled. Use GetCertificate so renewed certs are picked up without restart.
-	// Prefer per-domain cert (data/certs/<domain>.crt) when client SNI matches SingleDomainCertDomains.
-	hasMainCert := g.config.TLSCertFile != "" && g.config.TLSKeyFile != ""
-	hasSingleCerts := g.config.LetsEncrypt != nil && len(g.config.LetsEncrypt.SingleDomainCertDomains) > 0
-	if g.config.HTTPSEnabled && (hasMainCert || hasSingleCerts) {
+	if g.config.HTTPSEnabled && g.config.TLSCertFile != "" && g.config.TLSKeyFile != "" {
 		g.tlsConfig = &tls.Config{
 			MinVersion: tls.VersionTLS12,
 			GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				sni := strings.TrimSpace(hello.ServerName)
 				g.mu.RLock()
-				var singleDomains, allLEDomains []string
-				if g.config.LetsEncrypt != nil {
-					singleDomains = g.config.LetsEncrypt.SingleDomainCertDomains
-					allLEDomains = g.config.LetsEncrypt.Domains
-				}
 				certFile := g.config.TLSCertFile
 				keyFile := g.config.TLSKeyFile
-				workDir := g.workDir
 				g.mu.RUnlock()
-				// Prefer single-domain cert; match SNI case-insensitively (RFC 6066)
-				for _, d := range singleDomains {
-					if strings.EqualFold(d, sni) {
-						certPath := filepath.Join(workDir, "data", "certs", SanitizeDomainForCertFile(sni)+".crt")
-						keyPath := filepath.Join(workDir, "data", "certs", SanitizeDomainForCertFile(sni)+".key")
-						cert, err := tls.LoadX509KeyPair(certPath, keyPath)
-						if err != nil {
-							return nil, err
-						}
-						return &cert, nil
-					}
-				}
-				// Do not serve main cert for domains that are in Let's Encrypt list but not yet in single-domain certs (avoids wrong/unverified cert)
-				for _, d := range allLEDomains {
-					if strings.EqualFold(d, sni) {
-						return nil, fmt.Errorf("certificate for %s not ready yet", sni)
-					}
-				}
 				if certFile == "" || keyFile == "" {
 					return nil, fmt.Errorf("TLS cert/key not configured")
 				}

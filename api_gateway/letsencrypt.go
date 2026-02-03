@@ -378,94 +378,6 @@ func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) er
 	return nil
 }
 
-// SanitizeDomainForCertFile returns a filesystem-safe name for a domain (e.g. "a.b.c" -> "a_b_c").
-func SanitizeDomainForCertFile(domain string) string {
-	return strings.ReplaceAll(strings.TrimSpace(domain), ".", "_")
-}
-
-// SingleDomainCertDir returns the directory for per-domain certs (data/certs).
-func (g *Gateway) SingleDomainCertDir() string {
-	return filepath.Join(g.workDir, "data", "certs")
-}
-
-// RequestCertificateForSingleDomain requests a Let's Encrypt certificate only for the given domain
-// and stores it in data/certs/<sanitized>.crt and .key. Used when adding a tunnel domain so only
-// one domain is validated (faster). The gateway will serve this cert when the client SNI matches.
-func (g *Gateway) RequestCertificateForSingleDomain(domain string) error {
-	domain = strings.TrimSpace(domain)
-	if domain == "" {
-		return errors.New("domain is required")
-	}
-	config := g.GetConfig()
-	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
-		return errors.New("Let's Encrypt is not enabled")
-	}
-	if config.LetsEncrypt.Email == "" {
-		return errors.New("email is required for Let's Encrypt")
-	}
-
-	certDir := g.SingleDomainCertDir()
-	if err := os.MkdirAll(certDir, 0755); err != nil {
-		return fmt.Errorf("create certs dir: %w", err)
-	}
-	sanitized := SanitizeDomainForCertFile(domain)
-	certPath := filepath.Join(certDir, sanitized+".crt")
-	keyPath := filepath.Join(certDir, sanitized+".key")
-
-	leSingle := &LetsEncryptConfig{
-		Enabled:          true,
-		Email:            config.LetsEncrypt.Email,
-		Domains:          []string{domain},
-		Staging:          config.LetsEncrypt.Staging,
-		AutoRenew:        config.LetsEncrypt.AutoRenew,
-		RenewBeforeDays:  config.LetsEncrypt.RenewBeforeDays,
-	}
-
-	log.Printf("API Gateway: Requesting Let's Encrypt certificate for single domain: %s", domain)
-	if err := obtainCertificateViaACME(g.workDir, leSingle, certPath, keyPath); err != nil {
-		return fmt.Errorf("Let's Encrypt single domain: %w", err)
-	}
-
-	g.mu.Lock()
-	if g.config.LetsEncrypt == nil {
-		g.config.LetsEncrypt = &LetsEncryptConfig{}
-	}
-	// Ensure HTTPS is on (we have at least one cert)
-	g.config.HTTPSEnabled = true
-	// Add this domain to single-domain list so GetCertificate serves this cert for SNI
-	seen := false
-	for _, d := range g.config.LetsEncrypt.SingleDomainCertDomains {
-		if d == domain {
-			seen = true
-			break
-		}
-	}
-	if !seen {
-		g.config.LetsEncrypt.SingleDomainCertDomains = append(g.config.LetsEncrypt.SingleDomainCertDomains, domain)
-	}
-	g.mu.Unlock()
-
-	if err := g.SaveConfig(); err != nil {
-		return fmt.Errorf("save config: %w", err)
-	}
-	log.Printf("API Gateway: Single-domain certificate obtained for %s", domain)
-	return nil
-}
-
-// DeleteSingleDomainCertFiles removes the cert and key files for a domain from data/certs/.
-// Call after removing a domain from SingleDomainCertDomains so the files are cleaned up.
-func (g *Gateway) DeleteSingleDomainCertFiles(domain string) {
-	domain = strings.TrimSpace(domain)
-	if domain == "" {
-		return
-	}
-	sanitized := SanitizeDomainForCertFile(domain)
-	certPath := filepath.Join(g.SingleDomainCertDir(), sanitized+".crt")
-	keyPath := filepath.Join(g.SingleDomainCertDir(), sanitized+".key")
-	_ = os.Remove(certPath)
-	_ = os.Remove(keyPath)
-}
-
 // obtainCertificateViaACME runs the ACME flow (HTTP-01) and writes cert and key to the given paths.
 func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, keyPath string) error {
 	dirURL := acme.LetsEncryptURL
@@ -722,7 +634,6 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 	if config.LetsEncrypt != nil {
 		info["lets_encrypt_email"] = config.LetsEncrypt.Email
 		info["lets_encrypt_domains"] = config.LetsEncrypt.Domains
-		info["single_domain_cert_domains"] = config.LetsEncrypt.SingleDomainCertDomains
 		info["lets_encrypt_staging"] = config.LetsEncrypt.Staging
 		info["auto_renew"] = config.LetsEncrypt.AutoRenew
 		info["renew_before_days"] = config.LetsEncrypt.RenewBeforeDays
@@ -750,29 +661,6 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 	// If SAN was not set from cert file, show configured domains so UI stays in sync (e.g. after adding tunnel domain, before cert is re-issued)
 	if _, set := info["cert_dns_names"]; !set && config.LetsEncrypt != nil && len(config.LetsEncrypt.Domains) > 0 {
 		info["cert_dns_names"] = config.LetsEncrypt.Domains
-	}
-	// Merge single-domain cert domains into SAN for display (no duplicates)
-	if config.LetsEncrypt != nil && len(config.LetsEncrypt.SingleDomainCertDomains) > 0 {
-		seen := make(map[string]bool)
-		var merged []string
-		if names, ok := info["cert_dns_names"].([]string); ok {
-			for _, n := range names {
-				if !seen[n] {
-					seen[n] = true
-					merged = append(merged, n)
-				}
-			}
-		}
-		for _, d := range config.LetsEncrypt.SingleDomainCertDomains {
-			d = strings.TrimSpace(d)
-			if d != "" && !seen[d] {
-				seen[d] = true
-				merged = append(merged, d)
-			}
-		}
-		if len(merged) > 0 {
-			info["cert_dns_names"] = merged
-		}
 	}
 
 	return info
