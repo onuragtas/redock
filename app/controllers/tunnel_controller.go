@@ -749,7 +749,7 @@ func proxyHandler(c *fiber.Ctx, serverID uint, method, path string, body []byte)
 	return writeProxyResult(c, res)
 }
 
-// TunnelProxyDomainsList: internal proxy GET /tunnel/proxy/domains?server_id=
+// TunnelProxyDomainsList: internal proxy GET /tunnel/domains; enriches "started" from locally-running proxy clients.
 func TunnelProxyDomainsList(c *fiber.Ctx) error {
 	serverIDStr := c.Query("server_id")
 	if serverIDStr == "" {
@@ -759,7 +759,37 @@ func TunnelProxyDomainsList(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "invalid server_id"})
 	}
-	return proxyHandler(c, uint(serverID), http.MethodGet, "/api/v1/tunnel/domains", nil)
+	userID, ok := requireRedockJWT(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": true, "msg": "Authorization required (Redock JWT)"})
+	}
+	res, err := tunnel_server.ProxyToExternal(userID, uint(serverID), http.MethodGet, "/api/v1/tunnel/domains", nil)
+	if err != nil {
+		if err == tunnel_server.ErrInvalidServerID || err == tunnel_server.ErrServerNoBaseURL {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	if res.StatusCode != 200 {
+		c.Set("Content-Type", res.ContentType)
+		return c.Status(res.StatusCode).Send(res.Body)
+	}
+	var out struct {
+		Error bool          `json:"error"`
+		Data  []fiber.Map   `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body, &out); err != nil {
+		c.Set("Content-Type", res.ContentType)
+		return c.Status(res.StatusCode).Send(res.Body)
+	}
+	for _, item := range out.Data {
+		fullDomain, _ := item["full_domain"].(string)
+		subdomain, _ := item["subdomain"].(string)
+		_, startedFull := activeTunnels.Load(proxyTunnelKey(uint(serverID), fullDomain))
+		_, startedSub := activeTunnels.Load(proxyTunnelKey(uint(serverID), subdomain))
+		item["started"] = startedFull || startedSub
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"error": out.Error, "data": out.Data})
 }
 
 // TunnelProxyDomainCreate: internal proxy POST /tunnel/domains (body: server_id, domain, protocol)

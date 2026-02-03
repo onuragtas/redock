@@ -68,6 +68,7 @@ func generateNewAccessToken(id string, credentials []string) (string, error) {
 	const accessTokenExpire = 60 * time.Minute // 1 saat
 
 	claims := jwt.MapClaims{}
+	claims["iss"] = "redock"
 	claims["id"] = id
 	claims["exp"] = time.Now().Add(accessTokenExpire).Unix()
 	for _, credential := range credentials {

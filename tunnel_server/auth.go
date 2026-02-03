@@ -20,6 +20,7 @@ const accessTokenExpire = 24 * time.Hour
 // GenerateTunnelToken generates a JWT access token for a tunnel user (ID).
 func GenerateTunnelToken(tunnelUserID uint) (string, error) {
 	claims := jwt.MapClaims{
+		"iss": "tunnel",
 		"id":  strconv.FormatUint(uint64(tunnelUserID), 10),
 		"exp": time.Now().Add(accessTokenExpire).Unix(),
 	}
@@ -39,6 +40,10 @@ func ValidateTunnelToken(accessToken string) (tunnelUserID uint, err error) {
 	claims, ok := token.Claims.(jwt.MapClaims)
 	if !ok || !token.Valid {
 		return 0, fmt.Errorf("invalid token claims")
+	}
+	// Redock JWT uses same secret and has "id"; reject so API can treat as admin.
+	if iss, _ := claims["iss"].(string); iss == "redock" {
+		return 0, fmt.Errorf("not a tunnel token")
 	}
 	idStr, ok := claims["id"].(string)
 	if !ok || idStr == "" {
