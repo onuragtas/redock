@@ -160,11 +160,26 @@ func (r *CertificateRenewer) checkAndRenew() {
 		return
 	}
 
-	if config.LetsEncrypt.ExpiresAt == "" {
+	expiresAtStr := config.LetsEncrypt.ExpiresAt
+	if expiresAtStr == "" {
+		// Read expiry from cert file (e.g. after config load or restart)
+		certPath := config.TLSCertFile
+		if certPath != "" {
+			if data, err := os.ReadFile(certPath); err == nil {
+				block, _ := pem.Decode(data)
+				if block != nil {
+					if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
+						expiresAtStr = cert.NotAfter.Format(time.RFC3339)
+					}
+				}
+			}
+		}
+	}
+	if expiresAtStr == "" {
 		return
 	}
 
-	expiresAt, err := time.Parse(time.RFC3339, config.LetsEncrypt.ExpiresAt)
+	expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
 	if err != nil {
 		log.Printf("API Gateway: Failed to parse certificate expiry: %v", err)
 		return

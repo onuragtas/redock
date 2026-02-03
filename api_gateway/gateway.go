@@ -525,37 +525,45 @@ func (g *Gateway) startLocked() error {
 		}
 	}()
 
-	// Start HTTPS if enabled
+	// Start HTTPS if enabled. Use GetCertificate so renewed certs are picked up without restart.
 	if g.config.HTTPSEnabled && g.config.TLSCertFile != "" && g.config.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(g.config.TLSCertFile, g.config.TLSKeyFile)
+		g.tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				g.mu.RLock()
+				certFile := g.config.TLSCertFile
+				keyFile := g.config.TLSKeyFile
+				g.mu.RUnlock()
+				if certFile == "" || keyFile == "" {
+					return nil, fmt.Errorf("TLS cert/key not configured")
+				}
+				cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+				if err != nil {
+					return nil, err
+				}
+				return &cert, nil
+			},
+		}
+
+		g.httpsServer = &http.Server{
+			Handler:      mux,
+			TLSConfig:    g.tlsConfig,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
+
+		httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
+		g.httpsListener, err = tls.Listen("tcp", httpsAddr, g.tlsConfig)
 		if err != nil {
-			log.Printf("API Gateway: Failed to load TLS certificates: %v", err)
+			log.Printf("API Gateway: Failed to listen on %s: %v", httpsAddr, err)
 		} else {
-			g.tlsConfig = &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				MinVersion:   tls.VersionTLS12,
-			}
-
-			g.httpsServer = &http.Server{
-				Handler:      mux,
-				TLSConfig:    g.tlsConfig,
-				ReadTimeout:  30 * time.Second,
-				WriteTimeout: 30 * time.Second,
-				IdleTimeout:  60 * time.Second,
-			}
-
-			httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
-			g.httpsListener, err = tls.Listen("tcp", httpsAddr, g.tlsConfig)
-			if err != nil {
-				log.Printf("API Gateway: Failed to listen on %s: %v", httpsAddr, err)
-			} else {
-				go func() {
-					log.Printf("API Gateway: HTTPS server listening on %s", httpsAddr)
-					if err := g.httpsServer.Serve(g.httpsListener); err != nil && err != http.ErrServerClosed {
-						log.Printf("API Gateway: HTTPS server error: %v", err)
-					}
-				}()
-			}
+			go func() {
+				log.Printf("API Gateway: HTTPS server listening on %s", httpsAddr)
+				if err := g.httpsServer.Serve(g.httpsListener); err != nil && err != http.ErrServerClosed {
+					log.Printf("API Gateway: HTTPS server error: %v", err)
+				}
+			}()
 		}
 	}
 
