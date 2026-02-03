@@ -1083,6 +1083,7 @@ func TunnelProxyRenew(c *fiber.Ctx) error {
 }
 
 // TunnelServerListServers returns the federation tunnel server list (Redock JWT).
+// If the list is empty, creates and returns a default server "Redock" with https://redock.tnpx.org.
 func TunnelServerListServers(c *fiber.Ctx) error {
 	if _, ok := requireRedockJWT(c); !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
@@ -1091,6 +1092,22 @@ func TunnelServerListServers(c *fiber.Ctx) error {
 		})
 	}
 	list := tunnel_server.AllTunnelServers()
+	if len(list) == 0 {
+		defaultServer := &tunnel_server.TunnelServer{
+			Name:      "Redock",
+			BaseURL:   "https://redock.tnpx.org",
+			IsDefault: true,
+			Order:     0,
+		}
+		if err := tunnel_server.CreateTunnelServer(defaultServer); err != nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   err.Error(),
+			})
+		}
+		_ = tunnel_server.SetDefaultTunnelServer(defaultServer.ID)
+		list = tunnel_server.AllTunnelServers()
+	}
 	data := make([]fiber.Map, 0, len(list))
 	for _, s := range list {
 		data = append(data, fiber.Map{
