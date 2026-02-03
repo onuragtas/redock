@@ -257,6 +257,23 @@ func daemonAddr() string {
 	return net.JoinHostPort("127.0.0.1", port)
 }
 
+// daemonAddrForBaseURL parses tunnel server base URL (e.g. https://tunnel.example.com) and returns host:8443 for the daemon connection.
+func daemonAddrForBaseURL(baseURL string) string {
+	baseURL = strings.TrimSpace(baseURL)
+	if baseURL == "" {
+		return ""
+	}
+	u, err := url.Parse(baseURL)
+	if err != nil {
+		return ""
+	}
+	host := u.Hostname()
+	if host == "" {
+		return ""
+	}
+	return net.JoinHostPort(host, "8443")
+}
+
 // bearerTokenForDaemon returns the token to use for the daemon. If request is from Redock admin (JWT), generates a tunnel token for user 0.
 func bearerTokenForDaemon(c *fiber.Ctx, isAdmin bool) (string, error) {
 	if isAdmin {
@@ -778,7 +795,7 @@ func TunnelProxyDomainDelete(c *fiber.Ctx) error {
 	return proxyHandler(c, uint(serverID), http.MethodDelete, "/api/v1/tunnel/domains/"+idStr, nil)
 }
 
-// TunnelProxyList: internal proxy GET /tunnel/list?server_id=
+// TunnelProxyList: internal proxy GET /tunnel/domains; enriches "started" from locally-running proxy clients.
 func TunnelProxyList(c *fiber.Ctx) error {
 	serverIDStr := c.Query("server_id")
 	if serverIDStr == "" {
@@ -788,7 +805,38 @@ func TunnelProxyList(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "invalid server_id"})
 	}
-	return proxyHandler(c, uint(serverID), http.MethodGet, "/api/v1/tunnel/domains", nil)
+	userID, ok := requireRedockJWT(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{"error": true, "msg": "Authorization required (Redock JWT)"})
+	}
+	res, err := tunnel_server.ProxyToExternal(userID, uint(serverID), http.MethodGet, "/api/v1/tunnel/domains", nil)
+	if err != nil {
+		if err == tunnel_server.ErrInvalidServerID || err == tunnel_server.ErrServerNoBaseURL {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
+		}
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	if res.StatusCode != 200 {
+		c.Set("Content-Type", res.ContentType)
+		return c.Status(res.StatusCode).Send(res.Body)
+	}
+	// Enrich "started" from local proxy clients
+	var out struct {
+		Error bool          `json:"error"`
+		Data  []fiber.Map   `json:"data"`
+	}
+	if err := json.Unmarshal(res.Body, &out); err != nil {
+		c.Set("Content-Type", res.ContentType)
+		return c.Status(res.StatusCode).Send(res.Body)
+	}
+	for _, item := range out.Data {
+		fullDomain, _ := item["full_domain"].(string)
+		subdomain, _ := item["subdomain"].(string)
+		_, startedFull := activeTunnels.Load(proxyTunnelKey(uint(serverID), fullDomain))
+		_, startedSub := activeTunnels.Load(proxyTunnelKey(uint(serverID), subdomain))
+		item["started"] = startedFull || startedSub
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{"error": out.Error, "data": out.Data})
 }
 
 // TunnelProxyAdd: internal proxy POST /tunnel/add (body: server_id + data)
@@ -829,27 +877,20 @@ func TunnelProxyDelete(c *fiber.Ctx) error {
 	return proxyHandler(c, body.ServerID, http.MethodPost, "/api/v1/tunnel/delete", raw)
 }
 
-// TunnelProxyStart: internal proxy POST /tunnel/start (body: server_id + data)
-func TunnelProxyStart(c *fiber.Ctx) error {
-	var body struct {
-		ServerID uint        `json:"server_id"`
-		Data     interface{} `json:"data"`
-	}
-	if err := c.BodyParser(&body); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
-	}
-	if body.ServerID == 0 {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "server_id required"})
-	}
-	raw, _ := json.Marshal(body.Data)
-	if len(raw) == 0 || string(raw) == "null" {
-		raw = []byte("{}")
-	}
-	return proxyHandler(c, body.ServerID, http.MethodPost, "/api/v1/tunnel/start", raw)
+// proxyTunnelKey returns the activeTunnels key for a proxy-started client.
+func proxyTunnelKey(serverID uint, domain string) string {
+	return fmt.Sprintf("proxy:%d:%s", serverID, domain)
 }
 
-// TunnelProxyStop: internal proxy POST /tunnel/stop (body: server_id + data)
-func TunnelProxyStop(c *fiber.Ctx) error {
+// TunnelProxyStart: start tunnel client locally; client connects to the external tunnel server's host:8443 (daemon).
+func TunnelProxyStart(c *fiber.Ctx) error {
+	userID, ok := requireRedockJWT(c)
+	if !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Authorization required (Redock JWT)",
+		})
+	}
 	var body struct {
 		ServerID uint        `json:"server_id"`
 		Data     interface{} `json:"data"`
@@ -860,11 +901,129 @@ func TunnelProxyStop(c *fiber.Ctx) error {
 	if body.ServerID == 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "server_id required"})
 	}
+	server, err := tunnel_server.FindTunnelServerByID(body.ServerID)
+	if err != nil || server == nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "invalid server_id"})
+	}
+	baseURL := strings.TrimSpace(server.BaseURL)
+	if baseURL == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "server has no base_url"})
+	}
+	cred := tunnel_server.CredentialByBaseURLAndUser(baseURL, userID)
+	if cred == nil || cred.AccessToken == "" {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "no credential for this tunnel server; connect via OAuth2 first",
+		})
+	}
+	// Parse data (same shape as TunnelStart)
+	var data struct {
+		DomainId      uint   `json:"DomainId"`
+		Domain        string `json:"Domain"`
+		LocalIp       string `json:"LocalIp"`
+		DestinationIp string `json:"DestinationIp"`
+		LocalPort     int    `json:"LocalPort"`
+		LocalUdpIp    string `json:"LocalUdpIp"`
+		LocalUdpPort  int    `json:"LocalUdpPort"`
+	}
 	raw, _ := json.Marshal(body.Data)
 	if len(raw) == 0 || string(raw) == "null" {
 		raw = []byte("{}")
 	}
-	return proxyHandler(c, body.ServerID, http.MethodPost, "/api/v1/tunnel/stop", raw)
+	if err := json.Unmarshal(raw, &data); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "invalid data"})
+	}
+	if data.Domain == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "domain required"})
+	}
+	localTCP := ""
+	if data.LocalIp != "" && data.LocalPort > 0 {
+		localTCP = net.JoinHostPort(data.LocalIp, strconv.Itoa(data.LocalPort))
+	}
+	localUDP := ""
+	if data.LocalUdpIp != "" && data.LocalUdpPort > 0 {
+		localUDP = net.JoinHostPort(data.LocalUdpIp, strconv.Itoa(data.LocalUdpPort))
+	}
+	if localTCP == "" && localUDP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "LocalIp+LocalPort or LocalUdpIp+LocalUdpPort required"})
+	}
+	serverDaemonAddr := daemonAddrForBaseURL(baseURL)
+	if serverDaemonAddr == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "could not parse server base_url"})
+	}
+	key := proxyTunnelKey(body.ServerID, data.Domain)
+	if existing, ok := activeTunnels.Load(key); ok {
+		if cl, _ := existing.(*client.Client); cl != nil {
+			_ = cl.Close()
+		}
+		activeTunnels.Delete(key)
+	}
+	cfg := client.Config{
+		ServerAddr:   serverDaemonAddr,
+		Token:        cred.AccessToken,
+		Domain:       data.Domain,
+		LocalTCPAddr: localTCP,
+		LocalUDPAddr: localUDP,
+	}
+	cl, err := client.ConnectOnce(cfg)
+	if err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "tunnel connect: " + err.Error(),
+		})
+	}
+	activeTunnels.Store(key, cl)
+	go func() {
+		_ = cl.Run()
+		activeTunnels.Delete(key)
+	}()
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  []interface{}{},
+	})
+}
+
+// TunnelProxyStop: stop the locally-running tunnel client for the given server and domain.
+func TunnelProxyStop(c *fiber.Ctx) error {
+	if _, ok := requireRedockJWT(c); !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Authorization required (Redock JWT)",
+		})
+	}
+	var body struct {
+		ServerID uint        `json:"server_id"`
+		Data     interface{} `json:"data"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	if body.ServerID == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "server_id required"})
+	}
+	var data struct {
+		Domain string `json:"Domain"`
+	}
+	raw, _ := json.Marshal(body.Data)
+	if len(raw) > 0 && string(raw) != "null" {
+		_ = json.Unmarshal(raw, &data)
+	}
+	if data.Domain == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "domain required in data"})
+	}
+	key := proxyTunnelKey(body.ServerID, data.Domain)
+	if existing, ok := activeTunnels.Load(key); ok {
+		if cl, _ := existing.(*client.Client); cl != nil {
+			_ = cl.Close()
+		}
+		activeTunnels.Delete(key)
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  fiber.Map{},
+	})
 }
 
 // TunnelProxyRenew: internal proxy POST /tunnel/renew (body: server_id + data)
