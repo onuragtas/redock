@@ -644,6 +644,10 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 			}
 		}
 	}
+	// If SAN was not set from cert file, show configured domains so UI stays in sync (e.g. after adding tunnel domain, before cert is re-issued)
+	if _, set := info["cert_dns_names"]; !set && config.LetsEncrypt != nil && len(config.LetsEncrypt.Domains) > 0 {
+		info["cert_dns_names"] = config.LetsEncrypt.Domains
+	}
 
 	return info
 }

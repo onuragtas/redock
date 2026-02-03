@@ -5,6 +5,7 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 
 	"redock/api_gateway"
 )
@@ -183,6 +184,17 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 	if err := gw.ConfigureLetsEncrypt(leCopy); err != nil {
 		log.Printf("tunnel_server: add domain to Let's Encrypt config: %v", err)
 		return
+	}
+	// Wait for gateway to be running before ACME HTTP-01 (with timeout to avoid spinning forever)
+	const pollInterval = 200 * time.Millisecond
+	const maxWait = 15 * time.Second
+	deadline := time.Now().Add(maxWait)
+	for !gw.IsRunning() {
+		if time.Now().After(deadline) {
+			log.Printf("tunnel_server: gateway did not start within %v, skipping certificate request for %s", maxWait, fullDomain)
+			return
+		}
+		time.Sleep(pollInterval)
 	}
 	if err := gw.RequestCertificate(); err != nil {
 		log.Printf("tunnel_server: request certificate for new domain %s: %v", fullDomain, err)
