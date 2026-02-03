@@ -145,9 +145,9 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 
 	gw.StartAll()
 
-	// If Let's Encrypt is enabled, add this HTTP(S) domain to the cert and request a new certificate
+	// If Let's Encrypt is enabled, add domain to list and request certificate in background so the API response is not blocked (avoids 502/timeout)
 	if needHTTP {
-		addTunnelDomainToLetsEncrypt(gw, d.FullDomain)
+		go addTunnelDomainToLetsEncrypt(gw, d.FullDomain)
 	}
 
 	return nil
@@ -216,7 +216,6 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 	// Wait for DNS to be visible (record may have just been created; propagation delay)
 	if !waitForDNSResolvable(fullDomain, 90*time.Second, 5*time.Second) {
 		log.Printf("tunnel_server: DNS for %s did not resolve in time, skipping certificate request (retry later from UI if needed)", fullDomain)
-		return
 	}
 
 	// Request certificate only for this domain (faster; no re-validation of existing domains)
