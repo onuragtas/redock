@@ -438,7 +438,7 @@ const deleteServer = async (server) => {
   }
 };
 
-const DEFAULT_TUNNEL_SERVER_URL = "https://api.tnpx.org";
+const DEFAULT_TUNNEL_SERVER_URL = "https://redock.tnpx.org";
 
 const getEffectiveBaseUrl = (server) => {
   const url = (server?.base_url || "").trim();
@@ -526,14 +526,14 @@ const goToTunnelAuth = async () => {
     const ourOrigin = typeof window !== "undefined" ? window.location.origin + window.location.pathname : "";
     const clientRedirect = ourOrigin + "#/tunnel-proxy-client?server=" + encodeURIComponent(server.id);
     const res = await ApiService.tunnelAuthPrepare(server.id, clientRedirect);
-    const callbackUrl = res?.data?.data?.callback_url;
-    if (!callbackUrl) {
-      console.error("Prepare: callback_url not received");
+    const state = res?.data?.data?.state;
+    if (!state) {
+      console.error("Prepare: state not received");
       return;
     }
     const baseUrl = getEffectiveBaseUrl(server);
     const params = new URLSearchParams({
-      redirect_uri: callbackUrl,
+      state: String(state),
       server_id: String(server.id),
       base_url: baseUrl,
       server_name: server.name || "Tunnel server"

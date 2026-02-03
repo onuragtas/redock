@@ -15,9 +15,9 @@ const loading = ref(false);
 const errorMsg = ref("");
 const credentials = ref({ email: "", username: "", password: "" });
 
-const redirectUri = computed(() => {
-  const u = route.query.redirect_uri;
-  return typeof u === "string" ? u : "";
+const state = computed(() => {
+  const s = route.query.state;
+  return typeof s === "string" ? s.trim() : "";
 });
 const serverId = computed(() => route.query.server_id);
 const baseUrl = computed(() => {
@@ -29,8 +29,18 @@ const serverName = computed(() => {
   return typeof n === "string" ? n : "Tunnel server";
 });
 
+// Callback URL is built from current origin so redirect always hits backend (no long URL in query).
+const callbackUrl = computed(() => {
+  if (!state.value || !baseUrl.value) return "";
+  return (
+    window.location.origin +
+    "/api/v1/tunnel/auth/callback?state=" +
+    encodeURIComponent(state.value)
+  );
+});
+
 const isValid = computed(() => {
-  if (!redirectUri.value) return false;
+  if (!state.value || !baseUrl.value) return false;
   if (mode.value === "login") {
     return !!(credentials.value.username?.trim() && credentials.value.password);
   }
@@ -42,8 +52,7 @@ const isValid = computed(() => {
 });
 
 const goBack = () => {
-  const back = redirectUri.value.replace(/^#/, "") || "/tunnel-proxy-client";
-  router.push(back.startsWith("/") ? back : `/${back}`);
+  router.push("/tunnel-proxy-client");
 };
 
 const submit = async () => {
@@ -73,26 +82,19 @@ const submit = async () => {
       return;
     }
     
+    const callback = callbackUrl.value;
+    if (!callback) {
+      errorMsg.value = "Invalid state or base_url.";
+      return;
+    }
     const tokenParams =
       "tunnel_token=" +
       encodeURIComponent(token) +
       "&tunnel_base_url=" +
       encodeURIComponent(baseUrl.value) +
       (serverId.value ? "&server=" + encodeURIComponent(serverId.value) : "");
-    let fullRedirect = redirectUri.value.trim();
-    if (fullRedirect.includes("#")) {
-      const [base, hashPart] = fullRedirect.split("#");
-      const sep = (hashPart || "").includes("?") ? "&" : "?";
-      fullRedirect = base + "#" + (hashPart || "").replace(/\/$/, "") + sep + tokenParams;
-    } else if (fullRedirect.startsWith("/") || fullRedirect.startsWith("#")) {
-      const hashOnly = fullRedirect.startsWith("#") ? fullRedirect.slice(1) : fullRedirect;
-      const sep = hashOnly.includes("?") ? "&" : "?";
-      fullRedirect = window.location.origin + window.location.pathname + "#" + hashOnly + sep + tokenParams;
-    } else {
-      const sep = fullRedirect.includes("?") ? "&" : "?";
-      fullRedirect = fullRedirect + sep + tokenParams;
-    }
-    window.location.href = fullRedirect;
+    const sep = callback.includes("?") ? "&" : "?";
+    window.location.href = callback + sep + tokenParams;
   } catch (e) {
     const msg = e.response?.data?.msg || e.message || "Login or registration failed.";
     errorMsg.value = msg;
@@ -102,8 +104,11 @@ const submit = async () => {
 };
 
 onMounted(() => {
-  if (!redirectUri.value) {
-    errorMsg.value = "redirect_uri is required.";
+  if (!state.value) {
+    errorMsg.value = "state is required. Use Connect from the Tunnel Proxy Client page.";
+  }
+  if (state.value && !baseUrl.value) {
+    errorMsg.value = "base_url is required.";
   }
 });
 </script>
@@ -122,9 +127,9 @@ onMounted(() => {
           Sign in or register for {{ serverName }} ({{ baseUrl || "—" }}).
         </p>
 
-        <div v-if="!redirectUri" class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 mb-6">
+        <div v-if="!state || !baseUrl" class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 mb-6">
           <p class="text-sm text-red-700 dark:text-red-300">
-            redirect_uri is missing. Please open the Tunnel Proxy Client page and use "Connect" to get here.
+            {{ !state ? "state is missing." : "base_url is missing." }} Please open the Tunnel Proxy Client page and use "Connect" to get here.
           </p>
           <button
             type="button"
@@ -135,7 +140,7 @@ onMounted(() => {
           </button>
         </div>
 
-        <template v-else>
+        <template v-else-if="state && baseUrl">
           <div class="flex gap-2 mb-6">
             <button
               type="button"
