@@ -12,6 +12,7 @@ type TunnelServerConfig struct {
 	Enabled             bool   `json:"enabled"`
 	DomainSuffix        string `json:"domain_suffix"`        // Cloudflare zone name
 	CloudflareZoneID    string `json:"cloudflare_zone_id"`   // Cloudflare zone for tunnel subdomains
+	ServerPublicIP     string `json:"server_public_ip"`       // Public IP for Cloudflare A records (tunnel server)
 	PortRangeStart      int    `json:"port_range_start"`      // e.g. 9100
 	TunnelListenAddr    string `json:"tunnel_listen_addr"`   // e.g. ":8443" (TLS TCP or wss)
 	UnusedDomainTTLDays int    `json:"unused_domain_ttl_days"` // delete domains not used for this many days (0 = disable)

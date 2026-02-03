@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"redock/email_server"
 	"redock/pkg/utils"
 	"redock/tunnel_server"
 	"redock/tunnel_server/client"
@@ -423,6 +424,7 @@ func TunnelServerUpdateConfig(c *fiber.Ctx) error {
 	var body struct {
 		Enabled             *bool  `json:"enabled"`
 		CloudflareZoneID    string `json:"cloudflare_zone_id"`
+		ServerPublicIP      string `json:"server_public_ip"`
 		DomainSuffix        string `json:"domain_suffix"`
 		UnusedDomainTTLDays *int   `json:"unused_domain_ttl_days"`
 	}
@@ -444,6 +446,9 @@ func TunnelServerUpdateConfig(c *fiber.Ctx) error {
 	}
 	if body.CloudflareZoneID != "" {
 		cfg.CloudflareZoneID = strings.TrimSpace(body.CloudflareZoneID)
+	}
+	if body.ServerPublicIP != "" {
+		cfg.ServerPublicIP = strings.TrimSpace(body.ServerPublicIP)
 	}
 	if body.DomainSuffix != "" {
 		cfg.DomainSuffix = strings.TrimSpace(body.DomainSuffix)
@@ -585,6 +590,31 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 			"error": true,
 			"msg":   "API Gateway: " + err.Error(),
 		})
+	}
+
+	// Cloudflare: A record for full_domain when zone is set; public IP from tunnel config, else email config, else auto-detect (same as email)
+	if cfg.CloudflareZoneID != "" {
+		serverIP := cfg.ServerPublicIP
+		if serverIP == "" {
+			if mgr := email_server.GetManager(); mgr != nil {
+				serverIP = mgr.GetConfig().IPAddress
+			}
+		}
+		if serverIP == "" {
+			serverIP = tunnel_server.DetectPublicIP()
+		}
+		if serverIP != "" {
+			recordID, err := tunnel_server.CreateTunnelDNSRecord(cfg.CloudflareZoneID, d.FullDomain, serverIP)
+			if err != nil {
+				_ = tunnel_server.RemoveTunnelDomainFromGateway(d)
+				_ = tunnel_server.DeleteDomainByID(d.ID)
+				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+					"error": true,
+					"msg":   "Cloudflare: " + err.Error(),
+				})
+			}
+			d.CloudflareRecordID = recordID
+		}
 	}
 
 	if err := tunnel_server.UpdateDomain(d); err != nil {
