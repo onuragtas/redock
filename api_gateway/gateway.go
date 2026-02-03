@@ -1804,6 +1804,7 @@ func (g *Gateway) UpdateRoute(route Route) error {
 		if r.ID == route.ID {
 			g.config.Routes[i] = route
 			g.refreshRoutes()
+			g.clearRouteCache()
 			return g.saveConfigLocked()
 		}
 	}
@@ -1938,7 +1939,7 @@ func (g *Gateway) refreshRoutes() {
 
 // StartAll starts the gateway if configured to be enabled
 func (g *Gateway) StartAll() {
-	if g.config.Enabled && !g.running {
+	if !g.running {
 		if err := g.Start(); err != nil {
 			log.Printf("API Gateway: Failed to auto-start: %v", err)
 		}
