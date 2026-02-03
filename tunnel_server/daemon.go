@@ -338,11 +338,24 @@ func handleBind(c *Client, domainArg string) {
 		_ = writeControlFrame(c.Conn, "BIND_FAILED domain required\n")
 		return
 	}
+	// Optional host_rewrite: "domain\thost_rewrite" (tab-separated). If no tab, only domain.
+	domainPart := domainArg
+	var hostRewrite string
+	if idx := strings.Index(domainArg, "\t"); idx >= 0 {
+		domainPart = strings.TrimSpace(domainArg[:idx])
+		if idx+1 < len(domainArg) {
+			hostRewrite = strings.TrimSpace(domainArg[idx+1:])
+		}
+	}
+	if domainPart == "" {
+		_ = writeControlFrame(c.Conn, "BIND_FAILED domain required\n")
+		return
+	}
 	var d *TunnelDomain
-	if strings.Contains(domainArg, ".") {
-		d = FindDomainByFullDomain(domainArg)
+	if strings.Contains(domainPart, ".") {
+		d = FindDomainByFullDomain(domainPart)
 	} else {
-		d = FindDomainBySubdomain(domainArg)
+		d = FindDomainBySubdomain(domainPart)
 	}
 	if d == nil {
 		_ = writeControlFrame(c.Conn, "BIND_FAILED domain not found\n")
@@ -360,6 +373,12 @@ func handleBind(c *Client, domainArg string) {
 	now := time.Now()
 	d.LastUsedAt = &now
 	_ = UpdateDomain(d)
+	// Update route HostRewrite when client sent it (tab present): empty = clear, non-empty = override
+	if idx := strings.Index(domainArg, "\t"); idx >= 0 {
+		if err := SetTunnelRouteHostRewrite(d, hostRewrite); err != nil {
+			log.Printf("tunnel_server: SetTunnelRouteHostRewrite %s: %v", d.FullDomain, err)
+		}
+	}
 	_ = writeControlFrame(c.Conn, "BIND_OK\n")
 }
 
@@ -491,7 +510,7 @@ func GetDomainByInternalTCPPort(internalPort int) *TunnelDomain {
 }
 
 func needTCPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "tcp" || d.Protocol == "tcp+udp"
+	return d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
 }
 
 // --- Backend TCP listeners (3.3: gateway proxies to 127.0.0.1:port, we accept and forward to client) ---
@@ -511,11 +530,11 @@ func startAllBackendListeners() {
 }
 
 func needHTTPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "http" || d.Protocol == "https"
+	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
 }
 
 func needUDPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "udp" || d.Protocol == "tcp+udp"
+	return d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
 }
 
 // StartBackendListener starts listening on 127.0.0.1:port for tunnel backend (gateway proxies HTTP here).

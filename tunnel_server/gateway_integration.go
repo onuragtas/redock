@@ -26,9 +26,9 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 		return fmt.Errorf("api_gateway not initialized")
 	}
 	idStr := strconv.FormatUint(uint64(d.ID), 10)
-	needHTTP := d.Protocol == "http" || d.Protocol == "https"
-	needTCP := d.Protocol == "tcp" || d.Protocol == "tcp+udp"
-	needUDP := d.Protocol == "udp" || d.Protocol == "tcp+udp"
+	needHTTP := d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
+	needTCP := d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
+	needUDP := d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
 
 	cfg := gw.GetConfigCopy()
 	if cfg == nil {
@@ -135,18 +135,40 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	return nil
 }
 
+// SetTunnelRouteHostRewrite updates the HTTP route's HostRewrite for the tunnel domain (only for http/https). Empty string clears the override.
+func SetTunnelRouteHostRewrite(d *TunnelDomain, hostRewrite string) error {
+	if d.GatewayRouteID == "" {
+		return nil // no HTTP route (e.g. tcp/udp-only)
+	}
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return nil
+	}
+	cfg := gw.GetConfigCopy()
+	if cfg == nil {
+		return nil
+	}
+	for i := range cfg.Routes {
+		if cfg.Routes[i].ID == d.GatewayRouteID {
+			cfg.Routes[i].HostRewrite = hostRewrite
+			return gw.UpdateRoute(cfg.Routes[i])
+		}
+	}
+	return nil
+}
+
 // RemoveTunnelDomainFromGateway removes api_gateway Route(s), Service(s), UDPRoute and TCPRoute for the tunnel domain.
 func RemoveTunnelDomainFromGateway(d *TunnelDomain) error {
-	// Backend HTTP dinleyiciyi durdur (sadece http/https)
-	if d.Protocol == "http" || d.Protocol == "https" {
+	// Backend HTTP dinleyiciyi durdur (http/https/all)
+	if d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all" {
 		StopBackendListener(d.Port)
 	}
-	// Backend raw TCP dinleyiciyi durdur (tcp/tcp+udp)
-	if d.Protocol == "tcp" || d.Protocol == "tcp+udp" {
+	// Backend raw TCP dinleyiciyi durdur (tcp/tcp+udp/all)
+	if d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all" {
 		StopBackendTCPListener(internalTcpPort(d.Port))
 	}
-	// Backend UDP dinleyiciyi durdur (udp/tcp+udp)
-	if d.Protocol == "udp" || d.Protocol == "tcp+udp" {
+	// Backend UDP dinleyiciyi durdur (udp/tcp+udp/all)
+	if d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all" {
 		StopBackendUDPListener(internalUDPPort(d.Port))
 	}
 	gw := api_gateway.GetGateway()

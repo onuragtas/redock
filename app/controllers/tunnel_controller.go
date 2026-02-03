@@ -305,6 +305,7 @@ func TunnelStart(c *fiber.Ctx) error {
 		LocalPort     int    `json:"LocalPort"`
 		LocalUdpIp    string `json:"LocalUdpIp"`   // optional: UDP forward target IP
 		LocalUdpPort  int    `json:"LocalUdpPort"` // optional: UDP forward target port
+		HostRewrite   string `json:"HostRewrite"` // optional: set route Host header override (HTTP/HTTPS); empty clears
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
@@ -340,6 +341,7 @@ func TunnelStart(c *fiber.Ctx) error {
 		Domain:       body.Domain,
 		LocalTCPAddr: localTCP,
 		LocalUDPAddr: localUDP,
+		HostRewrite:  strings.TrimSpace(body.HostRewrite),
 	}
 	cl, err := client.ConnectOnce(cfg)
 	if err != nil {
@@ -545,7 +547,7 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 	}
 	type Body struct {
 		Domain   string `json:"domain"`   // subdomain
-		Protocol string `json:"protocol"` // http, https, udp, tcp
+		Protocol string `json:"protocol"` // optional; default "all" (HTTP+HTTPS+TCP+UDP)
 	}
 	var body Body
 	if err := c.BodyParser(&body); err != nil {
@@ -581,9 +583,9 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	protocol := body.Protocol
+	protocol := strings.TrimSpace(body.Protocol)
 	if protocol == "" {
-		protocol = "http"
+		protocol = "all"
 	}
 	fullDomain := tunnel_server.FullDomainFor(subdomain, cfg.DomainSuffix)
 	d := &tunnel_server.TunnelDomain{
@@ -925,6 +927,7 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		LocalPort     int    `json:"LocalPort"`
 		LocalUdpIp    string `json:"LocalUdpIp"`
 		LocalUdpPort  int    `json:"LocalUdpPort"`
+		HostRewrite   string `json:"HostRewrite"`
 	}
 	raw, _ := json.Marshal(body.Data)
 	if len(raw) == 0 || string(raw) == "null" {
@@ -964,6 +967,7 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		Domain:       data.Domain,
 		LocalTCPAddr: localTCP,
 		LocalUDPAddr: localUDP,
+		HostRewrite:  strings.TrimSpace(data.HostRewrite),
 	}
 	cl, err := client.ConnectOnce(cfg)
 	if err != nil {

@@ -73,8 +73,7 @@ const credentials = ref({
 });
 
 const create = ref({
-  domain: "",
-  protocol: "http"
+  domain: ""
 });
 
 const start = ref({
@@ -82,7 +81,8 @@ const start = ref({
   destinationIp: "127.0.0.1",
   localPort: 80,
   localUdpIp: "127.0.0.1",
-  localUdpPort: ""
+  localUdpPort: "",
+  hostRewrite: ""
 });
 
 const toast = useToast();
@@ -91,24 +91,25 @@ const toast = useToast();
 function getConnectionLines(tunnel) {
   const domain = tunnel.domain || "";
   const port = tunnel.port;
-  const protocol = (tunnel.protocol || "http").toLowerCase();
+  const protocol = (tunnel.protocol || "all").toLowerCase();
   const lines = [];
-  if (protocol === "http" || protocol === "https") {
-    const scheme = protocol === "https" ? "https" : "http";
-    lines.push({
-      label: protocol === "https" ? "HTTPS (Web)" : "HTTP (Web)",
-      value: `${scheme}://${domain}`,
-      desc: "Open this URL in a browser or send requests to it."
-    });
+  const hasHTTP = protocol === "http" || protocol === "https" || protocol === "all";
+  const hasTCP = protocol === "tcp" || protocol === "tcp+udp" || protocol === "all";
+  const hasUDP = protocol === "udp" || protocol === "tcp+udp" || protocol === "all";
+  if (hasHTTP) {
+    lines.push(
+      { label: "HTTP (Web)", value: `http://${domain}`, desc: "Open this URL in a browser or send HTTP requests." },
+      { label: "HTTPS (Web)", value: `https://${domain}`, desc: "Secure HTTPS endpoint." }
+    );
   }
-  if (protocol === "tcp" || protocol === "tcp+udp") {
+  if (hasTCP) {
     lines.push({
       label: "TCP",
       value: `${domain}:${port}`,
       desc: "Raw TCP connection (connect with telnet, netcat, or a socket to this address)."
     });
   }
-  if (protocol === "udp" || protocol === "tcp+udp") {
+  if (hasUDP) {
     lines.push({
       label: "UDP",
       value: `${domain}:${port}`,
@@ -215,7 +216,7 @@ const logoutSubmit = async () => {
     login.value = false;
     proxies.value = [];
     credentials.value = { username: "", password: "", email: "" };
-    create.value = { domain: "", protocol: "http" };
+    create.value = { domain: "" };
     start.value = {
       localIp: "127.0.0.1",
       destinationIp: "127.0.0.1",
@@ -245,7 +246,7 @@ const tunnelList = async () => {
       id: d.id,
       domain: d.full_domain || d.subdomain,
       port: d.port,
-      protocol: d.protocol || "http",
+      protocol: d.protocol || "all",
       started: !!d.started,
       created_at: d.created_at,
       UpdatedAt: d.updated_at || d.created_at
@@ -283,7 +284,7 @@ const addSubmit = async () => {
   addLoading.value = true;
   try {
     await ApiService.tunnelDomainCreate(
-      { domain, protocol: create.value.protocol || "http" },
+      { domain, protocol: "all" },
       selectedServerId.value
     );
     await tunnelList();
@@ -310,7 +311,8 @@ const startSubmit = async () => {
       DestinationIp: start.value.destinationIp,
       LocalPort: parseInt(start.value.localPort) || 0,
       LocalUdpIp: (start.value.localUdpIp || "").trim(),
-      LocalUdpPort: parseInt(start.value.localUdpPort) || 0
+      LocalUdpPort: parseInt(start.value.localUdpPort) || 0,
+      HostRewrite: (start.value.hostRewrite || "").trim()
     };
     await ApiService.tunnelStart(data, selectedServerId.value);
     isStartModalActive.value = false;
@@ -353,7 +355,7 @@ const renewTunnel = async (item) => {
 };
 
 const resetCreateForm = () => {
-  create.value = { domain: "", protocol: "http" };
+  create.value = { domain: "" };
 };
 
 const getStatusColor = (started) => {
@@ -879,22 +881,28 @@ onMounted(async () => {
                       Port: {{ tunnel.port }}
                     </span>
                     <span
-                      v-if="['tcp', 'tcp+udp'].includes(tunnel.protocol)"
+                      v-if="['tcp', 'tcp+udp', 'all'].includes(tunnel.protocol)"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                     >
                       TCP
                     </span>
                     <span
-                      v-if="['udp', 'tcp+udp'].includes(tunnel.protocol)"
+                      v-if="['udp', 'tcp+udp', 'all'].includes(tunnel.protocol)"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300"
                     >
                       UDP
                     </span>
                     <span
-                      v-if="['http', 'https'].includes(tunnel.protocol)"
+                      v-if="['http', 'https', 'all'].includes(tunnel.protocol)"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
                     >
-                      {{ tunnel.protocol === "https" ? "HTTPS" : "HTTP" }}
+                      HTTP
+                    </span>
+                    <span
+                      v-if="['https', 'all'].includes(tunnel.protocol)"
+                      class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
+                    >
+                      HTTPS
                     </span>
                   </div>
                   <div class="flex items-center">
@@ -1022,35 +1030,23 @@ onMounted(async () => {
 
   </div>
 
-  <!-- Add Tunnel Modal (domain + protocol) -->
+  <!-- Add Tunnel Modal (domain only; each domain supports HTTP, HTTPS, TCP, UDP) -->
   <CardBoxModal
     v-model="isAddModalActive"
     title="Add Domain"
     button="success"
-    :button-label="addLoading ? 'Ekleniyor...' : 'Ekle'"
+    :button-label="addLoading ? 'Adding...' : 'Add'"
     :button-disabled="addLoading || !(create.domain || '').trim()"
     :cancel-disabled="addLoading"
     has-cancel
     @confirm="addSubmit"
   >
     <form class="space-y-6">
-      <FormField label="Subdomain" help="E.g. myapp (full domain is built from server config)">
+      <FormField label="Subdomain" help="E.g. myapp (full domain is built from server config). HTTP, HTTPS, TCP and UDP will all be available for this domain.">
         <FormControl
           v-model="create.domain"
           placeholder="myapp"
         />
-      </FormField>
-      <FormField label="Protocol">
-        <select
-          v-model="create.protocol"
-          class="rounded-lg border border-slate-300 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-slate-700 dark:text-slate-200 w-full"
-        >
-          <option value="http">HTTP</option>
-          <option value="https">HTTPS</option>
-          <option value="tcp">TCP</option>
-          <option value="udp">UDP</option>
-          <option value="tcp+udp">TCP+UDP</option>
-        </select>
       </FormField>
       <div
         v-if="addLoading"
@@ -1223,6 +1219,18 @@ onMounted(async () => {
           v-model="start.localUdpPort"
           type="number"
           placeholder=""
+          class="pl-10"
+        />
+      </FormField>
+
+      <FormField
+        v-if="['http', 'https', 'all'].includes(startDomain.protocol)"
+        label="Host Rewrite (optional)"
+        help="Override Host header when proxying (e.g. order.test.com). Leave empty to clear."
+      >
+        <FormControl
+          v-model="start.hostRewrite"
+          placeholder="backend.example.com"
           class="pl-10"
         />
       </FormField>

@@ -37,6 +37,8 @@ type Config struct {
 	LocalTCPAddr string
 	// LocalUDPAddr is the local address for UDP forwarding (e.g. "127.0.0.1:53"). Empty to disable UDP.
 	LocalUDPAddr string
+	// HostRewrite is sent to the daemon on BIND to set/clear the route's Host header override (HTTP/HTTPS only). Empty clears.
+	HostRewrite string
 }
 
 // Client is a tunnel client connected to the daemon.
@@ -89,7 +91,8 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		tcpStreams: make(map[uint32]net.Conn),
 		udpSockets: make(map[uint32]*net.UDPConn),
 	}
-	if err := c.sendControl("BIND " + cfg.Domain + "\n"); err != nil {
+	// Always send host_rewrite (tab-separated) so server can set or clear the route's Host override
+	if err := c.sendControl("BIND " + cfg.Domain + "\t" + cfg.HostRewrite + "\n"); err != nil {
 		c.Close()
 		return nil, fmt.Errorf("client: send BIND: %w", err)
 	}

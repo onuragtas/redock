@@ -30,7 +30,7 @@ type TunnelDomain struct {
 	Subdomain          string    `json:"subdomain"`             // e.g. "myapp"
 	FullDomain         string    `json:"full_domain"`           // subdomain + suffix
 	Port               int       `json:"port"`                  // assigned TCP/UDP port
-	Protocol           string    `json:"protocol"`              // http, https, udp, tcp, tcp+udp
+	Protocol           string    `json:"protocol"`              // http, https, udp, tcp, tcp+udp, or all (HTTP+HTTPS+TCP+UDP)
 	CloudflareRecordID string    `json:"cloudflare_record_id"`  // A record ID for delete
 	LastUsedAt         *time.Time `json:"last_used_at"`         // last time tunnel was started (BIND); nil = never
 	GatewayServiceID    string   `json:"gateway_service_id"`    // api_gateway Service ID (HTTP/TCP backend)
