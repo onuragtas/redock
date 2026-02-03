@@ -63,14 +63,14 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 			Enabled:  true,
 		}
 		route := api_gateway.Route{
-			ID:         gatewayRoutePrefix + idStr,
-			Name:       "tunnel:" + d.FullDomain,
-			ServiceID:  svc.ID,
-			Hosts:      []string{d.FullDomain},
-			Paths:      []string{"/"},
-			Priority:   100,
-			StripPath:  false,
-			Enabled:    true,
+			ID:        gatewayRoutePrefix + idStr,
+			Name:      "tunnel:" + d.FullDomain,
+			ServiceID: svc.ID,
+			Hosts:     []string{d.FullDomain},
+			Paths:     []string{"/"},
+			Priority:  100,
+			StripPath: false,
+			Enabled:   true,
 		}
 		cfg.Services = append(cfg.Services, svc)
 		cfg.Routes = append(cfg.Routes, route)
@@ -196,6 +196,9 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 		}
 		time.Sleep(pollInterval)
 	}
+
+	time.Sleep(5 * time.Second)
+
 	if err := gw.RequestCertificate(); err != nil {
 		log.Printf("tunnel_server: request certificate for new domain %s: %v", fullDomain, err)
 		return
