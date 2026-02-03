@@ -626,7 +626,7 @@ onMounted(async () => {
       </div>
     </div>
 
-    <CardBox v-if="ApiService.getJWT() && tunnelServers.length > 0" class="mb-6">
+    <CardBox v-if="ApiService.getJWT()" class="mb-6">
       <FormField label="Tunnel server" help="Domain list and tunnel operations use the selected server.">
         <div class="flex flex-wrap items-center gap-3">
           <select
