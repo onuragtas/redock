@@ -197,9 +197,9 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 		time.Sleep(pollInterval)
 	}
 
-	log.Println("tunnel_server: waiting for 30 seconds")
-	time.Sleep(30 * time.Second)
-	log.Println("tunnel_server: 30 seconds passed")
+	log.Println("tunnel_server: waiting for 15 seconds")
+	time.Sleep(15 * time.Second)
+	log.Println("tunnel_server: 15 seconds passed")
 	// Request certificate for full domain list (one SAN cert: tls.crt / tls.key)
 	if err := gw.RequestCertificateWithConfig(leCopy); err != nil {
 		log.Printf("tunnel_server: request certificate for %s (full list): %v", fullDomain, err)
