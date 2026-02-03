@@ -432,6 +432,24 @@ func (g *Gateway) GetConfig() *GatewayConfig {
 	return g.config
 }
 
+// GetConfigCopy returns a deep copy of the current config (for building merged config then UpdateConfig).
+func (g *Gateway) GetConfigCopy() *GatewayConfig {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil {
+		return nil
+	}
+	data, err := json.Marshal(g.config)
+	if err != nil {
+		return nil
+	}
+	var copy GatewayConfig
+	if err := json.Unmarshal(data, &copy); err != nil {
+		return nil
+	}
+	return &copy
+}
+
 // UpdateConfig updates the gateway configuration
 func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 	gatewayLock.Lock()
@@ -590,12 +608,16 @@ func (g *Gateway) stopLocked() error {
 		if err := g.httpServer.Shutdown(ctx); err != nil {
 			log.Printf("API Gateway: HTTP server shutdown error: %v", err)
 		}
+		g.httpServer = nil
+		g.httpListener = nil
 	}
 
 	if g.httpsServer != nil {
 		if err := g.httpsServer.Shutdown(ctx); err != nil {
 			log.Printf("API Gateway: HTTPS server shutdown error: %v", err)
 		}
+		g.httpsServer = nil
+		g.httpsListener = nil
 	}
 
 	g.running = false

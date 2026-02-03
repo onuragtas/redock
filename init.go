@@ -100,7 +100,7 @@ func initialize() {
 func registerEntities(db *memory.Database) error {
 	// DNS entities
 	entities := []struct {
-		name  string
+		name     string
 		register func() error
 	}{
 		{"dns_config", func() error { return memory.Register[*dns_server.DNSConfig](db, "dns_config") }},
@@ -110,7 +110,7 @@ func registerEntities(db *memory.Database) error {
 		{"dns_client_rules", func() error { return memory.Register[*dns_server.DNSClientDomainRule](db, "dns_client_rules") }},
 		{"dns_rewrites", func() error { return memory.Register[*dns_server.DNSRewrite](db, "dns_rewrites") }},
 		{"dns_query_logs", func() error { return memory.Register[*dns_server.DNSQueryLog](db, "dns_query_logs") }},
-		
+
 		// VPN entities
 		{"vpn_servers", func() error { return memory.Register[*vpn_server.VPNServer](db, "vpn_servers") }},
 		{"vpn_users", func() error { return memory.Register[*vpn_server.VPNUser](db, "vpn_users") }},
@@ -119,16 +119,20 @@ func registerEntities(db *memory.Database) error {
 		{"vpn_connections", func() error { return memory.Register[*vpn_server.VPNConnection](db, "vpn_connections") }},
 		{"vpn_connection_logs", func() error { return memory.Register[*vpn_server.VPNConnectionLog](db, "vpn_connection_logs") }},
 		{"vpn_bandwidth_stats", func() error { return memory.Register[*vpn_server.VPNBandwidthStat](db, "vpn_bandwidth_stats") }},
-		
+
 		// Cloudflare entities
 		{"cloudflare_accounts", func() error { return memory.Register[*cloudflare.CloudflareAccount](db, "cloudflare_accounts") }},
 		{"cloudflare_zones", func() error { return memory.Register[*cloudflare.CloudflareZone](db, "cloudflare_zones") }},
 		{"cloudflare_dns_records", func() error { return memory.Register[*cloudflare.CloudflareDNSRecord](db, "cloudflare_dns_records") }},
-		{"cloudflare_firewall_rules", func() error { return memory.Register[*cloudflare.CloudflareFirewallRule](db, "cloudflare_firewall_rules") }},
+		{"cloudflare_firewall_rules", func() error {
+			return memory.Register[*cloudflare.CloudflareFirewallRule](db, "cloudflare_firewall_rules")
+		}},
 		{"cloudflare_page_rules", func() error { return memory.Register[*cloudflare.CloudflarePageRule](db, "cloudflare_page_rules") }},
-		{"cloudflare_zone_settings", func() error { return memory.Register[*cloudflare.CloudflareZoneSettings](db, "cloudflare_zone_settings") }},
+		{"cloudflare_zone_settings", func() error {
+			return memory.Register[*cloudflare.CloudflareZoneSettings](db, "cloudflare_zone_settings")
+		}},
 		{"cloudflare_events", func() error { return memory.Register[*cloudflare.CloudflareEvent](db, "cloudflare_events") }},
-		
+
 		// Email entities
 		{"email_domains", func() error { return memory.Register[*email_server.EmailDomain](db, "email_domains") }},
 		{"email_mailboxes", func() error { return memory.Register[*email_server.EmailMailbox](db, "email_mailboxes") }},
@@ -139,7 +143,7 @@ func registerEntities(db *memory.Database) error {
 		{"email_filters", func() error { return memory.Register[*email_server.EmailFilter](db, "email_filters") }},
 		{"email_logs", func() error { return memory.Register[*email_server.EmailLog](db, "email_logs") }},
 		{"email_server_configs", func() error { return memory.Register[*email_server.EmailServerConfig](db, "email_server_configs") }},
-		
+
 		// Other entities
 		{"users", func() error { return memory.Register[*models.User](db, "users") }},
 		{"saved_commands", func() error { return memory.Register[*database.SavedCommand](db, "saved_commands") }},
@@ -149,7 +153,9 @@ func registerEntities(db *memory.Database) error {
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
 		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},
 		{"tunnel_users", func() error { return memory.Register[*tunnel_server.TunnelUser](db, "tunnel_users") }},
-		{"tunnel_server_credentials", func() error { return memory.Register[*tunnel_server.TunnelServerCredential](db, "tunnel_server_credentials") }},
+		{"tunnel_server_credentials", func() error {
+			return memory.Register[*tunnel_server.TunnelServerCredential](db, "tunnel_server_credentials")
+		}},
 		{"tunnel_servers", func() error { return memory.Register[*tunnel_server.TunnelServer](db, "tunnel_servers") }},
 	}
 
