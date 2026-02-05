@@ -67,9 +67,8 @@ const selectedServer = computed(
 );
 
 const credentials = ref({
-  username: "",
-  password: "",
-  email: ""
+  email: "",
+  password: ""
 });
 
 const start = ref({
@@ -164,7 +163,7 @@ const checkLogin = async () => {
 const loginSubmit = async () => {
   try {
     const response = await ApiService.tunnelLogin(
-      credentials.value.username,
+      credentials.value.email,
       credentials.value.password
     );
     if (response?.data?.data?.token) {
@@ -186,7 +185,6 @@ const registerSubmit = async () => {
   try {
     const response = await ApiService.tunnelRegister(
       credentials.value.email,
-      credentials.value.username,
       credentials.value.password
     );
     if (response?.data?.data?.token) {
@@ -213,7 +211,7 @@ const logoutSubmit = async () => {
     ApiService.setTunnelServerContext(null);
     login.value = false;
     proxies.value = [];
-    credentials.value = { username: "", password: "", email: "" };
+    credentials.value = { email: "", password: "" };
     start.value = {
       destinationIp: "127.0.0.1",
       destinationPort: 80,
@@ -488,14 +486,13 @@ const externalLoginSubmit = async () => {
       const res = await ApiService.tunnelRegisterExternal(
         effectiveBaseUrl,
         credentials.value.email,
-        credentials.value.username,
         credentials.value.password
       );
       token = res?.data?.data?.token;
     } else {
       const res = await ApiService.tunnelLoginExternal(
         effectiveBaseUrl,
-        credentials.value.username,
+        credentials.value.email,
         credentials.value.password
       );
       token = res?.data?.data?.token;
@@ -1072,7 +1069,7 @@ onMounted(async () => {
     :title="externalAuthMode === 'register' ? 'Register on tunnel server' : 'Sign in to tunnel server'"
     button="info"
     :button-label="externalLoginLoading ? (externalAuthMode === 'register' ? 'Registering...' : 'Signing in...') : (externalAuthMode === 'register' ? 'Register' : 'Sign in')"
-    :button-disabled="externalLoginLoading || !credentials.username || !credentials.password || (externalAuthMode === 'register' && !credentials.email)"
+    :button-disabled="externalLoginLoading || !credentials.email || !credentials.password"
     :cancel-disabled="externalLoginLoading"
     has-cancel
     @confirm="externalLoginSubmit"
@@ -1098,17 +1095,11 @@ onMounted(async () => {
         Register
       </button>
     </div>
-    <FormField v-if="externalAuthMode === 'register'" label="E-posta">
+    <FormField label="E-posta">
       <FormControl
         v-model="credentials.email"
         type="email"
         placeholder="email@example.com"
-      />
-    </FormField>
-    <FormField label="Username">
-      <FormControl
-        v-model="credentials.username"
-        placeholder="username"
       />
     </FormField>
     <FormField label="Password" class="mt-4">

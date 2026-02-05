@@ -100,7 +100,7 @@ func CheckUser(c *fiber.Ctx) error {
 func TunnelLogin(c *fiber.Ctx) error {
 
 	type Login struct {
-		Username string `json:"username"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
@@ -113,11 +113,10 @@ func TunnelLogin(c *fiber.Ctx) error {
 		})
 	}
 
-	// Boş kimlik bilgileri → 400 (401 sadece yanlış kullanıcı/şifre için)
-	if model.Username == "" || model.Password == "" {
+	if model.Email == "" || model.Password == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Kullanıcı adı ve şifre gerekli",
+			"msg":   "E-posta ve şifre gerekli",
 			"data":  nil,
 		})
 	}
@@ -129,11 +128,11 @@ func TunnelLogin(c *fiber.Ctx) error {
 			"data":  nil,
 		})
 	}
-	token, err := tunnel_server.LoginTunnelUser(model.Username, model.Password)
+	token, err := tunnel_server.LoginTunnelUser(model.Email, model.Password)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Geçersiz kullanıcı adı veya şifre. Hesabınız yoksa önce kayıt olun.",
+			"msg":   "Geçersiz e-posta veya şifre. Hesabınız yoksa önce kayıt olun.",
 			"data":  nil,
 		})
 	}
@@ -159,7 +158,6 @@ func TunnelRegister(c *fiber.Ctx) error {
 
 	type Model struct {
 		Email    string `json:"email"`
-		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 
@@ -178,7 +176,7 @@ func TunnelRegister(c *fiber.Ctx) error {
 			"data":  nil,
 		})
 	}
-	token, err := tunnel_server.RegisterTunnelUser(model.Username, model.Password)
+	token, err := tunnel_server.RegisterTunnelUser(model.Email, model.Password)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -224,7 +222,7 @@ func TunnelUserInfo(c *fiber.Ctx) error {
 	if isAdmin {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"error": false,
-			"data":  fiber.Map{"user": fiber.Map{"id": 0, "username": "admin"}},
+			"data":  fiber.Map{"user": fiber.Map{"id": 0, "email": "admin"}},
 		})
 	}
 	u, err := tunnel_server.FindTunnelUserByID(userID)
@@ -236,7 +234,7 @@ func TunnelUserInfo(c *fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
-		"data":  fiber.Map{"user": fiber.Map{"id": u.ID, "username": u.Username}},
+		"data":  fiber.Map{"user": fiber.Map{"id": u.ID, "email": u.Email}},
 	})
 }
 
@@ -570,27 +568,27 @@ func TunnelServerListDomains(c *fiber.Ctx) error {
 		started := isTunnelStarted(d.FullDomain) || isTunnelStarted(d.Subdomain)
 		active := tunnel_server.IsDomainBound(d.FullDomain)
 		boundUserID := tunnel_server.BoundClientUserID(d.FullDomain)
-		ownerUsername := ""
+		ownerEmail := ""
 		if d.UserID != 0 {
 			if u, err := tunnel_server.FindTunnelUserByID(d.UserID); err == nil && u != nil {
-				ownerUsername = u.Username
+				ownerEmail = u.Email
 			}
 		}
-		ownerLabel := ownerUsername
+		ownerLabel := ownerEmail
 		if ownerLabel == "" && d.UserID == 0 {
 			ownerLabel = "admin"
 		}
 		item := fiber.Map{
-			"id":              d.ID,
-			"subdomain":       d.Subdomain,
-			"full_domain":     d.FullDomain,
-			"port":            d.Port,
-			"protocol":        d.Protocol,
-			"created_at":      d.CreatedAt,
-			"started":         started,
-			"user_id":         d.UserID,
-			"owner_username":  ownerUsername,
-			"owner_label":     ownerLabel,
+			"id":             d.ID,
+			"subdomain":     d.Subdomain,
+			"full_domain":   d.FullDomain,
+			"port":          d.Port,
+			"protocol":      d.Protocol,
+			"created_at":    d.CreatedAt,
+			"started":       started,
+			"user_id":       d.UserID,
+			"owner_email":   ownerEmail,
+			"owner_label":   ownerLabel,
 			"active":          active,
 			"bound_user_id":   boundUserID,
 			"status":          domainStatusLabel(active, started),

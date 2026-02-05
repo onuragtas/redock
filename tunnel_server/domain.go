@@ -44,7 +44,7 @@ type TunnelDomain struct {
 // TunnelUser represents a tunnel OAuth2 user (register/login).
 type TunnelUser struct {
 	memory.BaseEntity
-	Username     string `json:"username"`
+	Email        string `json:"email"`
 	PasswordHash string `json:"password_hash"`
 }
 

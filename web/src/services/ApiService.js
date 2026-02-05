@@ -401,34 +401,33 @@ class ApiService {
     return await this.get('/api/v1/tunnel/client/check-login');
   }
 
-  static async tunnelLogin(username, password) {
+  static async tunnelLogin(email, password) {
     return await this.post('/api/v1/tunnel/auth/login', {
-      username: username,
-      password: password
+      email,
+      password
     }, { skipPrecheck: true });
   }
 
   /** Harici tünel sunucusunda login (federation). Direkt axios, ApiService interceptor kullanılmaz. */
-  static async tunnelLoginExternal(baseURL, username, password) {
+  static async tunnelLoginExternal(baseURL, email, password) {
     const base = (baseURL || '').replace(/\/$/, '');
-    return await axios.post(base + '/api/v1/tunnel/auth/login', { username, password }, {
+    return await axios.post(base + '/api/v1/tunnel/auth/login', { email, password }, {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
     });
   }
 
   /** Harici tünel sunucusunda kayıt (federation). Direkt axios, OAuth2 register → token alır. */
-  static async tunnelRegisterExternal(baseURL, email, username, password) {
+  static async tunnelRegisterExternal(baseURL, email, password) {
     const base = (baseURL || '').replace(/\/$/, '');
-    return await axios.post(base + '/api/v1/tunnel/auth/register', { email: email || '', username, password }, {
+    return await axios.post(base + '/api/v1/tunnel/auth/register', { email, password }, {
       headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
     });
   }
 
-  static async tunnelRegister(email, username, password) {
+  static async tunnelRegister(email, password) {
     return await this.post('/api/v1/tunnel/auth/register', {
-      email: email,
-      username: username,
-      password: password,
+      email,
+      password
     }, { skipPrecheck: true });
   }
 
