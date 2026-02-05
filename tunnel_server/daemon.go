@@ -400,8 +400,13 @@ func handleBind(c *Client, domainArg string) {
 		return
 	}
 	boundDomainsMu.Lock()
+	prev := boundDomains[d.FullDomain]
 	boundDomains[d.FullDomain] = c
 	boundDomainsMu.Unlock()
+	if prev != nil && prev != c {
+		log.Printf("tunnel_server: domain %s rebound, closing previous client userID=%d", d.FullDomain, prev.UserID)
+		_ = prev.Conn.Close()
+	}
 	log.Printf("tunnel_server: domain %s bound to client userID=%d", d.FullDomain, c.UserID)
 	now := time.Now()
 	d.LastUsedAt = &now
