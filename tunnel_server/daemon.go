@@ -505,6 +505,20 @@ func GetClientByDomain(fullDomain string) *Client {
 	return boundDomains[fullDomain]
 }
 
+// IsDomainBound returns true if a tunnel client is currently bound to the domain (aktif).
+func IsDomainBound(fullDomain string) bool {
+	return GetClientByDomain(fullDomain) != nil
+}
+
+// BoundClientUserID returns the tunnel user ID of the client bound to the domain, or 0 if none.
+func BoundClientUserID(fullDomain string) uint {
+	c := GetClientByDomain(fullDomain)
+	if c == nil {
+		return 0
+	}
+	return c.UserID
+}
+
 // GetDomainByPort returns the tunnel domain for the given public port.
 func GetDomainByPort(port int) *TunnelDomain {
 	all := AllDomains()

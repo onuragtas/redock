@@ -11,6 +11,8 @@ import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
 import {
+  mdiAccount,
+  mdiCircle,
   mdiConnection,
   mdiContentCopy,
   mdiDelete,
@@ -83,7 +85,8 @@ function copyConnection(value) {
 
 const tunnelStats = computed(() => {
   const total = proxies.value.length;
-  return { total };
+  const active = activeCount.value;
+  return { total, active };
 });
 
 const {
@@ -99,6 +102,8 @@ const {
   goToPage
 } = usePaginationFilter(proxies, undefined, 8);
 
+const activeCount = ref(0);
+
 const tunnelList = async () => {
   loading.value = true;
   try {
@@ -111,8 +116,19 @@ const tunnelList = async () => {
         port: d.port,
         Port: d.port,
         protocol: d.protocol || "http",
-        UpdatedAt: d.created_at
+        UpdatedAt: d.created_at,
+        created_at: d.created_at,
+        owner_username: d.owner_username,
+        owner_label: d.owner_label || (d.user_id === 0 ? "admin" : (d.owner_username || "")),
+        user_id: d.user_id,
+        active: d.active,
+        started: d.started,
+        bound_user_id: d.bound_user_id,
+        status: d.status,
+        status_summary: d.status_summary,
+        last_used_at: d.last_used_at
       }));
+      activeCount.value = response?.data?.active_count ?? proxies.value.filter((p) => p.active).length;
     }
   } catch (error) {
     console.error("Failed to load tunnel domains:", error);
@@ -297,22 +313,44 @@ onMounted(() => {
       >
         <div class="flex items-center justify-between">
           <div>
-            <div
-              class="text-2xl font-bold text-purple-600 dark:text-purple-400"
-            >
+            <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">
               {{ tunnelStats.total }}
             </div>
-            <div
-              class="text-sm text-purple-600/70 dark:text-purple-400/70"
-            >
-              Total Domains
+            <div class="text-sm text-purple-600/70 dark:text-purple-400/70">
+              Total domains
             </div>
           </div>
-          <BaseIcon
-            :path="mdiServerNetwork"
-            size="48"
-            class="text-purple-500 opacity-20"
-          />
+          <BaseIcon :path="mdiServerNetwork" size="48" class="text-purple-500 opacity-20" />
+        </div>
+      </CardBox>
+      <CardBox
+        class="bg-gradient-to-br from-emerald-50 to-emerald-100 dark:from-emerald-900/20 dark:to-emerald-800/20 border-emerald-200 dark:border-emerald-700"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">
+              {{ tunnelStats.active }}
+            </div>
+            <div class="text-sm text-emerald-600/70 dark:text-emerald-400/70">
+              Active (connected)
+            </div>
+          </div>
+          <BaseIcon :path="mdiConnection" size="48" class="text-emerald-500 opacity-20" />
+        </div>
+      </CardBox>
+      <CardBox
+        class="bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800/40 dark:to-slate-700/40 border-slate-200 dark:border-slate-600"
+      >
+        <div class="flex items-center justify-between">
+          <div>
+            <div class="text-2xl font-bold text-slate-600 dark:text-slate-300">
+              {{ tunnelStats.total - tunnelStats.active }}
+            </div>
+            <div class="text-sm text-slate-500 dark:text-slate-400">
+              Not connected
+            </div>
+          </div>
+          <BaseIcon :path="mdiTunnel" size="48" class="text-slate-400 opacity-30" />
         </div>
       </CardBox>
     </div>
@@ -395,46 +433,66 @@ onMounted(() => {
                 </div>
               </div>
               <div class="space-y-2 flex-1">
-                <h3 class="font-semibold text-lg flex items-center">
-                  <BaseIcon
-                    :path="mdiEarth"
-                    size="20"
-                    class="mr-2 text-blue-500"
-                  />
+                <h3 class="font-semibold text-lg flex items-center flex-wrap gap-2">
+                  <BaseIcon :path="mdiEarth" size="20" class="text-blue-500" />
                   {{ tunnel.domain }}
+                  <span
+                    v-if="tunnel.active"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/50 dark:text-emerald-200"
+                    :title="tunnel.status_summary"
+                  >
+                    <BaseIcon :path="mdiCircle" size="10" class="fill-current" />
+                    Active
+                  </span>
+                  <span
+                    v-else-if="tunnel.started"
+                    class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"
+                    :title="tunnel.status_summary"
+                  >
+                    Local client running
+                  </span>
+                  <span
+                    v-else
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
+                    :title="tunnel.status_summary"
+                  >
+                    Idle
+                  </span>
                 </h3>
-                <div
-                  class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400"
-                >
-                  <div class="flex items-center gap-2 flex-wrap">
-                    <span class="flex items-center">
-                      <BaseIcon
-                        :path="mdiEthernet"
-                        size="16"
-                        class="mr-1"
-                      />
-                      Port: {{ tunnel.port }}
-                    </span>
-                    <span
-                      v-if="['tcp', 'tcp+udp'].includes(tunnel.protocol)"
-                      class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
-                    >
-                      TCP
-                    </span>
-                    <span
-                      v-if="['udp', 'tcp+udp'].includes(tunnel.protocol)"
-                      class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300"
-                    >
-                      UDP
-                    </span>
-                    <span
-                      v-if="['http', 'https'].includes(tunnel.protocol)"
-                      class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
-                    >
-                      {{ tunnel.protocol === "https" ? "HTTPS" : "HTTP" }}
-                    </span>
-                  </div>
-                  <div>Updated: {{ formatDate(tunnel.UpdatedAt) }}</div>
+                <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
+                  <span class="flex items-center gap-1" :title="'Owner: ' + (tunnel.owner_label || '—')">
+                    <BaseIcon :path="mdiAccount" size="14" class="shrink-0" />
+                    <span class="font-medium text-slate-600 dark:text-slate-300">{{ tunnel.owner_label || "—" }}</span>
+                  </span>
+                  <span class="flex items-center">
+                    <BaseIcon :path="mdiEthernet" size="16" class="mr-1 shrink-0" />
+                    Port: {{ tunnel.port }}
+                  </span>
+                  <span
+                    v-if="['tcp', 'tcp+udp'].includes(tunnel.protocol)"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
+                  >
+                    TCP
+                  </span>
+                  <span
+                    v-if="['udp', 'tcp+udp'].includes(tunnel.protocol)"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300"
+                  >
+                    UDP
+                  </span>
+                  <span
+                    v-if="['http', 'https'].includes(tunnel.protocol)"
+                    class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
+                  >
+                    {{ tunnel.protocol === "https" ? "HTTPS" : "HTTP" }}
+                  </span>
+                </div>
+                <p v-if="tunnel.status_summary" class="text-xs text-slate-500 dark:text-slate-400">
+                  {{ tunnel.status_summary }}
+                </p>
+                <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
+                  <span>Created: {{ formatDate(tunnel.UpdatedAt || tunnel.created_at) }}</span>
+                  <span v-if="tunnel.last_used_at">Last used: {{ formatDate(tunnel.last_used_at) }}</span>
                 </div>
                 <!-- How to connect from outside -->
                 <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-600">

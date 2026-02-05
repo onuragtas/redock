@@ -517,24 +517,77 @@ func TunnelServerListDomains(c *fiber.Ctx) error {
 	list := make([]fiber.Map, 0, len(domains))
 	for _, d := range domains {
 		started := isTunnelStarted(d.FullDomain) || isTunnelStarted(d.Subdomain)
+		active := tunnel_server.IsDomainBound(d.FullDomain)
+		boundUserID := tunnel_server.BoundClientUserID(d.FullDomain)
+		ownerUsername := ""
+		if d.UserID != 0 {
+			if u, err := tunnel_server.FindTunnelUserByID(d.UserID); err == nil && u != nil {
+				ownerUsername = u.Username
+			}
+		}
+		ownerLabel := ownerUsername
+		if ownerLabel == "" && d.UserID == 0 {
+			ownerLabel = "admin"
+		}
 		item := fiber.Map{
-			"id":          d.ID,
-			"subdomain":   d.Subdomain,
-			"full_domain": d.FullDomain,
-			"port":        d.Port,
-			"protocol":    d.Protocol,
-			"created_at":  d.CreatedAt,
-			"started":     started,
+			"id":              d.ID,
+			"subdomain":       d.Subdomain,
+			"full_domain":     d.FullDomain,
+			"port":            d.Port,
+			"protocol":        d.Protocol,
+			"created_at":      d.CreatedAt,
+			"started":         started,
+			"user_id":         d.UserID,
+			"owner_username":  ownerUsername,
+			"owner_label":     ownerLabel,
+			"active":          active,
+			"bound_user_id":   boundUserID,
+			"status":          domainStatusLabel(active, started),
+			"status_summary":  domainStatusSummary(active, started),
 		}
 		if d.LastUsedAt != nil {
 			item["last_used_at"] = d.LastUsedAt
 		}
 		list = append(list, item)
 	}
+	activeCount := 0
+	for _, d := range domains {
+		if tunnel_server.IsDomainBound(d.FullDomain) {
+			activeCount++
+		}
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"data":  list,
+		"error":        false,
+		"data":         list,
+		"total":        len(list),
+		"active_count": activeCount,
 	})
+}
+
+func domainStatusLabel(active, started bool) string {
+	if active && started {
+		return "active_and_started"
+	}
+	if active {
+		return "active"
+	}
+	if started {
+		return "started"
+	}
+	return "idle"
+}
+
+func domainStatusSummary(active, started bool) string {
+	if active && started {
+		return "Connected (server + local client running)"
+	}
+	if active {
+		return "Bound on server (tunnel client did BIND)"
+	}
+	if started {
+		return "Local client running (not yet bound to server)"
+	}
+	return "Idle (not connected)"
 }
 
 // TunnelServerCreateDomain creates a domain (OAuth2 Bearer = tunnel user; Redock JWT = admin, UserID 0).
