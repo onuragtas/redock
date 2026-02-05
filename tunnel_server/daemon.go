@@ -181,9 +181,11 @@ func handleConnection(conn net.Conn) {
 	}
 	token := strings.TrimSpace(line)
 	if token == "" {
+		log.Printf("tunnel_server: auth in: empty token, reject")
 		_, _ = conn.Write([]byte(authFailReply))
 		return
 	}
+	log.Printf("tunnel_server: auth in: token len=%d", len(token))
 	userID, err := ValidateTunnelToken(token)
 	if err != nil {
 		log.Printf("tunnel_server: daemon auth invalid token: %v", err)
@@ -193,6 +195,7 @@ func handleConnection(conn net.Conn) {
 	if _, err := conn.Write([]byte(authOKReply)); err != nil {
 		return
 	}
+	log.Printf("tunnel_server: auth out: AUTH_OK userID=%d", userID)
 
 	client := &Client{
 		UserID:      userID,
@@ -255,8 +258,21 @@ func serveClient(c *Client, br *bufio.Reader) {
 		body := payload[1:]
 		switch typ {
 		case frameTypeControl:
+			cmd := strings.TrimSpace(string(body))
+			if idx := strings.Index(cmd, " "); idx > 0 {
+				cmd = cmd[:idx]
+			}
+			log.Printf("tunnel_server: in userID=%d type=control cmd=%s len=%d", c.UserID, cmd, len(body))
 			handleControlMessage(c, body)
 		case frameTypeData:
+			if len(body) >= 5 {
+				sid := binary.BigEndian.Uint32(body[0:4])
+				proto := "tcp"
+				if body[4] == protocolUDP {
+					proto = "udp"
+				}
+				log.Printf("tunnel_server: in userID=%d type=data streamID=%d proto=%s len=%d", c.UserID, sid, proto, len(body)-5)
+			}
 			// 3.3: stream_id (4) + protocol (1) + data; server may forward to backend
 			handleDataFrame(c, body)
 		default:
@@ -287,6 +303,11 @@ func readFrame(br *bufio.Reader) ([]byte, error) {
 
 // writeControlFrame sends a control message (e.g. BIND_OK, BIND_FAILED reason, PONG).
 func writeControlFrame(conn net.Conn, msg string) error {
+	msgTrim := strings.TrimSpace(msg)
+	if len(msgTrim) > 60 {
+		msgTrim = msgTrim[:60] + "..."
+	}
+	log.Printf("tunnel_server: out type=control msg=%q", msgTrim)
 	payload := make([]byte, 1+len(msg))
 	payload[0] = frameTypeControl
 	copy(payload[1:], msg)
@@ -295,6 +316,11 @@ func writeControlFrame(conn net.Conn, msg string) error {
 
 // writeDataFrame sends a data frame (stream_id, protocol, payload) to client (3.3 backend -> client).
 func writeDataFrame(conn net.Conn, streamID uint32, protocol byte, data []byte) error {
+	proto := "tcp"
+	if protocol == protocolUDP {
+		proto = "udp"
+	}
+	log.Printf("tunnel_server: out type=data streamID=%d proto=%s len=%d", streamID, proto, len(data))
 	payload := make([]byte, 1+4+1+len(data))
 	payload[0] = frameTypeData
 	binary.BigEndian.PutUint32(payload[1:5], streamID)
@@ -613,6 +639,7 @@ func handleBackendConnection(port int, backendConn net.Conn) {
 
 // handleBackendTCPStream finds client by domain and forwards backendConn bidirectionally to the tunnel client.
 func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
+	log.Printf("tunnel_server: backend tcp new connection domain=%s from=%s", d.FullDomain, backendConn.RemoteAddr())
 	client := GetClientByDomain(d.FullDomain)
 	if client == nil {
 		return
@@ -852,6 +879,7 @@ func backendUDPReadLoop(port int, conn *net.UDPConn) {
 }
 
 func handleBackendUDPPacket(internalPort int, clientAddr *net.UDPAddr, packet []byte) {
+	log.Printf("tunnel_server: backend udp in port=%d from=%s len=%d", internalPort, clientAddr.String(), len(packet))
 	d := GetDomainByInternalUDPPort(internalPort)
 	if d == nil {
 		return

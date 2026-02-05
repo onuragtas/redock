@@ -70,6 +70,7 @@ func ConnectOnce(cfg Config) (*Client, error) {
 	}
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	br := bufio.NewReaderSize(conn, maxAuthLineLen)
+	log.Printf("tunnel_client: out auth token len=%d", len(cfg.Token))
 	if _, err := conn.Write([]byte(cfg.Token + "\n")); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("client: write token: %w", err)
@@ -81,6 +82,7 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("client: read auth reply: %w", err)
 	}
 	line = strings.TrimSpace(line)
+	log.Printf("tunnel_client: in auth reply=%q", line)
 	if line != "AUTH_OK" {
 		conn.Close()
 		return nil, fmt.Errorf("client: auth failed: %s", line)
@@ -103,6 +105,7 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		c.Close()
 		return nil, fmt.Errorf("client: read BIND reply: %w", err)
 	}
+	log.Printf("tunnel_client: in control %s", strings.TrimSpace(ctrl))
 	if !strings.HasPrefix(ctrl, "BIND_OK") {
 		c.Close()
 		return nil, fmt.Errorf("client: bind failed: %s", ctrl)
@@ -142,8 +145,21 @@ func (c *Client) run() error {
 		body := payload[1:]
 		switch typ {
 		case frameTypeControl:
+			cmd := strings.TrimSpace(string(body))
+			if idx := strings.Index(cmd, " "); idx > 0 {
+				cmd = cmd[:idx]
+			}
+			log.Printf("tunnel_client: in type=control cmd=%s len=%d", cmd, len(body))
 			c.handleControl(body)
 		case frameTypeData:
+			if len(body) >= 5 {
+				sid := binary.BigEndian.Uint32(body[0:4])
+				proto := "tcp"
+				if body[4] == protocolUDP {
+					proto = "udp"
+				}
+				log.Printf("tunnel_client: in type=data streamID=%d proto=%s len=%d", sid, proto, len(body)-5)
+			}
 			c.handleDataFrame(body)
 		default:
 			log.Printf("tunnel_client: unknown frame type %d", typ)
@@ -182,6 +198,11 @@ func (c *Client) readControl() (string, error) {
 }
 
 func (c *Client) sendControl(msg string) error {
+	msgTrim := strings.TrimSpace(msg)
+	if len(msgTrim) > 50 {
+		msgTrim = msgTrim[:50] + "..."
+	}
+	log.Printf("tunnel_client: out type=control msg=%q", msgTrim)
 	payload := make([]byte, 1+len(msg))
 	payload[0] = frameTypeControl
 	copy(payload[1:], msg)
@@ -199,6 +220,11 @@ func (c *Client) writeFrame(payload []byte) error {
 }
 
 func (c *Client) writeDataFrame(streamID uint32, protocol byte, data []byte) error {
+	proto := "tcp"
+	if protocol == protocolUDP {
+		proto = "udp"
+	}
+	log.Printf("tunnel_client: out type=data streamID=%d proto=%s len=%d", streamID, proto, len(data))
 	payload := make([]byte, 1+4+1+len(data))
 	payload[0] = frameTypeData
 	binary.BigEndian.PutUint32(payload[1:5], streamID)
