@@ -695,7 +695,9 @@ func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn, streamType st
 		_ = writeControlFrame(client.Conn, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 	}()
 
-	_ = writeControlFrame(client.Conn, fmt.Sprintf("NEW_STREAM %d %s\n", streamID, streamType))
+	msg := fmt.Sprintf("NEW_STREAM %d %s\n", streamID, streamType)
+	log.Printf("tunnel_server: send %s", strings.TrimSpace(msg))
+	_ = writeControlFrame(client.Conn, msg)
 
 	buf := make([]byte, backendBufSize)
 	for {

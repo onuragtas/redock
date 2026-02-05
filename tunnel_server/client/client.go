@@ -248,10 +248,13 @@ func (c *Client) handleControl(body []byte) {
 		// keepalive reply
 	case "NEW_STREAM":
 		if len(parts) < 3 {
+			log.Printf("tunnel_client: NEW_STREAM missing parts (got %d)", len(parts))
 			return
 		}
-		idStr, proto := strings.TrimSpace(parts[1]), strings.ToLower(strings.TrimSpace(parts[2]))
+		idStr := strings.TrimSpace(parts[1])
+		proto := strings.ToLower(strings.TrimSpace(strings.TrimRight(parts[2], "\r\n")))
 		if proto != "tcp" && proto != "http" {
+			log.Printf("tunnel_client: NEW_STREAM unknown proto %q", proto)
 			return
 		}
 		streamID, err := strconv.ParseUint(idStr, 10, 32)
@@ -275,17 +278,24 @@ func (c *Client) handleControl(body []byte) {
 }
 
 func (c *Client) handleNewStream(streamID uint32, streamType string) {
-	addr := c.cfg.LocalTCPAddr
-	if streamType == "http" {
+	var addr string
+	switch streamType {
+	case "http":
 		addr = c.cfg.LocalHttpAddr
 		if addr == "" {
 			addr = c.cfg.LocalTCPAddr // fallback for backward compat
 		}
+	case "tcp":
+		addr = c.cfg.LocalTCPAddr
+	default:
+		addr = c.cfg.LocalTCPAddr
 	}
 	if addr == "" {
+		log.Printf("tunnel_client: NEW_STREAM %d %s no backend address (LocalHttp=%q LocalTCP=%q)", streamID, streamType, c.cfg.LocalHttpAddr, c.cfg.LocalTCPAddr)
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}
+	log.Printf("tunnel_client: NEW_STREAM %d %s -> dial %s", streamID, streamType, addr)
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	if c.cfg.SourceBindIP != "" {
 		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(c.cfg.SourceBindIP)}
