@@ -33,7 +33,9 @@ type Config struct {
 	Token string
 	// Domain is subdomain or full domain to bind (e.g. "myapp" or "myapp.tnpx.org").
 	Domain string
-	// LocalTCPAddr is the destination address for TCP forwarding (e.g. "127.0.0.1:8080" or "192.168.1.100:80"). Empty to disable TCP.
+	// LocalHttpAddr is the destination for HTTP/HTTPS tunneled traffic (e.g. "127.0.0.1:8080"). Empty to disable or fall back to LocalTCPAddr.
+	LocalHttpAddr string
+	// LocalTCPAddr is the destination for raw TCP tunneled traffic (e.g. "127.0.0.1:9000"). Empty to disable TCP.
 	LocalTCPAddr string
 	// LocalUDPAddr is the destination address for UDP forwarding (e.g. "127.0.0.1:53"). Empty to disable UDP.
 	LocalUDPAddr string
@@ -248,15 +250,15 @@ func (c *Client) handleControl(body []byte) {
 		if len(parts) < 3 {
 			return
 		}
-		idStr, proto := strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])
-		if strings.ToLower(proto) != "tcp" {
+		idStr, proto := strings.TrimSpace(parts[1]), strings.ToLower(strings.TrimSpace(parts[2]))
+		if proto != "tcp" && proto != "http" {
 			return
 		}
 		streamID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
 			return
 		}
-		c.handleNewStream(uint32(streamID))
+		c.handleNewStream(uint32(streamID), proto)
 	case "CLOSE_STREAM":
 		if len(parts) < 2 {
 			return
@@ -272,8 +274,15 @@ func (c *Client) handleControl(body []byte) {
 	}
 }
 
-func (c *Client) handleNewStream(streamID uint32) {
-	if c.cfg.LocalTCPAddr == "" {
+func (c *Client) handleNewStream(streamID uint32, streamType string) {
+	addr := c.cfg.LocalTCPAddr
+	if streamType == "http" {
+		addr = c.cfg.LocalHttpAddr
+		if addr == "" {
+			addr = c.cfg.LocalTCPAddr // fallback for backward compat
+		}
+	}
+	if addr == "" {
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}
@@ -281,9 +290,9 @@ func (c *Client) handleNewStream(streamID uint32) {
 	if c.cfg.SourceBindIP != "" {
 		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(c.cfg.SourceBindIP)}
 	}
-	backend, err := dialer.Dial("tcp", c.cfg.LocalTCPAddr)
+	backend, err := dialer.Dial("tcp", addr)
 	if err != nil {
-		log.Printf("tunnel_client: dial %s (source %s): %v", c.cfg.LocalTCPAddr, c.cfg.SourceBindIP, err)
+		log.Printf("tunnel_client: dial %s %s (source %s): %v", streamType, addr, c.cfg.SourceBindIP, err)
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}

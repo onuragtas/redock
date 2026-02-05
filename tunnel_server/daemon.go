@@ -29,7 +29,7 @@ const (
 )
 
 // Kontrol komutları (client -> server): "BIND <subdomain|full_domain>\n", "PING\n", "CLOSE_STREAM <id>\n"
-// Server yanıtları: "BIND_OK\n", "BIND_FAILED <reason>\n", "PONG\n", "NEW_STREAM <id> tcp\n", "CLOSE_STREAM <id>\n"
+// Server yanıtları: "BIND_OK\n", "BIND_FAILED <reason>\n", "PONG\n", "NEW_STREAM <id> tcp|http\n", "CLOSE_STREAM <id>\n"
 
 // Client represents a tunnel client connected to the daemon (one TCP connection, validated by OAuth2 token).
 type Client struct {
@@ -671,12 +671,16 @@ func handleBackendConnection(internalPort int, backendConn net.Conn) {
 	if d == nil {
 		return
 	}
-	handleBackendTCPStream(d, backendConn)
+	handleBackendTCPStream(d, backendConn, "http")
 }
 
 // handleBackendTCPStream finds client by domain and forwards backendConn bidirectionally to the tunnel client.
-func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
-	log.Printf("tunnel_server: backend tcp new connection domain=%s from=%s", d.FullDomain, backendConn.RemoteAddr())
+// streamType is "http" (from HTTP/HTTPS gateway) or "tcp" (from raw TCP gateway).
+func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn, streamType string) {
+	if streamType != "http" && streamType != "tcp" {
+		streamType = "tcp"
+	}
+	log.Printf("tunnel_server: backend %s new connection domain=%s from=%s", streamType, d.FullDomain, backendConn.RemoteAddr())
 	client := GetClientByDomain(d.FullDomain)
 	if client == nil {
 		return
@@ -691,7 +695,7 @@ func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
 		_ = writeControlFrame(client.Conn, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 	}()
 
-	_ = writeControlFrame(client.Conn, fmt.Sprintf("NEW_STREAM %d tcp\n", streamID))
+	_ = writeControlFrame(client.Conn, fmt.Sprintf("NEW_STREAM %d %s\n", streamID, streamType))
 
 	buf := make([]byte, backendBufSize)
 	for {
@@ -756,7 +760,7 @@ func handleBackendTCPConnection(internalPort int, backendConn net.Conn) {
 	if d == nil {
 		return
 	}
-	handleBackendTCPStream(d, backendConn)
+	handleBackendTCPStream(d, backendConn, "tcp")
 }
 
 func stopAllBackendTCPListeners() {

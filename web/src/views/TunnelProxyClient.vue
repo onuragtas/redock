@@ -73,8 +73,10 @@ const credentials = ref({
 });
 
 const start = ref({
-  destinationIp: "127.0.0.1",
-  destinationPort: 80,
+  localHttpIp: "127.0.0.1",
+  localHttpPort: 80,
+  localTcpIp: "127.0.0.1",
+  localTcpPort: "",
   localUdpIp: "127.0.0.1",
   localUdpPort: "",
   sourceBindIp: "",
@@ -294,17 +296,28 @@ const startModal = (data) => {
 
 const startSubmit = async () => {
   try {
-    const tcpIp = (start.value.destinationIp || "").trim();
-    const tcpPort = parseInt(start.value.destinationPort) || 0;
+    const httpIp = (start.value.localHttpIp || "").trim();
+    const httpPort = parseInt(start.value.localHttpPort) || 0;
+    const tcpIp = (start.value.localTcpIp || "").trim();
+    const tcpPort = parseInt(start.value.localTcpPort) || 0;
+    const udpIp = (start.value.localUdpIp || "").trim();
+    const udpPort = parseInt(start.value.localUdpPort) || 0;
+    const hasHttp = httpIp !== "" && httpPort > 0;
+    const hasTcp = tcpIp !== "" && tcpPort > 0;
+    const hasUdp = udpIp !== "" && udpPort > 0;
+    if (!hasHttp && !hasTcp && !hasUdp) {
+      toast.warning("Fill at least one target: HTTP, TCP, or UDP (IP + Port)");
+      return;
+    }
     const data = {
       DomainId: startDomain.value.id,
       Domain: startDomain.value.domain,
-      LocalIp: tcpIp,
-      DestinationIp: tcpIp,
-      DestinationPort: tcpPort,
-      LocalPort: tcpPort,
-      LocalUdpIp: (start.value.localUdpIp || "").trim(),
-      LocalUdpPort: parseInt(start.value.localUdpPort) || 0,
+      LocalHttpIp: hasHttp ? httpIp : "",
+      LocalHttpPort: hasHttp ? httpPort : 0,
+      LocalTcpIp: hasTcp ? tcpIp : "",
+      LocalTcpPort: hasTcp ? tcpPort : 0,
+      LocalUdpIp: hasUdp ? udpIp : "",
+      LocalUdpPort: hasUdp ? udpPort : 0,
       SourceBindIp: (start.value.sourceBindIp || "").trim(),
       HostRewrite: (start.value.hostRewrite || "").trim()
     };
@@ -1153,21 +1166,44 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- TCP forwarding -->
+      <!-- HTTP forwarding -->
       <div class="start-tunnel-section">
-        <h5 class="start-tunnel-section-title">TCP / HTTP</h5>
+        <h5 class="start-tunnel-section-title">HTTP / HTTPS (optional)</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">Web traffic (HTTP/HTTPS) will be forwarded to this address.</p>
         <div class="start-tunnel-row">
-          <FormField label="Target IP" help="IP to forward traffic to (e.g. 127.0.0.1 or 192.168.1.100)">
+          <FormField label="Target IP" help="e.g. 127.0.0.1 or 192.168.1.100">
             <FormControl
-              v-model="start.destinationIp"
+              v-model="start.localHttpIp"
               placeholder="127.0.0.1"
             />
           </FormField>
           <FormField label="Port">
             <FormControl
-              v-model="start.destinationPort"
+              v-model="start.localHttpPort"
               type="number"
               placeholder="80"
+              class="w-full"
+            />
+          </FormField>
+        </div>
+      </div>
+
+      <!-- TCP forwarding -->
+      <div class="start-tunnel-section">
+        <h5 class="start-tunnel-section-title">TCP (optional)</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">Raw TCP connections will be forwarded to this address.</p>
+        <div class="start-tunnel-row">
+          <FormField label="Target IP">
+            <FormControl
+              v-model="start.localTcpIp"
+              placeholder="127.0.0.1"
+            />
+          </FormField>
+          <FormField label="Port">
+            <FormControl
+              v-model="start.localTcpPort"
+              type="number"
+              placeholder="9000"
               class="w-full"
             />
           </FormField>
@@ -1177,6 +1213,7 @@ onMounted(async () => {
       <!-- UDP forwarding -->
       <div class="start-tunnel-section">
         <h5 class="start-tunnel-section-title">UDP (optional)</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">UDP packets will be forwarded to this address.</p>
         <div class="start-tunnel-row">
           <FormField label="Target IP">
             <FormControl

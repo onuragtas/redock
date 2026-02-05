@@ -298,15 +298,19 @@ func TunnelStart(c *fiber.Ctx) error {
 		})
 	}
 	var body struct {
-		DomainId      uint   `json:"DomainId"`
-		Domain        string `json:"Domain"`
+		DomainId        uint   `json:"DomainId"`
+		Domain          string `json:"Domain"`
 		LocalIp         string `json:"LocalIp"`
 		DestinationIp   string `json:"DestinationIp"`
 		DestinationPort int    `json:"DestinationPort"`
 		LocalPort       int    `json:"LocalPort"`
+		LocalHttpIp     string `json:"LocalHttpIp"`
+		LocalHttpPort   int    `json:"LocalHttpPort"`
+		LocalTcpIp      string `json:"LocalTcpIp"`
+		LocalTcpPort    int    `json:"LocalTcpPort"`
 		LocalUdpIp      string `json:"LocalUdpIp"`
 		LocalUdpPort    int    `json:"LocalUdpPort"`
-		SourceBindIp    string `json:"SourceBindIp"`   // optional: local IP to bind when connecting to destination (outbound source)
+		SourceBindIp    string `json:"SourceBindIp"`
 		HostRewrite     string `json:"HostRewrite"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -319,18 +323,31 @@ func TunnelStart(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
 	}
-	localTCP := ""
+	// Legacy: single LocalIp+LocalPort / DestinationIp+DestinationPort used for both HTTP and TCP when specific addrs not set
+	legacyAddr := ""
 	if body.DestinationIp != "" && body.DestinationPort > 0 {
-		localTCP = net.JoinHostPort(body.DestinationIp, strconv.Itoa(body.DestinationPort))
+		legacyAddr = net.JoinHostPort(body.DestinationIp, strconv.Itoa(body.DestinationPort))
 	} else if body.LocalIp != "" && body.LocalPort > 0 {
-		localTCP = net.JoinHostPort(body.LocalIp, strconv.Itoa(body.LocalPort))
+		legacyAddr = net.JoinHostPort(body.LocalIp, strconv.Itoa(body.LocalPort))
+	}
+	localHTTP := ""
+	if body.LocalHttpIp != "" && body.LocalHttpPort > 0 {
+		localHTTP = net.JoinHostPort(body.LocalHttpIp, strconv.Itoa(body.LocalHttpPort))
+	} else if legacyAddr != "" {
+		localHTTP = legacyAddr
+	}
+	localTCP := ""
+	if body.LocalTcpIp != "" && body.LocalTcpPort > 0 {
+		localTCP = net.JoinHostPort(body.LocalTcpIp, strconv.Itoa(body.LocalTcpPort))
+	} else if legacyAddr != "" {
+		localTCP = legacyAddr
 	}
 	localUDP := ""
 	if body.LocalUdpIp != "" && body.LocalUdpPort > 0 {
 		localUDP = net.JoinHostPort(body.LocalUdpIp, strconv.Itoa(body.LocalUdpPort))
 	}
-	if localTCP == "" && localUDP == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "DestinationIp+DestinationPort, or LocalIp+LocalPort, or LocalUdpIp+LocalUdpPort required"})
+	if localHTTP == "" && localTCP == "" && localUDP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "at least one of: LocalHttpIp+LocalHttpPort, LocalTcpIp+LocalTcpPort, LocalUdpIp+LocalUdpPort, or legacy LocalIp+LocalPort / DestinationIp+DestinationPort required"})
 	}
 	// Stop existing tunnel for this domain if any
 	if existing, ok := activeTunnels.Load(body.Domain); ok {
@@ -340,13 +357,14 @@ func TunnelStart(c *fiber.Ctx) error {
 		activeTunnels.Delete(body.Domain)
 	}
 	cfg := client.Config{
-		ServerAddr:   daemonAddr(),
-		Token:        token,
-		Domain:       body.Domain,
-		LocalTCPAddr: localTCP,
-		LocalUDPAddr: localUDP,
-		SourceBindIP: strings.TrimSpace(body.SourceBindIp),
-		HostRewrite:  strings.TrimSpace(body.HostRewrite),
+		ServerAddr:    daemonAddr(),
+		Token:         token,
+		Domain:        body.Domain,
+		LocalHttpAddr: localHTTP,
+		LocalTCPAddr:  localTCP,
+		LocalUDPAddr:  localUDP,
+		SourceBindIP:  strings.TrimSpace(body.SourceBindIp),
+		HostRewrite:   strings.TrimSpace(body.HostRewrite),
 	}
 	cl, err := client.ConnectOnce(cfg)
 	if err != nil {
@@ -1007,6 +1025,10 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		DestinationIp   string `json:"DestinationIp"`
 		DestinationPort int    `json:"DestinationPort"`
 		LocalPort       int    `json:"LocalPort"`
+		LocalHttpIp     string `json:"LocalHttpIp"`
+		LocalHttpPort   int    `json:"LocalHttpPort"`
+		LocalTcpIp      string `json:"LocalTcpIp"`
+		LocalTcpPort    int    `json:"LocalTcpPort"`
 		LocalUdpIp      string `json:"LocalUdpIp"`
 		LocalUdpPort    int    `json:"LocalUdpPort"`
 		SourceBindIp    string `json:"SourceBindIp"`
@@ -1022,18 +1044,30 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 	if data.Domain == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "domain required"})
 	}
-	localTCP := ""
+	legacyAddr := ""
 	if data.DestinationIp != "" && data.DestinationPort > 0 {
-		localTCP = net.JoinHostPort(data.DestinationIp, strconv.Itoa(data.DestinationPort))
+		legacyAddr = net.JoinHostPort(data.DestinationIp, strconv.Itoa(data.DestinationPort))
 	} else if data.LocalIp != "" && data.LocalPort > 0 {
-		localTCP = net.JoinHostPort(data.LocalIp, strconv.Itoa(data.LocalPort))
+		legacyAddr = net.JoinHostPort(data.LocalIp, strconv.Itoa(data.LocalPort))
+	}
+	localHTTP := ""
+	if data.LocalHttpIp != "" && data.LocalHttpPort > 0 {
+		localHTTP = net.JoinHostPort(data.LocalHttpIp, strconv.Itoa(data.LocalHttpPort))
+	} else if legacyAddr != "" {
+		localHTTP = legacyAddr
+	}
+	localTCP := ""
+	if data.LocalTcpIp != "" && data.LocalTcpPort > 0 {
+		localTCP = net.JoinHostPort(data.LocalTcpIp, strconv.Itoa(data.LocalTcpPort))
+	} else if legacyAddr != "" {
+		localTCP = legacyAddr
 	}
 	localUDP := ""
 	if data.LocalUdpIp != "" && data.LocalUdpPort > 0 {
 		localUDP = net.JoinHostPort(data.LocalUdpIp, strconv.Itoa(data.LocalUdpPort))
 	}
-	if localTCP == "" && localUDP == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "DestinationIp+DestinationPort, or LocalIp+LocalPort, or LocalUdpIp+LocalUdpPort required"})
+	if localHTTP == "" && localTCP == "" && localUDP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "at least one of: LocalHttpIp+LocalHttpPort, LocalTcpIp+LocalTcpPort, LocalUdpIp+LocalUdpPort, or legacy LocalIp+LocalPort / DestinationIp+DestinationPort required"})
 	}
 	serverDaemonAddr := daemonAddrForBaseURL(baseURL)
 	if serverDaemonAddr == "" {
@@ -1047,11 +1081,12 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		activeTunnels.Delete(key)
 	}
 	cfg := client.Config{
-		ServerAddr:   serverDaemonAddr,
-		Token:        cred.AccessToken,
-		Domain:       data.Domain,
-		LocalTCPAddr: localTCP,
-		LocalUDPAddr: localUDP,
+		ServerAddr:    serverDaemonAddr,
+		Token:         cred.AccessToken,
+		Domain:        data.Domain,
+		LocalHttpAddr: localHTTP,
+		LocalTCPAddr:  localTCP,
+		LocalUDPAddr:  localUDP,
 		SourceBindIP: strings.TrimSpace(data.SourceBindIp),
 		HostRewrite:  strings.TrimSpace(data.HostRewrite),
 	}
