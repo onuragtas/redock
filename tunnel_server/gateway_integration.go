@@ -333,3 +333,46 @@ func RemoveTunnelDomainFromGateway(d *TunnelDomain) error {
 	}
 	return nil
 }
+
+// RefreshTunnelDomainIntegrations re-applies all integrations for an existing domain (same as create flow):
+// removes from gateway, ensures DNS A record first (required for Let's Encrypt HTTP-01), then re-adds to gateway
+// with correct ports and Let's Encrypt. Use for "renew" or to fix stale gateway/DNS state.
+func RefreshTunnelDomainIntegrations(d *TunnelDomain) error {
+	// 1. Remove from gateway (stops backend listeners, removes routes/services, removes from Let's Encrypt list)
+	if err := RemoveTunnelDomainFromGateway(d); err != nil {
+		return fmt.Errorf("remove from gateway: %w", err)
+	}
+	// 2. DNS (Cloudflare) first: Let's Encrypt HTTP-01 requires the domain to resolve to this server
+	cfg := GetConfig()
+	if cfg != nil && cfg.CloudflareZoneID != "" && d.FullDomain != "" {
+		serverIP := cfg.ServerPublicIP
+		if serverIP == "" {
+			serverIP = DetectPublicIP()
+		}
+		if serverIP != "" {
+			if d.CloudflareRecordID != "" {
+				if err := UpdateTunnelDNSRecord(cfg.CloudflareZoneID, d.CloudflareRecordID, d.FullDomain, serverIP); err != nil {
+					log.Printf("tunnel_server: refresh DNS update A record for %s: %v", d.FullDomain, err)
+					// non-fatal
+				}
+			} else {
+				recordID, err := CreateTunnelDNSRecord(cfg.CloudflareZoneID, d.FullDomain, serverIP)
+				if err != nil {
+					log.Printf("tunnel_server: refresh DNS create A record for %s: %v", d.FullDomain, err)
+					// non-fatal
+				} else {
+					d.CloudflareRecordID = recordID
+				}
+			}
+		}
+	}
+	// 3. Re-add to gateway (correct HTTP port internalHttpPort(d.Port), TCP/UDP, backend listeners, Let's Encrypt)
+	if err := AddTunnelDomainToGateway(d); err != nil {
+		return fmt.Errorf("add to gateway: %w", err)
+	}
+	// 4. Persist domain (new gateway IDs, possibly CloudflareRecordID)
+	if err := UpdateDomain(d); err != nil {
+		return fmt.Errorf("update domain: %w", err)
+	}
+	return nil
+}

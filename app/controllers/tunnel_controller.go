@@ -413,9 +413,10 @@ func TunnelStop(c *fiber.Ctx) error {
 	})
 }
 
-// TunnelRenew accepts POST /tunnel/renew. Body: id, domain. Domain yenileme (DNS/Cloudflare tarafında ek işlem yok; uyumluluk için kabul).
+// TunnelRenew accepts POST /tunnel/renew. Body: id, domain. Re-applies all integrations for the domain (gateway routes/services with correct ports, DNS/Cloudflare A record, Let's Encrypt).
 func TunnelRenew(c *fiber.Ctx) error {
-	if _, _, ok := getTunnelServerAuth(c); !ok {
+	userID, isAdmin, ok := getTunnelServerAuth(c)
+	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Authorization: Bearer <token> required (tunnel token or Redock JWT)",
@@ -425,10 +426,42 @@ func TunnelRenew(c *fiber.Ctx) error {
 		ID     uint   `json:"id"`
 		Domain string `json:"domain"`
 	}
-	_ = c.BodyParser(&body)
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	var d *tunnel_server.TunnelDomain
+	if body.ID != 0 {
+		var err error
+		d, err = tunnel_server.FindDomainByID(body.ID)
+		if err != nil || d == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": true, "msg": "domain not found"})
+		}
+	} else if strings.TrimSpace(body.Domain) != "" {
+		d = tunnel_server.FindDomainByFullDomain(strings.TrimSpace(body.Domain))
+		if d == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": true, "msg": "domain not found"})
+		}
+	} else {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "id or domain required"})
+	}
+	// Auth: own domain or admin
+	if !isAdmin && d.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": true, "msg": "forbidden"})
+	}
+	if err := tunnel_server.RefreshTunnelDomainIntegrations(d); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "refresh failed: " + err.Error(),
+		})
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
-		"msg":   nil,
+		"msg":   "refreshed",
+		"data": fiber.Map{
+			"id":          d.ID,
+			"full_domain": d.FullDomain,
+			"port":        d.Port,
+		},
 	})
 }
 
