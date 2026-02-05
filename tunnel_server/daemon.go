@@ -35,7 +35,6 @@ type Client struct {
 	UserID      uint
 	Conn        net.Conn
 	ConnectedAt time.Time
-	WriteMu     sync.Mutex // serializes frame writes so UDP/TCP/control frames are not interleaved
 }
 
 // streamKey identifies a single TCP stream (client + stream_id).
@@ -286,26 +285,22 @@ func readFrame(br *bufio.Reader) ([]byte, error) {
 	return payload, nil
 }
 
-// writeControlFrame sends a control message (e.g. BIND_OK, BIND_FAILED reason, PONG). Caller must pass *Client so writes are serialized.
-func writeControlFrame(c *Client, msg string) error {
-	c.WriteMu.Lock()
-	defer c.WriteMu.Unlock()
+// writeControlFrame sends a control message (e.g. BIND_OK, BIND_FAILED reason, PONG).
+func writeControlFrame(conn net.Conn, msg string) error {
 	payload := make([]byte, 1+len(msg))
 	payload[0] = frameTypeControl
 	copy(payload[1:], msg)
-	return writeFrame(c.Conn, payload)
+	return writeFrame(conn, payload)
 }
 
-// writeDataFrame sends a data frame (stream_id, protocol, payload) to client (3.3 backend -> client). Serialized per client.
-func writeDataFrame(c *Client, streamID uint32, protocol byte, data []byte) error {
-	c.WriteMu.Lock()
-	defer c.WriteMu.Unlock()
+// writeDataFrame sends a data frame (stream_id, protocol, payload) to client (3.3 backend -> client).
+func writeDataFrame(conn net.Conn, streamID uint32, protocol byte, data []byte) error {
 	payload := make([]byte, 1+4+1+len(data))
 	payload[0] = frameTypeData
 	binary.BigEndian.PutUint32(payload[1:5], streamID)
 	payload[5] = protocol
 	copy(payload[6:], data)
-	return writeFrame(c.Conn, payload)
+	return writeFrame(conn, payload)
 }
 
 func writeFrame(conn net.Conn, payload []byte) error {
@@ -337,7 +332,7 @@ func handleControlMessage(c *Client, body []byte) {
 	case "BIND":
 		handleBind(c, arg)
 	case "PING":
-		_ = writeControlFrame(c, "PONG\n")
+		_ = writeControlFrame(c.Conn, "PONG\n")
 	case "CLOSE_STREAM":
 		handleCloseStream(c, arg)
 	default:
@@ -347,7 +342,7 @@ func handleControlMessage(c *Client, body []byte) {
 
 func handleBind(c *Client, domainArg string) {
 	if domainArg == "" {
-		_ = writeControlFrame(c, "BIND_FAILED domain required\n")
+		_ = writeControlFrame(c.Conn, "BIND_FAILED domain required\n")
 		return
 	}
 	// Optional host_rewrite: "domain\thost_rewrite" (tab-separated). If no tab, only domain.
@@ -360,7 +355,7 @@ func handleBind(c *Client, domainArg string) {
 		}
 	}
 	if domainPart == "" {
-		_ = writeControlFrame(c, "BIND_FAILED domain required\n")
+		_ = writeControlFrame(c.Conn, "BIND_FAILED domain required\n")
 		return
 	}
 	var d *TunnelDomain
@@ -370,12 +365,12 @@ func handleBind(c *Client, domainArg string) {
 		d = FindDomainBySubdomain(domainPart)
 	}
 	if d == nil {
-		_ = writeControlFrame(c, "BIND_FAILED domain not found\n")
+		_ = writeControlFrame(c.Conn, "BIND_FAILED domain not found\n")
 		return
 	}
 	// Sadece domain sahibi bind edebilir; UserID 0 (admin oluşturdu) ise herhangi bir client bind edebilir
 	if d.UserID != 0 && d.UserID != c.UserID {
-		_ = writeControlFrame(c, "BIND_FAILED forbidden\n")
+		_ = writeControlFrame(c.Conn, "BIND_FAILED forbidden\n")
 		return
 	}
 	boundDomainsMu.Lock()
@@ -391,7 +386,7 @@ func handleBind(c *Client, domainArg string) {
 			log.Printf("tunnel_server: SetTunnelRouteHostRewrite %s: %v", d.FullDomain, err)
 		}
 	}
-	_ = writeControlFrame(c, "BIND_OK\n")
+	_ = writeControlFrame(c.Conn, "BIND_OK\n")
 }
 
 // handleDataFrame processes a data frame from client (3.3 TCP, 3.4 UDP). Forward to backend.
@@ -413,7 +408,7 @@ func handleDataFrame(c *Client, body []byte) {
 		}
 		if _, err := st.backend.Write(data); err != nil {
 			closeStream(key)
-			_ = writeControlFrame(c, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
+			_ = writeControlFrame(c.Conn, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		}
 	case protocolUDP:
 		udpStreamsMu.RLock()
@@ -629,10 +624,10 @@ func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
 	streamsMu.Unlock()
 	defer func() {
 		closeStream(key)
-		_ = writeControlFrame(client, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
+		_ = writeControlFrame(client.Conn, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 	}()
 
-	_ = writeControlFrame(client, fmt.Sprintf("NEW_STREAM %d tcp\n", streamID))
+	_ = writeControlFrame(client.Conn, fmt.Sprintf("NEW_STREAM %d tcp\n", streamID))
 
 	buf := make([]byte, backendBufSize)
 	for {
@@ -643,7 +638,7 @@ func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
 		if n == 0 {
 			continue
 		}
-		if err := writeDataFrame(client, streamID, protocolTCP, buf[:n]); err != nil {
+		if err := writeDataFrame(client.Conn, streamID, protocolTCP, buf[:n]); err != nil {
 			return
 		}
 	}
@@ -875,7 +870,7 @@ func handleBackendUDPPacket(internalPort int, clientAddr *net.UDPAddr, packet []
 		udpStreamByAddr[addrKey] = sk
 	}
 	udpStreamsMu.Unlock()
-	if err := writeDataFrame(client, sk.streamID, protocolUDP, packet); err != nil {
+	if err := writeDataFrame(client.Conn, sk.streamID, protocolUDP, packet); err != nil {
 		return
 	}
 }
