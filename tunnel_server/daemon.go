@@ -23,8 +23,9 @@ const (
 	protocolTCP          = 0
 	protocolUDP          = 1
 	backendBufSize       = 32 * 1024
-	udpBackendPortOffset = 10000 // Gateway 0.0.0.0:Port ile dinler; daemon 127.0.0.1:(Port+offset) dinler, port çakışması olmaz.
-	tcpBackendPortOffset = 20000 // Raw TCP: gateway 0.0.0.0:Port -> 127.0.0.1:(Port+offset), daemon (Port+offset) dinler.
+	udpBackendPortOffset  = 10000 // Gateway 0.0.0.0:Port UDP -> daemon 127.0.0.1:(Port+10000)
+	tcpBackendPortOffset  = 20000 // Gateway 0.0.0.0:Port TCP -> daemon 127.0.0.1:(Port+20000)
+	httpBackendPortOffset = 30000 // HTTP backend daemon 127.0.0.1:(Port+30000); böylece 0.0.0.0:Port gateway'e kalır (PORTS.md)
 )
 
 // Kontrol komutları (client -> server): "BIND <subdomain|full_domain>\n", "PING\n", "CLOSE_STREAM <id>\n"
@@ -504,7 +505,7 @@ func GetClientByDomain(fullDomain string) *Client {
 	return boundDomains[fullDomain]
 }
 
-// GetDomainByPort returns the tunnel domain for the given port (for backend TCP listener 3.3).
+// GetDomainByPort returns the tunnel domain for the given public port.
 func GetDomainByPort(port int) *TunnelDomain {
 	all := AllDomains()
 	for _, d := range all {
@@ -513,6 +514,27 @@ func GetDomainByPort(port int) *TunnelDomain {
 		}
 	}
 	return nil
+}
+
+// internalHttpPort returns the port the daemon listens on for HTTP backend (gateway 80/443 -> 127.0.0.1:this).
+func internalHttpPort(domainPort int) int {
+	return domainPort + httpBackendPortOffset
+}
+
+// GetDomainByInternalHttpPort returns the domain for the given daemon HTTP backend port.
+func GetDomainByInternalHttpPort(internalPort int) *TunnelDomain {
+	all := AllDomains()
+	for _, d := range all {
+		if needHTTPForDomain(d) && internalHttpPort(d.Port) == internalPort {
+			return d
+		}
+	}
+	return nil
+}
+
+// needHTTPForDomain returns true if domain uses HTTP/HTTPS backend.
+func needHTTPForDomain(d *TunnelDomain) bool {
+	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
 }
 
 // internalUDPPort returns the port the daemon listens on for UDP backend (gateway forwards to this).
@@ -567,31 +589,27 @@ func startAllBackendListeners() {
 	}
 }
 
-func needHTTPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
-}
-
 func needUDPForDomain(d *TunnelDomain) bool {
 	return d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
 }
 
-// StartBackendListener starts listening on 127.0.0.1:port for tunnel backend (gateway proxies HTTP here).
-// Call when a domain with HTTP/TCP is created.
+// StartBackendListener starts listening on 127.0.0.1:(port+30000) for HTTP backend so 0.0.0.0:port stays free for gateway TCP/UDP.
 func StartBackendListener(port int) {
 	backendListenersMu.Lock()
 	defer backendListenersMu.Unlock()
 	if _, ok := backendListeners[port]; ok {
 		return
 	}
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	internalPort := internalHttpPort(port)
+	addr := fmt.Sprintf("127.0.0.1:%d", internalPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Printf("tunnel_server: backend listen %s: %v", addr, err)
 		return
 	}
 	backendListeners[port] = ln
-	log.Printf("tunnel_server: backend listening on %s", addr)
-	go backendAcceptLoop(port, ln)
+	log.Printf("tunnel_server: backend listening on %s (domain port %d)", addr, port)
+	go backendAcceptLoop(internalPort, ln)
 }
 
 // StopBackendListener stops the backend listener for the given port. Call when domain is deleted.
@@ -633,9 +651,9 @@ func backendAcceptLoop(port int, ln net.Listener) {
 	}
 }
 
-func handleBackendConnection(port int, backendConn net.Conn) {
+func handleBackendConnection(internalPort int, backendConn net.Conn) {
 	defer backendConn.Close()
-	d := GetDomainByPort(port)
+	d := GetDomainByInternalHttpPort(internalPort)
 	if d == nil {
 		return
 	}

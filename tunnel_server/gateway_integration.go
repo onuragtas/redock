@@ -52,13 +52,13 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	// Gateway must be enabled so UpdateConfig restarts it and StartAll() actually starts listeners.
 	cfg.Enabled = true
 
-	// HTTP/HTTPS: Service + Route
+	// HTTP/HTTPS: Service + Route (backend 127.0.0.1:internalHttpPort; 0.0.0.0:d.Port gateway TCP/UDP için serbest, PORTS.md)
 	if needHTTP {
 		svc := api_gateway.Service{
 			ID:       gatewayServicePrefix + idStr,
 			Name:     "tunnel:" + d.FullDomain,
 			Host:     "127.0.0.1",
-			Port:     d.Port,
+			Port:     internalHttpPort(d.Port),
 			Protocol: "http",
 			Enabled:  true,
 		}
