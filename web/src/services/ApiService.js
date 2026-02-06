@@ -741,6 +741,27 @@ class ApiService {
     return await this.post('/api/updates/apply', { version });
   }
 
+  // IP Alias (network interface alias management)
+  static async getNetworkInterfaces() {
+    return await this.get('/api/v1/network/interfaces');
+  }
+
+  static async getNetworkAddresses(interfaceName) {
+    return await this.get('/api/v1/network/addresses', { params: { interface: interfaceName } });
+  }
+
+  static async addNetworkAlias(data) {
+    return await this.post('/api/v1/network/alias/add', data);
+  }
+
+  static async removeNetworkAlias(data) {
+    return await this.post('/api/v1/network/alias/remove', data);
+  }
+
+  static async getNetworkClientCommand() {
+    return await this.get('/api/v1/network/client-command');
+  }
+
 }
 
 export default ApiService;

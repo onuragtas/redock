@@ -33,6 +33,7 @@ export default [
   { name: 'Terminal', path: '/exec', icon: mdiConsole },
   { name: 'Tunnel Proxy Server', path: '/tunnel-proxy-server', icon: mdiServerNetwork },
   { name: 'Tunnel Proxy Client', path: '/tunnel-proxy-client', icon: mdiLanConnect },
+  { name: 'IP Alias', path: '/ip-alias', icon: mdiNetworkOutline },
   { name: 'Virtual Hosts', path: '/virtual-hosts', icon: mdiWeb },
   { name: 'Saved Commands', path: '/saved-commands', icon: mdiScriptText },
   { name: 'PHP XDebug', path: '/php-xdebug-adapter', icon: mdiBugCheck },
