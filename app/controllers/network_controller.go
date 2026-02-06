@@ -5,6 +5,8 @@ import (
 
 	docker_manager "redock/docker-manager"
 	"redock/pkg/network"
+	"redock/platform/database"
+	"redock/platform/memory"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -88,10 +90,22 @@ func NetworkAddAlias(c *fiber.Ctx) error {
 			"data":  nil,
 		})
 	}
+	db := database.GetMemoryDB()
+	if err := memory.Create[*network.PersistedIPAlias](db, network.TableIPAliases, &network.PersistedIPAlias{
+		Interface:   req.Interface,
+		CIDROrRange: strings.TrimSpace(req.CIDROrRange),
+	}); err != nil {
+		// Kernel'e eklendi ama DB'ye yazılamadı; reboot'ta bu blok tekrar uygulanmaz
+		return c.Status(fiber.StatusOK).JSON(fiber.Map{
+			"error": false,
+			"msg":   nil,
+			"data":  fiber.Map{"added": added, "total": len(ipNets), "persisted": false},
+		})
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"data":  fiber.Map{"added": added, "total": len(ipNets)},
+		"data":  fiber.Map{"added": added, "total": len(ipNets), "persisted": true},
 	})
 }
 
@@ -127,6 +141,14 @@ func NetworkRemoveAlias(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 			"data":  nil,
 		})
+	}
+	cidrTrimmed := strings.TrimSpace(req.CIDROrRange)
+	all := memory.FindAll[*network.PersistedIPAlias](database.GetMemoryDB(), network.TableIPAliases)
+	for _, a := range all {
+		if a.Interface == req.Interface && a.CIDROrRange == cidrTrimmed {
+			_ = memory.Delete[*network.PersistedIPAlias](database.GetMemoryDB(), network.TableIPAliases, a.GetID())
+			break
+		}
 	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
