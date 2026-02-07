@@ -33,7 +33,7 @@ func NetworkListAddresses(c *fiber.Ctx) error {
 	if iface == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "interface parametresi gerekli",
+			"msg":   "interface parameter is required",
 			"data":  nil,
 		})
 	}
@@ -63,14 +63,14 @@ func NetworkAddAlias(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Geçersiz istek: " + err.Error(),
+			"msg":   "Invalid request: " + err.Error(),
 			"data":  nil,
 		})
 	}
 	if req.Interface == "" || req.CIDROrRange == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "interface ve cidr_or_range gerekli",
+			"msg":   "interface and cidr_or_range are required",
 			"data":  nil,
 		})
 	}
@@ -115,14 +115,14 @@ func NetworkRemoveAlias(c *fiber.Ctx) error {
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Geçersiz istek: " + err.Error(),
+			"msg":   "Invalid request: " + err.Error(),
 			"data":  nil,
 		})
 	}
 	if req.Interface == "" || req.CIDROrRange == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "interface ve cidr_or_range gerekli",
+			"msg":   "interface and cidr_or_range are required",
 			"data":  nil,
 		})
 	}

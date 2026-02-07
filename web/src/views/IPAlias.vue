@@ -33,8 +33,11 @@ const fetchInterfaces = async () => {
     if (interfaces.value.length && !selectedInterface.value) {
       selectedInterface.value = interfaces.value[0].name;
     }
+    if (selectedInterface.value) {
+      await fetchAddresses();
+    }
   } catch (e) {
-    toast.error("Arayüz listesi alınamadı: " + (e.response?.data?.msg || e.message));
+    toast.error("Failed to load interfaces: " + (e.response?.data?.msg || e.message));
   } finally {
     loading.value = false;
   }
@@ -70,11 +73,11 @@ const addAlias = async () => {
       interface: selectedInterface.value,
       cidr_or_range: cidrOrRange.value.trim()
     });
-    toast.success("IP adresleri eklendi.");
+    toast.success("IP addresses added.");
     cidrOrRange.value = "";
     await fetchAddresses();
   } catch (e) {
-    toast.error(e.response?.data?.msg || e.message || "Ekleme başarısız.");
+    toast.error(e.response?.data?.msg || e.message || "Failed to add.");
   } finally {
     addRemoveLoading.value = false;
   }
@@ -88,17 +91,17 @@ const removeAlias = async () => {
       interface: selectedInterface.value,
       cidr_or_range: cidrOrRange.value.trim()
     });
-    toast.success("IP adresleri kaldırıldı.");
+    toast.success("IP addresses removed.");
     cidrOrRange.value = "";
     await fetchAddresses();
   } catch (e) {
-    toast.error(e.response?.data?.msg || e.message || "Kaldırma başarısız.");
+    toast.error(e.response?.data?.msg || e.message || "Failed to remove.");
   } finally {
     addRemoveLoading.value = false;
   }
 };
 
-/** Verilen adres (IP, CIDR veya aralık) için istemcide çalıştırılacak route komutunu döndürür. */
+/** Returns the route command to run on the client for the given address (IP, CIDR or range). */
 function routeCommandForAddress(addr) {
   if (!addr || !gatewayIp.value) return "";
   const ip = String(addr).trim();
@@ -115,7 +118,7 @@ function routeCommandForAddress(addr) {
 
 const copyCommand = (cmd) => {
   if (!cmd) return;
-  navigator.clipboard.writeText(cmd).then(() => toast.success("Komut kopyalandı.")).catch(() => toast.error("Kopyalama başarısız."));
+  navigator.clipboard.writeText(cmd).then(() => toast.success("Command copied.")).catch(() => toast.error("Copy failed."));
 };
 
 onMounted(() => {
@@ -135,13 +138,13 @@ onMounted(() => {
           </div>
           <div>
             <h1 class="text-2xl lg:text-3xl font-bold mb-2">IP Alias</h1>
-            <p class="text-cyan-100">Ağ arayüzlerine IP adresi ekleyin ve yönetin</p>
+            <p class="text-cyan-100">Add and manage IP addresses on network interfaces</p>
           </div>
         </div>
         <div class="flex space-x-3 mt-4 lg:mt-0">
           <BaseButton
             :icon="mdiRefresh"
-            label="Yenile"
+            label="Refresh"
             color="lightDark"
             :loading="loading"
             @click="fetchInterfaces"
@@ -152,30 +155,30 @@ onMounted(() => {
 
   <CardBox>
     <p class="text-slate-600 dark:text-slate-400 text-sm mb-4">
-      Arayüze IP adresi veya aralığı ekleyin. Kernel bu adreslere gelen trafiği kabul eder.
-      Her IP için istemcide çalıştırılacak <strong>route</strong> komutu aşağıda listelenir.
+      Add an IP address or range to the interface. The kernel will accept traffic to these addresses.
+      The <strong>route</strong> command to run on the client for each IP is listed below.
     </p>
     <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
       IP alias is only supported on Linux.
     </p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <FormField label="Arayüz">
+      <FormField label="Interface">
         <select
           v-model="selectedInterface"
           class="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
           @change="fetchAddresses"
         >
-          <option value="">Seçin</option>
+          <option value="">Select</option>
           <option v-for="iface in interfaces" :key="iface.name" :value="iface.name">
             {{ iface.name }}{{ iface.up ? " (up)" : "" }}{{ iface.ips?.length ? " — " + iface.ips.join(", ") : "" }}
           </option>
         </select>
       </FormField>
-      <FormField label="IP veya aralık (CIDR veya başlangıç-bitiş)">
+      <FormField label="IP or range (CIDR or start-end)">
         <FormControl
           v-model="cidrOrRange"
-          placeholder="88.255.136.0/24 veya 88.255.136.1-88.255.136.254"
+          placeholder="88.255.136.0/24 or 88.255.136.1-88.255.136.254"
         />
       </FormField>
     </div>
@@ -184,9 +187,9 @@ onMounted(() => {
       v-if="selectedInterfaceInfo"
       class="mb-6 p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600"
     >
-      <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Arayüz özellikleri: {{ selectedInterfaceInfo.name }}</p>
+      <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Interface: {{ selectedInterfaceInfo.name }}</p>
       <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 text-sm">
-        <dt class="text-slate-500 dark:text-slate-400">Durum</dt>
+        <dt class="text-slate-500 dark:text-slate-400">Status</dt>
         <dd class="text-slate-800 dark:text-slate-200">{{ selectedInterfaceInfo.up ? "Up" : "Down" }}</dd>
         <dt class="text-slate-500 dark:text-slate-400">MAC</dt>
         <dd class="text-slate-800 dark:text-slate-200 font-mono">{{ selectedInterfaceInfo.mac || "—" }}</dd>
@@ -194,7 +197,7 @@ onMounted(() => {
         <dd class="text-slate-800 dark:text-slate-200">{{ selectedInterfaceInfo.mtu ?? "—" }}</dd>
         <dt class="text-slate-500 dark:text-slate-400">Gateway</dt>
         <dd class="text-slate-800 dark:text-slate-200 font-mono">{{ selectedInterfaceInfo.gateway || "—" }}</dd>
-        <dt class="text-slate-500 dark:text-slate-400 sm:col-span-2 lg:col-span-4">IP adresleri</dt>
+        <dt class="text-slate-500 dark:text-slate-400 sm:col-span-2 lg:col-span-4">IP addresses</dt>
         <dd class="text-slate-800 dark:text-slate-200 font-mono sm:col-span-2 lg:col-span-4">
           {{ (selectedInterfaceInfo.ips && selectedInterfaceInfo.ips.length) ? selectedInterfaceInfo.ips.join(", ") : "—" }}
         </dd>
@@ -204,7 +207,7 @@ onMounted(() => {
     <div class="flex flex-wrap gap-3 mb-6">
       <BaseButton
         :icon="mdiPlus"
-        label="Ekle"
+        label="Add"
         color="info"
         :disabled="!canSubmit || addRemoveLoading"
         :loading="addRemoveLoading"
@@ -212,7 +215,7 @@ onMounted(() => {
       />
       <BaseButton
         :icon="mdiMinus"
-        label="Kaldır"
+        label="Remove"
         color="danger"
         :disabled="!canSubmit || addRemoveLoading"
         :loading="addRemoveLoading"
@@ -221,23 +224,23 @@ onMounted(() => {
       <BaseButton
         v-if="selectedInterface"
         :icon="mdiRefresh"
-        label="Adresleri listele"
+        label="Refresh addresses"
         outline
         :loading="loadingAddresses"
         @click="fetchAddresses"
       />
     </div>
 
-    <FormField v-if="selectedInterface" label="Bu arayüzdeki adresler ve istemci komutları">
+    <FormField v-if="selectedInterface" label="Addresses on this interface and client commands">
       <div v-if="loadingAddresses" class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-4 text-sm text-slate-500 dark:text-slate-400">
-        Yükleniyor...
+        Loading...
       </div>
       <div v-else-if="addresses.length === 0" class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-4 text-sm text-slate-500 dark:text-slate-400">
-        Henüz liste alınmadı veya adres yok. "Adresleri listele" ile yenileyin.
+        No addresses yet or list not loaded. Click "Refresh addresses" to load.
       </div>
       <div v-else class="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
         <div v-if="!gatewayIp" class="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-slate-200 dark:border-slate-600 text-sm text-amber-800 dark:text-amber-200">
-          Gateway bilgisi alınamadı; komutlar oluşturulamıyor.
+          Gateway not available; commands cannot be generated.
         </div>
         <ul class="divide-y divide-slate-200 dark:divide-slate-600 max-h-96 overflow-y-auto">
           <li
@@ -251,7 +254,7 @@ onMounted(() => {
             </code>
             <BaseButton
               :icon="mdiContentCopy"
-              label="Kopyala"
+              label="Copy"
               small
               outline
               :disabled="!routeCommandForAddress(addr)"
@@ -260,7 +263,7 @@ onMounted(() => {
           </li>
         </ul>
         <p v-if="gatewayIp && addresses.length" class="text-xs text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-200 dark:border-slate-600">
-          Gateway: {{ gatewayIp }} (istemcide route bu adrese yönlendirir)
+          Gateway: {{ gatewayIp }} (client route forwards to this address)
         </p>
       </div>
     </FormField>

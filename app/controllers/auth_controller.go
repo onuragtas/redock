@@ -50,7 +50,7 @@ func UserSignUp(c *fiber.Ctx) error {
 	if len(existing) > 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Yeni kullanıcı sadece mevcut bir admin tarafından eklenebilir",
+			"msg":   "New user can only be added by an existing admin",
 		})
 	}
 

@@ -317,7 +317,7 @@ const routes = [
       },
       {
         meta: {
-          title: 'Kullanıcılar',
+          title: 'Users',
           requiresAdmin: true
         },
         path: 'users',

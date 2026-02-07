@@ -70,7 +70,7 @@ func AdminOnly() func(*fiber.Ctx) error {
 		if userPtr.UserRole != repository.AdminRoleName {
 			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
 				"error": true,
-				"msg":   "sadece admin bu işlemi yapabilir",
+				"msg":   "only admin can perform this action",
 			})
 		}
 		return c.Next()

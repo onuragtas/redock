@@ -118,14 +118,14 @@ func getDefaultGatewaysByLinkIndex() map[int]string {
 func ParseIPRange(cidrOrRange string) ([]*net.IPNet, error) {
 	cidrOrRange = strings.TrimSpace(cidrOrRange)
 	if cidrOrRange == "" {
-		return nil, fmt.Errorf("boş aralık")
+		return nil, fmt.Errorf("empty range")
 	}
 
 	// CIDR (örn. 88.255.136.0/24)
 	if strings.Contains(cidrOrRange, "/") {
 		_, ipNet, err := net.ParseCIDR(cidrOrRange)
 		if err != nil {
-			return nil, fmt.Errorf("geçersiz CIDR: %w", err)
+			return nil, fmt.Errorf("invalid CIDR: %w", err)
 		}
 		return expandCIDRTo32(ipNet)
 	}
@@ -134,12 +134,12 @@ func ParseIPRange(cidrOrRange string) ([]*net.IPNet, error) {
 	if strings.Contains(cidrOrRange, "-") {
 		parts := strings.SplitN(cidrOrRange, "-", 2)
 		if len(parts) != 2 {
-			return nil, fmt.Errorf("geçersiz aralık formatı (başlangıç-bitiş beklenir)")
+			return nil, fmt.Errorf("invalid range format (start-end expected)")
 		}
 		start := net.ParseIP(strings.TrimSpace(parts[0]))
 		end := net.ParseIP(strings.TrimSpace(parts[1]))
 		if start == nil || end == nil || start.To4() == nil || end.To4() == nil {
-			return nil, fmt.Errorf("geçersiz IP adresi")
+			return nil, fmt.Errorf("invalid IP address")
 		}
 		return rangeToIPNets(start.To4(), end.To4())
 	}
@@ -147,7 +147,7 @@ func ParseIPRange(cidrOrRange string) ([]*net.IPNet, error) {
 	// Tek IP
 	ip := net.ParseIP(cidrOrRange)
 	if ip == nil || ip.To4() == nil {
-		return nil, fmt.Errorf("geçersiz IP veya aralık")
+		return nil, fmt.Errorf("invalid IP or range")
 	}
 	_, ipNet, _ := net.ParseCIDR(ip.To4().String() + "/32")
 	return []*net.IPNet{ipNet}, nil
@@ -156,11 +156,11 @@ func ParseIPRange(cidrOrRange string) ([]*net.IPNet, error) {
 func expandCIDRTo32(ipNet *net.IPNet) ([]*net.IPNet, error) {
 	ones, bits := ipNet.Mask.Size()
 	if bits != 32 {
-		return nil, fmt.Errorf("sadece IPv4 destekleniyor")
+		return nil, fmt.Errorf("only IPv4 is supported")
 	}
 	count := 1 << (32 - ones)
 	if count > maxAliases {
-		return nil, fmt.Errorf("en fazla %d IP eklenebilir (isteğiniz %d)", maxAliases, count)
+		return nil, fmt.Errorf("at most %d IPs can be added (requested %d)", maxAliases, count)
 	}
 	out := make([]*net.IPNet, 0, count)
 	ip := make(net.IP, 4)
@@ -191,7 +191,7 @@ func rangeToIPNets(start, end net.IP) ([]*net.IPNet, error) {
 	copy(p, start)
 	for compareIP(p, end) <= 0 {
 		if len(out) >= maxAliases {
-			return nil, fmt.Errorf("en fazla %d IP eklenebilir", maxAliases)
+			return nil, fmt.Errorf("at most %d IPs can be added", maxAliases)
 		}
 		_, n, _ := net.ParseCIDR(p.String() + "/32")
 		out = append(out, n)
@@ -215,14 +215,14 @@ func compareIP(a, b net.IP) int {
 // AddAliases verilen arayüze IP adreslerini ekler (netlink). Sadece Linux.
 func AddAliases(ifaceName string, ipNets []*net.IPNet) (added int, err error) {
 	if runtime.GOOS != "linux" {
-		return 0, fmt.Errorf("IP alias sadece Linux'ta destekleniyor")
+		return 0, fmt.Errorf("IP alias is only supported on Linux")
 	}
 	if len(ipNets) > maxAliases {
 		return 0, fmt.Errorf("en fazla %d IP eklenebilir", maxAliases)
 	}
 	link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
-		return 0, fmt.Errorf("arayüz bulunamadı: %w", err)
+		return 0, fmt.Errorf("interface not found: %w", err)
 	}
 	for _, ipNet := range ipNets {
 		addr := &netlink.Addr{IPNet: ipNet}
@@ -230,7 +230,7 @@ func AddAliases(ifaceName string, ipNets []*net.IPNet) (added int, err error) {
 			if strings.Contains(err.Error(), "exists") {
 				continue
 			}
-			return added, fmt.Errorf("%s eklenirken: %w", ipNet.String(), err)
+			return added, fmt.Errorf("adding %s: %w", ipNet.String(), err)
 		}
 		added++
 	}
@@ -240,11 +240,11 @@ func AddAliases(ifaceName string, ipNets []*net.IPNet) (added int, err error) {
 // RemoveAliases verilen arayüzden IP adreslerini kaldırır. Sadece Linux.
 func RemoveAliases(ifaceName string, ipNets []*net.IPNet) (removed int, err error) {
 	if runtime.GOOS != "linux" {
-		return 0, fmt.Errorf("IP alias sadece Linux'ta destekleniyor")
+		return 0, fmt.Errorf("IP alias is only supported on Linux")
 	}
 	link, err := netlink.LinkByName(ifaceName)
 	if err != nil {
-		return 0, fmt.Errorf("arayüz bulunamadı: %w", err)
+		return 0, fmt.Errorf("interface not found: %w", err)
 	}
 	for _, ipNet := range ipNets {
 		addr := &netlink.Addr{IPNet: ipNet}
@@ -252,7 +252,7 @@ func RemoveAliases(ifaceName string, ipNets []*net.IPNet) (removed int, err erro
 			if strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "No such file") {
 				continue
 			}
-			return removed, fmt.Errorf("%s kaldırılırken: %w", ipNet.String(), err)
+			return removed, fmt.Errorf("removing %s: %w", ipNet.String(), err)
 		}
 		removed++
 	}

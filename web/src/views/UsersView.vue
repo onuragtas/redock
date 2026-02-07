@@ -52,7 +52,7 @@ const fetchUsers = async () => {
       router.push('/')
       return
     }
-    toast.error(e.response?.data?.msg || 'Kullanıcılar yüklenemedi')
+    toast.error(e.response?.data?.msg || 'Failed to load users')
     users.value = []
   } finally {
     loading.value = false
@@ -91,11 +91,11 @@ const openDeleteModal = (user) => {
 
 const createSubmit = async () => {
   if (!formCreate.value.email?.trim() || !formCreate.value.password?.trim()) {
-    toast.error('E-posta ve şifre gerekli')
+    toast.error('Email and password required')
     return
   }
   if (formCreate.value.password.length < 6) {
-    toast.error('Şifre en az 6 karakter olmalı')
+    toast.error('Password must be at least 6 characters')
     return
   }
   try {
@@ -105,11 +105,11 @@ const createSubmit = async () => {
       user_role: formCreate.value.user_role,
       allowed_menus: formCreate.value.allowed_menus
     })
-    toast.success('Kullanıcı eklendi')
+    toast.success('User added')
     isAddModalActive.value = false
     await fetchUsers()
   } catch (e) {
-    toast.error(e.response?.data?.msg || 'Kullanıcı eklenemedi')
+    toast.error(e.response?.data?.msg || 'Failed to add user')
   }
 }
 
@@ -120,22 +120,22 @@ const editSubmit = async () => {
       user_status: formEdit.value.user_status,
       allowed_menus: formEdit.value.allowed_menus
     })
-    toast.success('Kullanıcı güncellendi')
+    toast.success('User updated')
     isEditModalActive.value = false
     await fetchUsers()
   } catch (e) {
-    toast.error(e.response?.data?.msg || 'Güncellenemedi')
+    toast.error(e.response?.data?.msg || 'Failed to update')
   }
 }
 
 const deleteSubmit = async () => {
   try {
     await ApiService.deleteUser(selectedUser.value.id)
-    toast.success('Kullanıcı silindi')
+    toast.success('User deleted')
     isDeleteModalActive.value = false
     await fetchUsers()
   } catch (e) {
-    toast.error(e.response?.data?.msg || 'Silinemedi')
+    toast.error(e.response?.data?.msg || 'Failed to delete')
   }
 }
 
@@ -154,8 +154,8 @@ const toggleMenuEdit = (path) => {
 const isMenuCheckedCreate = (path) => formCreate.value.allowed_menus.includes(path)
 const isMenuCheckedEdit = (path) => formEdit.value.allowed_menus.includes(path)
 
-const roleLabel = (role) => (role === 'admin' ? 'Admin' : 'Kullanıcı')
-const statusLabel = (status) => (status === 1 ? 'Aktif' : 'Pasif')
+const roleLabel = (role) => (role === 'admin' ? 'Admin' : 'User')
+const statusLabel = (status) => (status === 1 ? 'Active' : 'Inactive')
 
 onMounted(() => {
   fetchUsers()
@@ -166,9 +166,9 @@ onMounted(() => {
 <template>
   <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <h1 class="text-2xl font-bold text-white">Kullanıcılar</h1>
+      <h1 class="text-2xl font-bold text-white">Users</h1>
       <BaseButton
-        label="Yeni Kullanıcı"
+        label="New User"
         :icon="mdiAccountPlus"
         color="info"
         @click="openAddModal"
@@ -176,19 +176,19 @@ onMounted(() => {
     </div>
 
     <CardBox>
-      <div v-if="loading" class="p-8 text-center text-gray-400">Yükleniyor...</div>
+      <div v-if="loading" class="p-8 text-center text-gray-400">Loading...</div>
       <div v-else-if="users.length === 0" class="p-8 text-center text-gray-400">
-        Henüz kullanıcı yok. İlk giriş yapan hesap otomatik admin olur.
+        No users yet. The first account to sign in becomes admin automatically.
       </div>
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-gray-700">
-              <th class="text-left py-3 px-4 text-gray-300">E-posta</th>
-              <th class="text-left py-3 px-4 text-gray-300">Rol</th>
-              <th class="text-left py-3 px-4 text-gray-300">Durum</th>
-              <th class="text-left py-3 px-4 text-gray-300">Menüler</th>
-              <th class="w-24 text-right py-3 px-4 text-gray-300">İşlem</th>
+              <th class="text-left py-3 px-4 text-gray-300">Email</th>
+              <th class="text-left py-3 px-4 text-gray-300">Role</th>
+              <th class="text-left py-3 px-4 text-gray-300">Status</th>
+              <th class="text-left py-3 px-4 text-gray-300">Menus</th>
+              <th class="w-24 text-right py-3 px-4 text-gray-300">Actions</th>
             </tr>
           </thead>
           <tbody>
@@ -216,21 +216,21 @@ onMounted(() => {
               </td>
               <td class="py-3 px-4 text-gray-300">{{ statusLabel(u.user_status) }}</td>
               <td class="py-3 px-4 text-gray-400">
-                {{ u.user_role === 'admin' ? 'Tümü' : (u.allowed_menus || []).length + ' menü' }}
+                {{ u.user_role === 'admin' ? 'All' : (u.allowed_menus || []).length + ' menus' }}
               </td>
               <td class="py-3 px-4 text-right">
                 <BaseButton
                   :icon="mdiPencil"
                   small
                   color="info"
-                  title="Düzenle"
+                  title="Edit"
                   @click="openEditModal(u)"
                 />
                 <BaseButton
                   :icon="mdiDelete"
                   small
                   color="danger"
-                  title="Sil"
+                  title="Delete"
                   @click="openDeleteModal(u)"
                 />
               </td>
@@ -243,29 +243,29 @@ onMounted(() => {
     <!-- Add user modal -->
     <CardBoxModal
       v-model="isAddModalActive"
-      title="Yeni Kullanıcı"
-      button-label="Ekle"
+      title="New User"
+      button-label="Add"
       @confirm="createSubmit"
     >
-      <FormField label="E-posta">
+      <FormField label="Email">
         <FormControl v-model="formCreate.email" type="email" placeholder="user@example.com" />
       </FormField>
-      <FormField label="Şifre">
+      <FormField label="Password">
         <FormControl v-model="formCreate.password" type="password" placeholder="••••••••" />
       </FormField>
-      <FormField label="Rol">
+      <FormField label="Role">
         <select
           v-model="formCreate.user_role"
           class="w-full rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2"
         >
-          <option value="user">Kullanıcı</option>
+          <option value="user">User</option>
           <option value="admin">Admin</option>
         </select>
       </FormField>
       <FormField
         v-if="formCreate.user_role === 'user'"
-        label="Görünecek menüler"
-        help="Bu kullanıcının göreceği menü öğelerini seçin."
+        label="Visible menus"
+        help="Select which menu items this user can see."
       >
         <div class="max-h-48 overflow-y-auto space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
           <label
@@ -288,34 +288,34 @@ onMounted(() => {
     <!-- Edit user modal -->
     <CardBoxModal
       v-model="isEditModalActive"
-      title="Kullanıcıyı Düzenle"
-      button-label="Kaydet"
+      title="Edit User"
+      button-label="Save"
       @confirm="editSubmit"
     >
       <p v-if="selectedUser" class="text-sm text-gray-400 mb-4">
         {{ selectedUser.email }}
       </p>
-      <FormField label="Rol">
+      <FormField label="Role">
         <select
           v-model="formEdit.user_role"
           class="w-full rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2"
         >
-          <option value="user">Kullanıcı</option>
+          <option value="user">User</option>
           <option value="admin">Admin</option>
         </select>
       </FormField>
-      <FormField label="Durum">
+      <FormField label="Status">
         <select
           v-model="formEdit.user_status"
           class="w-full rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2"
         >
-          <option :value="1">Aktif</option>
-          <option :value="0">Pasif</option>
+          <option :value="1">Active</option>
+          <option :value="0">Inactive</option>
         </select>
       </FormField>
       <FormField
         v-if="formEdit.user_role === 'user'"
-        label="Görünecek menüler"
+        label="Visible menus"
       >
         <div class="max-h-48 overflow-y-auto space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
           <label
@@ -337,13 +337,13 @@ onMounted(() => {
     <!-- Delete confirm -->
     <CardBoxModal
       v-model="isDeleteModalActive"
-      title="Kullanıcıyı Sil"
-      button-label="Sil"
+      title="Delete User"
+      button-label="Delete"
       :has-cancel="true"
       @confirm="deleteSubmit"
     >
       <p class="text-gray-300">
-        <strong>{{ selectedUser?.email }}</strong> kullanıcısını silmek istediğinize emin misiniz?
+        Are you sure you want to delete user <strong>{{ selectedUser?.email }}</strong>?
       </p>
     </CardBoxModal>
   </div>

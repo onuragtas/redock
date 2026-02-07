@@ -608,7 +608,7 @@ onMounted(async () => {
         </div>
         <div v-if="login" class="mt-6 lg:mt-0 flex space-x-3">
           <BaseButton
-            label="Yenile"
+            label="Refresh"
             :icon="mdiRefresh"
             color="white"
             outline
@@ -1116,7 +1116,7 @@ onMounted(async () => {
     v-model="isAddServerModalActive"
     title="Add another server"
     button="info"
-    button-label="Ekle"
+    button-label="Add"
     has-cancel
     @confirm="addServerSubmit"
   >

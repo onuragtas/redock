@@ -27,7 +27,7 @@ var AllMenuItems = []MenuItem{
 	{Path: "/email-server", Name: "Email Server", Icon: "mdiEmail"},
 	{Path: "/cloudflare", Name: "Cloudflare", Icon: "mdiCloud"},
 	{Path: "/tunnel-proxy-server", Name: "Tunnel Proxy Server", Icon: "mdiServerNetwork"},
-	{Path: "/users", Name: "Kullanıcılar", Icon: "mdiAccountGroup"},
+	{Path: "/users", Name: "Users", Icon: "mdiAccountGroup"},
 	{Path: "/updates", Name: "Updates", Icon: "mdiDownload"},
 }
 

@@ -537,7 +537,7 @@ onMounted(() => {
         <div v-show="!layoutStore.sidebarCollapsed" class="flex items-center gap-1 shrink-0">
           <button
             class="hidden lg:flex p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-700/50 transition-colors"
-            aria-label="Menüyü daralt"
+            aria-label="Collapse menu"
             @click.stop="layoutStore.toggleSidebarCollapsed()"
           >
             <BaseIcon :path="mdiChevronLeft" size="20" />
@@ -654,7 +654,7 @@ onMounted(() => {
             'p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors',
             layoutStore.sidebarCollapsed ? '' : 'lg:hidden'
           ]"
-          :aria-label="layoutStore.sidebarCollapsed ? 'Menüyü aç' : 'Menü'"
+          :aria-label="layoutStore.sidebarCollapsed ? 'Expand menu' : 'Menu'"
           @click="layoutStore.sidebarCollapsed ? layoutStore.toggleSidebarCollapsed() : toggleSidebar()"
         >
           <BaseIcon :path="mdiMenu" size="20" />

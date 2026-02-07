@@ -108,7 +108,7 @@ func TunnelLogin(c *fiber.Ctx) error {
 	if err := c.BodyParser(model); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Geçersiz istek: " + err.Error(),
+			"msg":   "Invalid request: " + err.Error(),
 			"data":  nil,
 		})
 	}
@@ -116,7 +116,7 @@ func TunnelLogin(c *fiber.Ctx) error {
 	if model.Email == "" || model.Password == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "E-posta ve şifre gerekli",
+			"msg":   "Email and password required",
 			"data":  nil,
 		})
 	}
@@ -124,7 +124,7 @@ func TunnelLogin(c *fiber.Ctx) error {
 	if !tunnel_server.GetConfig().Enabled {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Tünel sunucusu etkin değil",
+			"msg":   "Tunnel server is not enabled",
 			"data":  nil,
 		})
 	}
@@ -132,7 +132,7 @@ func TunnelLogin(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Geçersiz e-posta veya şifre. Hesabınız yoksa önce kayıt olun.",
+			"msg":   "Invalid email or password. If you don't have an account, please register first.",
 			"data":  nil,
 		})
 	}
@@ -172,7 +172,7 @@ func TunnelRegister(c *fiber.Ctx) error {
 	if !tunnel_server.GetConfig().Enabled {
 		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Tünel sunucusu etkin değil",
+			"msg":   "Tunnel server is not enabled",
 			"data":  nil,
 		})
 	}
@@ -1504,15 +1504,15 @@ func TunnelAuthCallback(c *fiber.Ctx) error {
 	token := strings.TrimSpace(tokenRaw)
 	baseURL := strings.TrimSpace(c.Query("tunnel_base_url"))
 	if state == "" || token == "" || baseURL == "" {
-		return c.Status(fiber.StatusBadRequest).SendString("state, tunnel_token ve tunnel_base_url gerekli")
+		return c.Status(fiber.StatusBadRequest).SendString("state, tunnel_token and tunnel_base_url are required")
 	}
 	auth := tunnel_server.GetAuthState(state)
 	if auth == nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Geçersiz veya süresi dolmuş state. Lütfen Tünel Proxy Client sayfasından tekrar Bağlan ile deneyin.")
+		return c.Status(fiber.StatusBadRequest).SendString("Invalid or expired state. Please try Connect again from the Tunnel Proxy Client page.")
 	}
 	server, err := tunnel_server.FindTunnelServerByID(auth.ServerID)
 	if err != nil || server == nil {
-		return c.Status(fiber.StatusBadRequest).SendString("Sunucu bulunamadı")
+		return c.Status(fiber.StatusBadRequest).SendString("Server not found")
 	}
 	effectiveBaseURL := strings.TrimSpace(server.BaseURL)
 	if effectiveBaseURL == "" {
@@ -1524,7 +1524,7 @@ func TunnelAuthCallback(c *fiber.Ctx) error {
 		UserID:      auth.UserID,
 	}
 	if err := tunnel_server.SaveCredential(cred); err != nil {
-		return c.Status(fiber.StatusInternalServerError).SendString("Token kaydedilemedi")
+		return c.Status(fiber.StatusInternalServerError).SendString("Failed to save token")
 	}
 	redirectTo := auth.ClientRedirect
 	if redirectTo == "" {

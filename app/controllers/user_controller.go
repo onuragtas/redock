@@ -69,7 +69,7 @@ func CreateUser(c *fiber.Ctx) error {
 	if _, err := utils.VerifyRole(req.UserRole); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "user_role admin veya user olmalı",
+			"msg":   "user_role must be admin or user",
 		})
 	}
 
@@ -84,7 +84,7 @@ func CreateUser(c *fiber.Ctx) error {
 	if len(existing) > 0 {
 		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
 			"error": true,
-			"msg":   "bu e-posta zaten kayıtlı",
+			"msg":   "this email is already registered",
 		})
 	}
 
@@ -129,7 +129,7 @@ func UpdateUser(c *fiber.Ctx) error {
 	if err != nil || id < 1 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "geçersiz kullanıcı id",
+			"msg":   "invalid user id",
 		})
 	}
 	var req models.UpdateUserRequest
@@ -158,7 +158,7 @@ func UpdateUser(c *fiber.Ctx) error {
 	if err != nil || userPtr == nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
-			"msg":   "kullanıcı bulunamadı",
+			"msg":   "user not found",
 		})
 	}
 	user := *userPtr
@@ -167,7 +167,7 @@ func UpdateUser(c *fiber.Ctx) error {
 		if _, err := utils.VerifyRole(*req.UserRole); err != nil {
 			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 				"error": true,
-				"msg":   "user_role admin veya user olmalı",
+				"msg":   "user_role must be admin or user",
 			})
 		}
 		user.UserRole = *req.UserRole
@@ -210,7 +210,7 @@ func DeleteUser(c *fiber.Ctx) error {
 	if err != nil || id < 1 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "geçersiz kullanıcı id",
+			"msg":   "invalid user id",
 		})
 	}
 
@@ -225,7 +225,7 @@ func DeleteUser(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
-			"msg":   "kullanıcı bulunamadı",
+			"msg":   "user not found",
 		})
 	}
 

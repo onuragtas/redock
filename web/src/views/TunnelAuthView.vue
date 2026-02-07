@@ -177,7 +177,7 @@ onMounted(() => {
                 placeholder="email@example.com"
               />
             </FormField>
-            <FormField label="Şifre">
+            <FormField label="Password">
               <FormControl
                 v-model="credentials.password"
                 type="password"
