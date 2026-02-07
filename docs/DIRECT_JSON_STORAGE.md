@@ -22,19 +22,19 @@ Bu belge, projede **platform/memory** (memory DB) yerine **doğrudan JSON read/w
 
 ---
 
-## 3. Container Settings / Docker Manager
+## 3. Container Settings / Docker Manager — memory DB'ye taşındı
 
 ### 3.1 Service settings
 
-- **Dosya:** `{workdir}/service-settings.json`
-- **Ne:** Servis override’ları (custom name, portlar)
-- **Nerede:** `docker-manager/service_settings.go`: loadServiceSettings (ReadFile + Unmarshal), SaveServiceSettings (Marshal + WriteFile)
+- **Eski dosya:** `{workdir}/service-settings.json` (migration 7 → `service_settings`, dosya `.bak`)
+- **Yeni:** `service_settings` tablosu, `docker_manager.ServiceSettingsEntity`
+- **Kod:** `docker-manager/service_settings.go`, `docker-manager/entities.go`
 
 ### 3.2 Virtual Hosts – yıldızlı liste (starred)
 
-- **Dosya:** `{workdir}/data/starred_vhosts.json`
-- **Ne:** Yıldızlı vhost path listesi
-- **Nerede:** `docker-manager/virtualhost.go`: GetStarredVHosts, StarVHost, UnstarVHost, saveStarredVHosts (ReadFile/WriteFile + json Marshal/Unmarshal)
+- **Eski dosya:** `{workdir}/data/starred_vhosts.json` (migration 8 → `starred_vhosts` tablosu, dosya `.bak`)
+- **Yeni:** `starred_vhosts` tablosu, `docker_manager.StarredVHostEntity` (her path bir satır)
+- **Kod:** `docker-manager/virtualhost.go`, `docker-manager/entities.go`
 
 *Not: Vhost içeriği (nginx/httpd .conf) ve .env dosyaları bilinçli “config dosyası” yazımı; memory DB alternatifi değil.*
 
@@ -72,8 +72,8 @@ Bu belge, projede **platform/memory** (memory DB) yerine **doğrudan JSON read/w
 |-----------------------|-------------------------------|-------------------------------------|
 | Dev Environment       | *(memory DB: `dev_envs`)*     | devenv/init.go, entity.go, docker_controller |
 | Deployment            | *(memory DB: `deployment_settings`, `deployment_projects`)* | deployment/init.go, entity.go |
-| Container Settings    | `service-settings.json`       | docker-manager/service_settings.go |
-| Virtual Hosts        | `data/starred_vhosts.json`   | docker-manager/virtualhost.go       |
+| Container Settings (service settings) | *(memory DB: `service_settings`)* | docker-manager/service_settings.go, entities.go |
+| Virtual Hosts (starred)               | *(memory DB: `starred_vhosts`)*   | docker-manager/virtualhost.go, entities.go     |
 | API Gateway           | `data/api_gateway.json` + block list | api_gateway/gateway.go        |
 | PHP XDebug Adapter    | `data/settings.json`         | php_debug_adapter/php_debug_adapter.go |
 | (Generic)             | –                             | platform/storage/json_storage.go   |

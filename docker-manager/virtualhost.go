@@ -1,7 +1,6 @@
 package docker_manager
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/ioutil"
@@ -10,6 +9,9 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+
+	"redock/platform/database"
+	"redock/platform/memory"
 
 	"github.com/AlecAivazis/survey/v2"
 )
@@ -283,83 +285,61 @@ func (t *VirtualHost) VirtualHostsWithStarred() ([]string, []string) {
 	return result, starred
 }
 
-// getStarredVHostsPath returns the path to the starred vhosts file
-func (t *VirtualHost) getStarredVHostsPath() string {
-	return t.manager.GetWorkDir() + "/data/starred_vhosts.json"
-}
-
 // getDataDir returns the path to the data directory
 func (t *VirtualHost) getDataDir() string {
 	return t.manager.GetWorkDir() + "/data"
 }
 
-// GetStarredVHosts returns the list of starred virtual hosts
+// GetStarredVHosts returns the list of starred virtual hosts from memory DB.
 func (t *VirtualHost) GetStarredVHosts() []string {
-	file, err := os.ReadFile(t.getStarredVHostsPath())
-	if err != nil {
-		return []string{}
+	db := database.GetMemoryDB()
+	if db == nil {
+		return nil
 	}
-
-	var starred []string
-	if err := json.Unmarshal(file, &starred); err != nil {
-		return []string{}
+	list := memory.FindAll[*StarredVHostEntity](db, "starred_vhosts")
+	out := make([]string, 0, len(list))
+	for _, e := range list {
+		out = append(out, e.Path)
 	}
-	return starred
+	return out
 }
 
-// StarVHost adds a virtual host to the starred list
+// StarVHost adds a virtual host to the starred list.
 func (t *VirtualHost) StarVHost(path string) error {
-	starred := t.GetStarredVHosts()
-
-	// Check if already starred
-	for _, s := range starred {
-		if s == path {
-			return nil // Already starred
-		}
+	db := database.GetMemoryDB()
+	if db == nil {
+		return nil
 	}
-
-	starred = append(starred, path)
-	return t.saveStarredVHosts(starred)
+	existing := memory.Where[*StarredVHostEntity](db, "starred_vhosts", "Path", path)
+	if len(existing) > 0 {
+		return nil
+	}
+	return memory.Create(db, "starred_vhosts", &StarredVHostEntity{Path: path})
 }
 
-// UnstarVHost removes a virtual host from the starred list
+// UnstarVHost removes a virtual host from the starred list.
 func (t *VirtualHost) UnstarVHost(path string) error {
-	starred := t.GetStarredVHosts()
-
-	var newStarred []string
-	for _, s := range starred {
-		if s != path {
-			newStarred = append(newStarred, s)
+	db := database.GetMemoryDB()
+	if db == nil {
+		return nil
+	}
+	list := memory.Where[*StarredVHostEntity](db, "starred_vhosts", "Path", path)
+	for _, e := range list {
+		if err := memory.Delete[*StarredVHostEntity](db, "starred_vhosts", e.GetID()); err != nil {
+			return err
 		}
 	}
-
-	return t.saveStarredVHosts(newStarred)
+	return nil
 }
 
-// IsStarred checks if a virtual host is starred
+// IsStarred checks if a virtual host is starred.
 func (t *VirtualHost) IsStarred(path string) bool {
-	starred := t.GetStarredVHosts()
-	for _, s := range starred {
-		if s == path {
-			return true
-		}
+	db := database.GetMemoryDB()
+	if db == nil {
+		return false
 	}
-	return false
-}
-
-// saveStarredVHosts saves the starred virtual hosts list to file
-func (t *VirtualHost) saveStarredVHosts(starred []string) error {
-	// Ensure the data directory exists
-	if err := os.MkdirAll(t.getDataDir(), 0755); err != nil {
-		return err
-	}
-
-	data, err := json.MarshalIndent(starred, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(t.getStarredVHostsPath(), data, 0644)
+	list := memory.Where[*StarredVHostEntity](db, "starred_vhosts", "Path", path)
+	return len(list) > 0
 }
 
 func NewVirtualHost(manager *DockerEnvironmentManager) *VirtualHost {

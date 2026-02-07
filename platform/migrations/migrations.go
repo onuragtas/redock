@@ -9,6 +9,7 @@ import (
 	"redock/app/models"
 	"redock/deployment"
 	devenv "redock/devenv"
+	docker_manager "redock/docker-manager"
 	dns_server "redock/dns_server"
 	localproxy "redock/local_proxy"
 	"redock/platform/database"
@@ -193,6 +194,68 @@ func MemoryMigrations() []database.MemoryMigration {
 				for i := range cfg.Projects {
 					entity := &cfg.Projects[i]
 					if err := memory.Create(db, "deployment_projects", entity); err != nil {
+						return err
+					}
+				}
+				_ = os.Rename(path, path+".bak")
+				return nil
+			},
+		},
+		{
+			Version: 7,
+			Name:    "import_service_settings_json",
+			Up: func(db *memory.Database, dataDir string) error {
+				workdir := filepath.Dir(dataDir)
+				path := filepath.Join(workdir, "service-settings.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				var raw struct {
+					ContainerNamePrefix string                              `json:"container_name_prefix"`
+					Overrides           map[string]*docker_manager.ServiceOverride `json:"overrides"`
+				}
+				if err := json.Unmarshal(data, &raw); err != nil {
+					return err
+				}
+				if raw.Overrides == nil {
+					raw.Overrides = make(map[string]*docker_manager.ServiceOverride)
+				}
+				entity := &docker_manager.ServiceSettingsEntity{
+					ContainerNamePrefix: raw.ContainerNamePrefix,
+					Overrides:           raw.Overrides,
+				}
+				if err := memory.Create(db, "service_settings", entity); err != nil {
+					return err
+				}
+				_ = os.Rename(path, path+".bak")
+				return nil
+			},
+		},
+		{
+			Version: 8,
+			Name:    "import_starred_vhosts_json",
+			Up: func(db *memory.Database, dataDir string) error {
+				path := filepath.Join(dataDir, "starred_vhosts.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				var paths []string
+				if err := json.Unmarshal(data, &paths); err != nil {
+					return err
+				}
+				for _, p := range paths {
+					if p == "" {
+						continue
+					}
+					if err := memory.Create(db, "starred_vhosts", &docker_manager.StarredVHostEntity{Path: p}); err != nil {
 						return err
 					}
 				}

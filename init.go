@@ -154,6 +154,8 @@ func registerEntities(db *memory.Database) error {
 		{"dev_envs", func() error { return memory.Register[*devenv.DevEnvEntity](db, "dev_envs") }},
 		{"deployment_settings", func() error { return memory.Register[*deployment.DeploymentSettingsEntity](db, "deployment_settings") }},
 		{"deployment_projects", func() error { return memory.Register[*deployment.DeploymentProjectEntity](db, "deployment_projects") }},
+		{"service_settings", func() error { return memory.Register[*dockermanager.ServiceSettingsEntity](db, "service_settings") }},
+		{"starred_vhosts", func() error { return memory.Register[*dockermanager.StarredVHostEntity](db, "starred_vhosts") }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
 		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},

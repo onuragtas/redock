@@ -1,13 +1,12 @@
 package docker_manager
 
 import (
-	"encoding/json"
 	"fmt"
-	"log"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
+
+	"redock/platform/database"
+	"redock/platform/memory"
 )
 
 type ServiceOverride struct {
@@ -28,10 +27,6 @@ type ServiceMetadata struct {
 	DefaultPorts           []string `json:"default_ports"`
 }
 
-func (t *DockerEnvironmentManager) serviceSettingsPath() string {
-	return filepath.Join(t.GetWorkDir(), "service-settings.json")
-}
-
 func defaultServiceSettings() *ServiceSettings {
 	return &ServiceSettings{
 		Overrides: make(map[string]*ServiceOverride),
@@ -39,18 +34,24 @@ func defaultServiceSettings() *ServiceSettings {
 }
 
 func (t *DockerEnvironmentManager) loadServiceSettings() {
-	settings := defaultServiceSettings()
-	data, err := os.ReadFile(t.serviceSettingsPath())
-	if err == nil {
-		if err := json.Unmarshal(data, settings); err != nil {
-			log.Printf("docker: unable to parse service settings: %v", err)
-			settings = defaultServiceSettings()
-		}
+	db := database.GetMemoryDB()
+	if db == nil {
+		t.ServiceSettings = defaultServiceSettings()
+		return
 	}
-	if settings.Overrides == nil {
-		settings.Overrides = make(map[string]*ServiceOverride)
+	list := memory.FindAll[*ServiceSettingsEntity](db, "service_settings")
+	if len(list) == 0 {
+		t.ServiceSettings = defaultServiceSettings()
+		return
 	}
-	t.ServiceSettings = settings
+	e := list[0]
+	t.ServiceSettings = &ServiceSettings{
+		ContainerNamePrefix: e.ContainerNamePrefix,
+		Overrides:           e.Overrides,
+	}
+	if t.ServiceSettings.Overrides == nil {
+		t.ServiceSettings.Overrides = make(map[string]*ServiceOverride)
+	}
 }
 
 func (t *DockerEnvironmentManager) GetServiceSettings() *ServiceSettings {
@@ -62,12 +63,26 @@ func (t *DockerEnvironmentManager) GetServiceSettings() *ServiceSettings {
 
 func (t *DockerEnvironmentManager) SaveServiceSettings(settings *ServiceSettings) error {
 	sanitized := normalizeServiceSettings(settings)
-	data, err := json.MarshalIndent(sanitized, "", "  ")
-	if err != nil {
-		return err
+	db := database.GetMemoryDB()
+	if db == nil {
+		t.ServiceSettings = sanitized
+		return nil
 	}
-	if err := os.WriteFile(t.serviceSettingsPath(), data, 0644); err != nil {
-		return err
+	list := memory.FindAll[*ServiceSettingsEntity](db, "service_settings")
+	if len(list) == 0 {
+		entity := &ServiceSettingsEntity{
+			ContainerNamePrefix: sanitized.ContainerNamePrefix,
+			Overrides:           sanitized.Overrides,
+		}
+		if err := memory.Create(db, "service_settings", entity); err != nil {
+			return err
+		}
+	} else {
+		list[0].ContainerNamePrefix = sanitized.ContainerNamePrefix
+		list[0].Overrides = sanitized.Overrides
+		if err := memory.Update(db, "service_settings", list[0]); err != nil {
+			return err
+		}
 	}
 	t.ServiceSettings = sanitized
 	return nil
