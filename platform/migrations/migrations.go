@@ -11,7 +11,9 @@ import (
 	devenv "redock/devenv"
 	docker_manager "redock/docker-manager"
 	dns_server "redock/dns_server"
-	localproxy "redock/local_proxy"
+		"redock/api_gateway"
+		localproxy "redock/local_proxy"
+	php_debug_adapter "redock/php_debug_adapter"
 	"redock/platform/database"
 	"redock/platform/memory"
 
@@ -260,6 +262,91 @@ func MemoryMigrations() []database.MemoryMigration {
 					}
 				}
 				_ = os.Rename(path, path+".bak")
+				return nil
+			},
+		},
+		{
+			Version: 9,
+			Name:    "import_php_xdebug_settings_json",
+			Up: func(db *memory.Database, dataDir string) error {
+				path := filepath.Join(dataDir, "settings.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				var cfg struct {
+					Listen   string                    `json:"listen"`
+					Mappings []php_debug_adapter.Mapping `json:"mappings"`
+				}
+				if err := json.Unmarshal(data, &cfg); err != nil {
+					return err
+				}
+				listen := cfg.Listen
+				if listen == "" {
+					listen = "0.0.0.0:10000"
+				}
+				settings := &php_debug_adapter.PhpXDebugSettingsEntity{Listen: listen}
+				if err := memory.Create(db, "php_xdebug_settings", settings); err != nil {
+					return err
+				}
+				for _, m := range cfg.Mappings {
+					entity := &php_debug_adapter.PhpXDebugMappingEntity{
+						Name: m.Name,
+						Path: m.Path,
+						URL:  m.URL,
+					}
+					if err := memory.Create(db, "php_xdebug_mappings", entity); err != nil {
+						return err
+					}
+				}
+				_ = os.Rename(path, path+".bak")
+				return nil
+			},
+		},
+		{
+			Version: 10,
+			Name:    "import_api_gateway_config_and_blocks",
+			Up: func(db *memory.Database, dataDir string) error {
+				configPath := filepath.Join(dataDir, "api_gateway.json")
+				configData, err := os.ReadFile(configPath)
+				if err == nil {
+					var cfg api_gateway.GatewayConfig
+					if err := json.Unmarshal(configData, &cfg); err == nil {
+						configJSON := string(configData)
+						entity := &api_gateway.ApiGatewayConfigEntity{ConfigJSON: configJSON}
+						if err := memory.Create(db, "api_gateway_config", entity); err != nil {
+							return err
+						}
+					}
+					_ = os.Rename(configPath, configPath+".bak")
+				}
+
+				blocksPath := filepath.Join(dataDir, "api_gateway_blocks.json")
+				blocksData, err := os.ReadFile(blocksPath)
+				if err == nil {
+					var entries []api_gateway.BlockedClient
+					if err := json.Unmarshal(blocksData, &entries); err == nil {
+						for _, entry := range entries {
+							if entry.IP == "" {
+								continue
+							}
+							e := &api_gateway.ApiGatewayBlockEntity{
+								IP:           entry.IP,
+								Manual:       entry.Manual,
+								BlockedAt:    entry.BlockedAt,
+								BlockedUntil: entry.BlockedUntil,
+								Reason:       entry.Reason,
+							}
+							if err := memory.Create(db, "api_gateway_blocks", e); err != nil {
+								return err
+							}
+						}
+					}
+					_ = os.Rename(blocksPath, blocksPath+".bak")
+				}
 				return nil
 			},
 		},

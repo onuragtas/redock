@@ -21,6 +21,8 @@ import (
 	"time"
 
 	dockermanager "redock/docker-manager"
+	"redock/platform/database"
+	"redock/platform/memory"
 )
 
 var (
@@ -149,51 +151,50 @@ func parseTime(value string) time.Time {
 	return t
 }
 
+func (g *Gateway) db() *memory.Database {
+	return database.GetMemoryDB()
+}
+
 func (g *Gateway) blockListFilePath() string {
 	return filepath.Join(g.workDir, "data", "api_gateway_blocks.json")
 }
 
 func (g *Gateway) loadBlockList() {
-	path := g.blockListFilePath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			g.blockListMu.Lock()
-			g.persistentBlocks = make(map[string]BlockedClient)
-			g.blockListMu.Unlock()
+	db := g.db()
+	if db != nil {
+		all := memory.FindAll[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks)
+		now := time.Now()
+		valid := make([]BlockedClient, 0, len(all))
+		for _, e := range all {
+			if e.IP == "" {
+				continue
+			}
+			if !e.Manual && !e.BlockedUntil.IsZero() && e.BlockedUntil.Before(now) {
+				_ = memory.Delete[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, e.GetID())
+				continue
+			}
+			valid = append(valid, BlockedClient{
+				IP:           e.IP,
+				Manual:       e.Manual,
+				BlockedAt:    e.BlockedAt,
+				BlockedUntil: e.BlockedUntil,
+				Reason:       e.Reason,
+			})
 		}
+		g.blockListMu.Lock()
+		g.persistentBlocks = make(map[string]BlockedClient, len(valid))
+		for _, entry := range valid {
+			g.persistentBlocks[entry.IP] = entry
+		}
+		g.blockListMu.Unlock()
+		g.applyPersistentBlocks(valid)
 		return
 	}
-
-	var entries []BlockedClient
-	if err := json.Unmarshal(data, &entries); err != nil {
-		log.Printf("API Gateway: failed to parse block list: %v", err)
-		return
-	}
-
-	now := time.Now()
-	valid := make([]BlockedClient, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IP == "" {
-			continue
-		}
-		if !entry.BlockedUntil.IsZero() && entry.BlockedUntil.Before(now) && !entry.Manual {
-			continue
-		}
-		valid = append(valid, entry)
-	}
-
 	g.blockListMu.Lock()
-	g.persistentBlocks = make(map[string]BlockedClient, len(valid))
-	for _, entry := range valid {
-		g.persistentBlocks[entry.IP] = entry
+	if g.persistentBlocks == nil {
+		g.persistentBlocks = make(map[string]BlockedClient)
 	}
 	g.blockListMu.Unlock()
-
-	g.applyPersistentBlocks(valid)
-	if len(valid) != len(entries) {
-		g.writeBlockList(valid)
-	}
 }
 
 func (g *Gateway) applyPersistentBlocks(entries []BlockedClient) {
@@ -222,6 +223,25 @@ func (g *Gateway) persistBlockEntry(entry BlockedClient) {
 	g.persistentBlocks[entry.IP] = entry
 	entries := g.blockMapToSliceLocked()
 	g.blockListMu.Unlock()
+
+	db := g.db()
+	if db != nil {
+		existing := memory.Where[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, "IP", entry.IP)
+		entity := &ApiGatewayBlockEntity{
+			IP:           entry.IP,
+			Manual:       entry.Manual,
+			BlockedAt:    entry.BlockedAt,
+			BlockedUntil: entry.BlockedUntil,
+			Reason:       entry.Reason,
+		}
+		if len(existing) > 0 {
+			entity.BaseEntity = existing[0].BaseEntity
+			_ = memory.Update(db, tableApiGatewayBlocks, entity)
+		} else {
+			_ = memory.Create(db, tableApiGatewayBlocks, entity)
+		}
+		return
+	}
 	g.writeBlockList(entries)
 }
 
@@ -241,6 +261,15 @@ func (g *Gateway) removePersistentBlock(ip string) {
 	delete(g.persistentBlocks, ip)
 	entries := g.blockMapToSliceLocked()
 	g.blockListMu.Unlock()
+
+	db := g.db()
+	if db != nil {
+		existing := memory.Where[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, "IP", ip)
+		for _, e := range existing {
+			_ = memory.Delete[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, e.GetID())
+		}
+		return
+	}
 	g.writeBlockList(entries)
 }
 
@@ -259,6 +288,9 @@ func (g *Gateway) blockMapToSliceLocked() []BlockedClient {
 }
 
 func (g *Gateway) writeBlockList(entries []BlockedClient) {
+	if g.db() != nil {
+		return
+	}
 	path := g.blockListFilePath()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		log.Printf("API Gateway: failed to create block list directory: %v", err)
@@ -319,12 +351,9 @@ func NewGateway(workDir string) *Gateway {
 	return g
 }
 
-// loadConfig loads the gateway configuration from file
+// loadConfig loads the gateway configuration from memory DB or (fallback) file
 func (g *Gateway) loadConfig() {
-	configPath := g.workDir + "/data/api_gateway.json"
-	file, err := os.ReadFile(configPath)
-	if err != nil {
-		// Default configuration
+	defaultConfig := func() {
 		g.config = &GatewayConfig{
 			HTTPPort:         8080,
 			HTTPSPort:        8081,
@@ -340,26 +369,39 @@ func (g *Gateway) loadConfig() {
 		}
 		g.refreshClientSecurity()
 		g.loadBlockList()
+	}
+
+	db := g.db()
+	if db != nil {
+		list := memory.FindAll[*ApiGatewayConfigEntity](db, tableApiGatewayConfig)
+		if len(list) > 0 && list[0].ConfigJSON != "" {
+			var config GatewayConfig
+			if err := json.Unmarshal([]byte(list[0].ConfigJSON), &config); err != nil {
+				log.Printf("API Gateway: Error parsing config from memory: %v", err)
+				defaultConfig()
+				return
+			}
+			g.config = &config
+			g.refreshClientSecurity()
+			g.loadBlockList()
+			g.refreshServicesAndRoutes()
+			return
+		}
+		defaultConfig()
+		return
+	}
+
+	configPath := g.workDir + "/data/api_gateway.json"
+	file, err := os.ReadFile(configPath)
+	if err != nil {
+		defaultConfig()
 		return
 	}
 
 	var config GatewayConfig
 	if err := json.Unmarshal(file, &config); err != nil {
 		log.Printf("API Gateway: Error parsing config: %v", err)
-		g.config = &GatewayConfig{
-			HTTPPort:         8080,
-			HTTPSPort:        8081,
-			HTTPSEnabled:     false,
-			LogLevel:         "info",
-			AccessLogEnabled: true,
-			Enabled:          false,
-			Services:         []Service{},
-			Routes:           []Route{},
-			UDPRoutes:        []UDPRoute{},
-			TCPRoutes:        []TCPRoute{},
-		}
-		g.refreshClientSecurity()
-		g.loadBlockList()
+		defaultConfig()
 		return
 	}
 
@@ -377,15 +419,27 @@ func (g *Gateway) SaveConfig() error {
 	return g.saveConfigLocked()
 }
 
-// saveConfigLocked saves the configuration without acquiring a lock (caller must hold lock)
+// saveConfigLocked saves the configuration to memory DB or (fallback) file
 func (g *Gateway) saveConfigLocked() error {
-	configPath := g.workDir + "/data/api_gateway.json"
-	data, err := json.MarshalIndent(g.config, "", "  ")
+	data, err := json.Marshal(g.config)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(configPath, data, 0644)
+	db := g.db()
+	if db != nil {
+		list := memory.FindAll[*ApiGatewayConfigEntity](db, tableApiGatewayConfig)
+		if len(list) > 0 {
+			list[0].ConfigJSON = string(data)
+			return memory.Update(db, tableApiGatewayConfig, list[0])
+		}
+		entity := &ApiGatewayConfigEntity{ConfigJSON: string(data)}
+		return memory.Create(db, tableApiGatewayConfig, entity)
+	}
+
+	configPath := g.workDir + "/data/api_gateway.json"
+	indented, _ := json.MarshalIndent(g.config, "", "  ")
+	return os.WriteFile(configPath, indented, 0644)
 }
 
 // refreshServicesAndRoutes refreshes internal maps from config

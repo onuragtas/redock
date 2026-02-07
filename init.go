@@ -156,6 +156,10 @@ func registerEntities(db *memory.Database) error {
 		{"deployment_projects", func() error { return memory.Register[*deployment.DeploymentProjectEntity](db, "deployment_projects") }},
 		{"service_settings", func() error { return memory.Register[*dockermanager.ServiceSettingsEntity](db, "service_settings") }},
 		{"starred_vhosts", func() error { return memory.Register[*dockermanager.StarredVHostEntity](db, "starred_vhosts") }},
+		{"php_xdebug_settings", func() error { return memory.Register[*php_debug_adapter.PhpXDebugSettingsEntity](db, "php_xdebug_settings") }},
+		{"php_xdebug_mappings", func() error { return memory.Register[*php_debug_adapter.PhpXDebugMappingEntity](db, "php_xdebug_mappings") }},
+		{"api_gateway_config", func() error { return memory.Register[*api_gateway.ApiGatewayConfigEntity](db, "api_gateway_config") }},
+		{"api_gateway_blocks", func() error { return memory.Register[*api_gateway.ApiGatewayBlockEntity](db, "api_gateway_blocks") }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
 		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},
