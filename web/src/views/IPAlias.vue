@@ -4,7 +4,6 @@ import BaseIcon from "@/components/BaseIcon.vue";
 import CardBox from "@/components/CardBox.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
-import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
 import ApiService from "@/services/ApiService";
 import { mdiContentCopy, mdiEthernet, mdiRefresh, mdiPlus, mdiMinus } from "@mdi/js";
 import { onMounted, ref, computed } from "vue";
@@ -99,27 +98,23 @@ const removeAlias = async () => {
   }
 };
 
-const clientRouteCommand = computed(() => {
-  const ip = cidrOrRange.value.trim();
-  if (!ip || !gatewayIp.value) return "";
-  // Tek IP için /32 yazmıyoruz (macOS/Linux route formatı: 88.255.136.70 gateway)
+/** Verilen adres (IP, CIDR veya aralık) için istemcide çalıştırılacak route komutunu döndürür. */
+function routeCommandForAddress(addr) {
+  if (!addr || !gatewayIp.value) return "";
+  const ip = String(addr).trim();
   let net = ip;
   if (ip.includes("-")) {
     net = ip.split("-")[0].trim();
   } else if (ip.includes("/")) {
-    const [addr, prefix] = ip.split("/");
-    if (prefix === "32") net = addr.trim();
+    const [address, prefix] = ip.split("/");
+    if (prefix === "32") net = address.trim();
     else net = ip;
   }
   return `sudo route -n add -net ${net} ${gatewayIp.value}`;
-});
+}
 
-const copyCommand = () => {
-  const cmd = clientRouteCommand.value;
-  if (!cmd) {
-    toast.info("Önce bir IP veya aralık girin.");
-    return;
-  }
+const copyCommand = (cmd) => {
+  if (!cmd) return;
   navigator.clipboard.writeText(cmd).then(() => toast.success("Komut kopyalandı.")).catch(() => toast.error("Kopyalama başarısız."));
 };
 
@@ -130,19 +125,38 @@ onMounted(() => {
 </script>
 
 <template>
-  <SectionTitleLineWithButton :icon="mdiEthernet" title="IP Alias" main>
-    <BaseButton
-      :icon="mdiRefresh"
-      label="Yenile"
-      :loading="loading"
-      @click="fetchInterfaces"
-    />
-  </SectionTitleLineWithButton>
+  <div class="space-y-6">
+    <!-- Header -->
+    <div class="bg-gradient-to-r from-cyan-600 to-blue-600 rounded-xl p-6 text-white">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div class="flex items-center space-x-4">
+          <div class="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center backdrop-blur-sm">
+            <BaseIcon :path="mdiEthernet" size="24" class="text-white" />
+          </div>
+          <div>
+            <h1 class="text-2xl lg:text-3xl font-bold mb-2">IP Alias</h1>
+            <p class="text-cyan-100">Ağ arayüzlerine IP adresi ekleyin ve yönetin</p>
+          </div>
+        </div>
+        <div class="flex space-x-3 mt-4 lg:mt-0">
+          <BaseButton
+            :icon="mdiRefresh"
+            label="Yenile"
+            color="lightDark"
+            :loading="loading"
+            @click="fetchInterfaces"
+          />
+        </div>
+      </div>
+    </div>
 
   <CardBox>
-    <p class="text-slate-600 dark:text-slate-400 text-sm mb-6">
+    <p class="text-slate-600 dark:text-slate-400 text-sm mb-4">
       Arayüze IP adresi veya aralığı ekleyin. Kernel bu adreslere gelen trafiği kabul eder.
-      İstemci tarafında trafiği bu sunucuya yönlendirmek için aşağıdaki <strong>route</strong> komutunu kullanın.
+      Her IP için istemcide çalıştırılacak <strong>route</strong> komutu aşağıda listelenir.
+    </p>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
+      IP alias is only supported on Linux.
     </p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
@@ -214,32 +228,43 @@ onMounted(() => {
       />
     </div>
 
-    <FormField v-if="selectedInterface" label="Bu arayüzdeki adresler">
-      <div class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-3 text-sm max-h-32 overflow-y-auto">
-        <span v-if="loadingAddresses">Yükleniyor...</span>
-        <span v-else-if="addresses.length === 0">Henüz liste alınmadı veya adres yok. "Adresleri listele" ile yenileyin.</span>
-        <span v-else>{{ addresses.join(", ") }}</span>
+    <FormField v-if="selectedInterface" label="Bu arayüzdeki adresler ve istemci komutları">
+      <div v-if="loadingAddresses" class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-4 text-sm text-slate-500 dark:text-slate-400">
+        Yükleniyor...
+      </div>
+      <div v-else-if="addresses.length === 0" class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-4 text-sm text-slate-500 dark:text-slate-400">
+        Henüz liste alınmadı veya adres yok. "Adresleri listele" ile yenileyin.
+      </div>
+      <div v-else class="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
+        <div v-if="!gatewayIp" class="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-slate-200 dark:border-slate-600 text-sm text-amber-800 dark:text-amber-200">
+          Gateway bilgisi alınamadı; komutlar oluşturulamıyor.
+        </div>
+        <ul class="divide-y divide-slate-200 dark:divide-slate-600 max-h-96 overflow-y-auto">
+          <li
+            v-for="addr in addresses"
+            :key="addr"
+            class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 p-3 bg-slate-50/50 dark:bg-slate-800/30 hover:bg-slate-100/50 dark:hover:bg-slate-800/50"
+          >
+            <span class="font-mono text-sm text-slate-700 dark:text-slate-300 shrink-0">{{ addr }}</span>
+            <code class="flex-1 min-w-0 text-sm bg-slate-200 dark:bg-slate-700 px-2 py-1.5 rounded break-all font-mono">
+              {{ routeCommandForAddress(addr) || "—" }}
+            </code>
+            <BaseButton
+              :icon="mdiContentCopy"
+              label="Kopyala"
+              small
+              outline
+              :disabled="!routeCommandForAddress(addr)"
+              @click="copyCommand(routeCommandForAddress(addr))"
+            />
+          </li>
+        </ul>
+        <p v-if="gatewayIp && addresses.length" class="text-xs text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-200 dark:border-slate-600">
+          Gateway: {{ gatewayIp }} (istemcide route bu adrese yönlendirir)
+        </p>
       </div>
     </FormField>
 
-    <div class="mt-6 p-4 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-600">
-      <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-2">İstemcide çalıştır (trafiği bu sunucuya yönlendirmek için)</p>
-      <div class="flex items-center gap-2 flex-wrap">
-        <code class="flex-1 min-w-0 text-sm bg-slate-200 dark:bg-slate-700 px-2 py-1 rounded break-all">
-          {{ clientRouteCommand || "IP/aralık girin, komut burada görünecek" }}
-        </code>
-        <BaseButton
-          :icon="mdiContentCopy"
-          label="Kopyala"
-          small
-          outline
-          :disabled="!clientRouteCommand"
-          @click="copyCommand"
-        />
-      </div>
-      <p class="text-xs text-slate-500 dark:text-slate-400 mt-2">
-        Redock sunucu IP’si: {{ gatewayIp || "—" }} (istemcide route ile bu adres kullanılır)
-      </p>
-    </div>
   </CardBox>
+  </div>
 </template>
