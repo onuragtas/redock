@@ -26,8 +26,8 @@ const hasAnyUser = ref(true)
 
 // Login form (Redock: email + password)
 const loginForm = ref({
-  email: 'agtasonur@gmail.com',
-  password: 'onuragtas100'
+  email: '',
+  password: ''
 })
 
 // Register form (Redock: email + password + user_role)
