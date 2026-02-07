@@ -7,11 +7,14 @@ import (
 	"path/filepath"
 
 	"redock/app/models"
+	"redock/deployment"
 	devenv "redock/devenv"
 	dns_server "redock/dns_server"
 	localproxy "redock/local_proxy"
 	"redock/platform/database"
 	"redock/platform/memory"
+
+	"gopkg.in/yaml.v2"
 )
 
 // MemoryMigrations returns the list of memory DB migrations (run once in version order).
@@ -150,6 +153,49 @@ func MemoryMigrations() []database.MemoryMigration {
 					}
 				}
 				// Eski dosyayı yedekle (tekrar migrate edilmesin)
+				_ = os.Rename(path, path+".bak")
+				return nil
+			},
+		},
+		{
+			Version: 6,
+			Name:    "import_deployment_json",
+			Up: func(db *memory.Database, dataDir string) error {
+				path := filepath.Join(dataDir, "deployment.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				var cfg struct {
+					Username string                          `yaml:"username" json:"username"`
+					Token    string                          `yaml:"token" json:"token"`
+					Settings struct{ CheckTime int }         `yaml:"settings" json:"settings"`
+					Projects []deployment.DeploymentProjectEntity `yaml:"projects" json:"projects"`
+				}
+				if err := yaml.Unmarshal(data, &cfg); err != nil {
+					return err
+				}
+				checkTime := cfg.Settings.CheckTime
+				if checkTime <= 0 {
+					checkTime = 60
+				}
+				settings := &deployment.DeploymentSettingsEntity{
+					Username:  cfg.Username,
+					Token:     cfg.Token,
+					CheckTime: checkTime,
+				}
+				if err := memory.Create(db, "deployment_settings", settings); err != nil {
+					return err
+				}
+				for i := range cfg.Projects {
+					entity := &cfg.Projects[i]
+					if err := memory.Create(db, "deployment_projects", entity); err != nil {
+						return err
+					}
+				}
 				_ = os.Rename(path, path+".bak")
 				return nil
 			},

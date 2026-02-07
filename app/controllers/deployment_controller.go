@@ -18,14 +18,14 @@ func DeploymentList(c *fiber.Ctx) error {
 
 // DeploymentAdd adds a new deployment project
 func DeploymentAdd(c *fiber.Ctx) error {
-	var project deployment.Project
+	var project deployment.DeploymentProjectEntity
 	if err := c.BodyParser(&project); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
-	err := deployment.GetDeployment().AddProject(project)
+	err := deployment.GetDeployment().AddProject(&project)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -35,7 +35,7 @@ func DeploymentAdd(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"data":  project,
+		"data":  &project,
 	})
 }
 
@@ -66,14 +66,14 @@ func DeploymentDelete(c *fiber.Ctx) error {
 
 // DeploymentUpdate updates an existing deployment project
 func DeploymentUpdate(c *fiber.Ctx) error {
-	var project deployment.Project
+	var project deployment.DeploymentProjectEntity
 	if err := c.BodyParser(&project); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
-	err := deployment.GetDeployment().UpdateProject(project)
+	err := deployment.GetDeployment().UpdateProject(&project)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -83,7 +83,7 @@ func DeploymentUpdate(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"data":  project,
+		"data":  &project,
 	})
 }
 

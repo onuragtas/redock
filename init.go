@@ -152,6 +152,8 @@ func registerEntities(db *memory.Database) error {
 		{"release_cache", func() error { return memory.Register[*cache_models.ReleaseCache](db, "release_cache") }},
 		{"local_proxy_items", func() error { return memory.Register[*localproxy.LocalProxyItem](db, "local_proxy_items") }},
 		{"dev_envs", func() error { return memory.Register[*devenv.DevEnvEntity](db, "dev_envs") }},
+		{"deployment_settings", func() error { return memory.Register[*deployment.DeploymentSettingsEntity](db, "deployment_settings") }},
+		{"deployment_projects", func() error { return memory.Register[*deployment.DeploymentProjectEntity](db, "deployment_projects") }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
 		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},

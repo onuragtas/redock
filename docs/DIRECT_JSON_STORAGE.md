@@ -14,11 +14,11 @@ Bu belge, projede **platform/memory** (memory DB) yerine **doğrudan JSON read/w
 
 ---
 
-## 2. Deployment
+## 2. Deployment — memory DB’ye taşındı
 
-- **Dosya:** `{workdir}/data/deployment.json`
-- **Ne:** Deployment config (username, token, settings, projects)
-- **Nerede:** `deployment/init.go`: LoadConfigUnsafe, LoadConfig, ve tüm proje ekleme/silme/güncelleme sonrası WriteFile
+- **Eski dosya:** `{workdir}/data/deployment.json` (migration ile `deployment_settings` + `deployment_projects` tablolarına aktarıldı, dosya `deployment.json.bak` yapılır)
+- **Yeni:** `deployment_settings` (tek satır: username, token, check_time), `deployment_projects` (proje listesi)
+- **Kod:** `deployment/init.go`, `deployment/entity.go`; controller aynı API’yi kullanıyor
 
 ---
 
@@ -71,7 +71,7 @@ Bu belge, projede **platform/memory** (memory DB) yerine **doğrudan JSON read/w
 | Menü / Özellik        | Dosya(lar)                    | Konum(lar)                          |
 |-----------------------|-------------------------------|-------------------------------------|
 | Dev Environment       | *(memory DB: `dev_envs`)*     | devenv/init.go, entity.go, docker_controller |
-| Deployment            | `data/deployment.json`        | deployment/init.go                  |
+| Deployment            | *(memory DB: `deployment_settings`, `deployment_projects`)* | deployment/init.go, entity.go |
 | Container Settings    | `service-settings.json`       | docker-manager/service_settings.go |
 | Virtual Hosts        | `data/starred_vhosts.json`   | docker-manager/virtualhost.go       |
 | API Gateway           | `data/api_gateway.json` + block list | api_gateway/gateway.go        |

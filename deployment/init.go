@@ -12,33 +12,25 @@ import (
 	"sync"
 	"time"
 
+	"redock/platform/database"
+	"redock/platform/memory"
+
 	"github.com/onuragtas/command"
 	"gopkg.in/src-d/go-git.v4"
 	config2 "gopkg.in/src-d/go-git.v4/config"
 	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/src-d/go-git.v4/plumbing/transport/http"
-	"gopkg.in/yaml.v2"
 )
 
+// Config deployment global config + proje listesi (memory'den doldurulur).
 type Config struct {
-	Username string    `yaml:"username" json:"username"`
-	Token    string    `yaml:"token" json:"token"`
-	Settings Settings  `yaml:"settings" json:"settings"`
-	Projects []Project `yaml:"projects" json:"projects"`
-}
-type Project struct {
-	Url          string    `yaml:"url" json:"url"`
-	Path         string    `yaml:"path" json:"path"`
-	Branch       string    `yaml:"branch" json:"branch"`
-	Check        string    `yaml:"check" json:"check"`
-	Script       string    `yaml:"script" json:"script"`
-	Username     string    `yaml:"username,omitempty" json:"username,omitempty"`
-	Token        string    `yaml:"token,omitempty" json:"token,omitempty"`
-	LastDeployed time.Time `yaml:"last_deployed" json:"last_deployed"`
-	LastChecked  time.Time `yaml:"last_checked" json:"last_checked"`
-	Enabled      bool      `yaml:"enabled" json:"enabled"`
+	Username string                     `yaml:"username" json:"username"`
+	Token    string                     `yaml:"token" json:"token"`
+	Settings Settings                   `yaml:"settings" json:"settings"`
+	Projects []*DeploymentProjectEntity `yaml:"projects" json:"projects"`
 }
 
+// Settings global deployment ayarları.
 type Settings struct {
 	CheckTime int `yaml:"check_time" json:"check_time"`
 }
@@ -48,7 +40,7 @@ type Deployment struct {
 	Auth          *http.BasicAuth
 	Cmd           command.Command
 	dockerManager *docker_manager.DockerEnvironmentManager
-	configMutex   sync.RWMutex // dosya okuma/yazma için mutex
+	configMutex   sync.RWMutex
 	runCtx        context.Context
 	runCancel     context.CancelFunc
 	runDone       chan struct{}
@@ -71,28 +63,51 @@ func GetDeployment() *Deployment {
 	return deployment
 }
 
-// LoadConfigUnsafe mutex kullanmadan config yükler (internal use only)
-func (d *Deployment) LoadConfigUnsafe() error {
-	byteArray, err1 := os.ReadFile(d.dockerManager.GetWorkDir() + "/data/deployment.json")
-	err := yaml.Unmarshal(byteArray, &d.Config)
+func (d *Deployment) db() *memory.Database {
+	return database.GetMemoryDB()
+}
 
-	if err != nil || err1 != nil {
-		// create default config if file does not exist
-		if os.IsNotExist(err1) {
-			d.Config = Config{
-				Username: "",
-				Token:    "",
-				Settings: Settings{
-					CheckTime: 60, // default check time in seconds
-				},
-				Projects: []Project{},
-			}
+// LoadConfigUnsafe memory DB'den config yükler (mutex yok).
+func (d *Deployment) LoadConfigUnsafe() error {
+	db := d.db()
+	if db == nil {
+		d.Config = Config{
+			Username: "",
+			Token:    "",
+			Settings: Settings{CheckTime: 60},
+			Projects: nil,
 		}
-		err = yaml.Unmarshal(byteArray, &d.Config)
-		data, _ := yaml.Marshal(d.Config)
-		err = os.WriteFile(d.dockerManager.GetWorkDir()+"/data/deployment.json", data, 0777)
+		d.Auth = &http.BasicAuth{Username: d.Config.Username, Password: d.Config.Token}
+		return nil
 	}
 
+	settingsList := memory.FindAll[*DeploymentSettingsEntity](db, "deployment_settings")
+	if len(settingsList) == 0 {
+		defaultSettings := &DeploymentSettingsEntity{
+			Username:  "",
+			Token:     "",
+			CheckTime: 60,
+		}
+		if err := memory.Create(db, "deployment_settings", defaultSettings); err != nil {
+			d.Config = Config{Username: "", Token: "", Settings: Settings{CheckTime: 60}, Projects: nil}
+			d.Auth = &http.BasicAuth{}
+			return nil
+		}
+		settingsList = memory.FindAll[*DeploymentSettingsEntity](db, "deployment_settings")
+	}
+	settings := settingsList[0]
+
+	projectEntities := memory.FindAll[*DeploymentProjectEntity](db, "deployment_projects")
+
+	d.Config = Config{
+		Username:  settings.Username,
+		Token:     settings.Token,
+		Settings:  Settings{CheckTime: settings.CheckTime},
+		Projects:  projectEntities,
+	}
+	if d.Config.Settings.CheckTime <= 0 {
+		d.Config.Settings.CheckTime = 60
+	}
 	d.Auth = &http.BasicAuth{
 		Username: d.Config.Username,
 		Password: d.Config.Token,
@@ -122,7 +137,7 @@ func (d *Deployment) Run() {
 		var wg sync.WaitGroup
 		wg.Add(len(d.Config.Projects))
 		for _, project := range d.Config.Projects {
-			go func(project Project, w *sync.WaitGroup) {
+			go func(project *DeploymentProjectEntity, w *sync.WaitGroup) {
 				defer w.Done()
 				d.Deploy(project)
 			}(project, &wg)
@@ -137,7 +152,6 @@ func (d *Deployment) Run() {
 	}
 }
 
-// Shutdown Run() döngüsünü durdurur ve bitmesini bekler (graceful shutdown için).
 func (d *Deployment) Shutdown() {
 	if d.runCancel != nil {
 		d.runCancel()
@@ -147,8 +161,7 @@ func (d *Deployment) Shutdown() {
 	}
 }
 
-func (d *Deployment) Deploy(project Project) {
-	// Proje bazlı auth kullan, yoksa global auth
+func (d *Deployment) Deploy(project *DeploymentProjectEntity) {
 	auth := d.getAuthForProject(project)
 	username, token := d.getCredentialsForProject(project)
 
@@ -172,10 +185,6 @@ func (d *Deployment) Deploy(project Project) {
 		RefSpecs: []config2.RefSpec{config2.RefSpec(spec)},
 		Auth:     auth,
 	})
-	// if err != nil && err != git.NoErrAlreadyUpToDate {
-	// 	log.Println(project, err)
-	// 	return
-	// }
 
 	localBranch, _ := repo.Branches()
 	remoteRefs, _ := repo.Storer.IterReferences()
@@ -247,7 +256,7 @@ func (d *Deployment) Deploy(project Project) {
 	d.UpdateProject(project)
 }
 
-func (d *Deployment) RunScript(project Project) {
+func (d *Deployment) RunScript(project *DeploymentProjectEntity) {
 	path, err := d.CreateScript(project.Path+"script", project.Script)
 	if err == nil {
 		d.Cmd.RunCommand(project.Path, "chmod", "+x", path)
@@ -255,7 +264,7 @@ func (d *Deployment) RunScript(project Project) {
 	}
 }
 
-func (d *Deployment) Checkout(project Project) {
+func (d *Deployment) Checkout(project *DeploymentProjectEntity) {
 	d.Cmd.RunCommand(project.Path, "git", "reset", "--hard", "HEAD")
 	d.Cmd.RunCommand(project.Path, "git", "clean", "-fd")
 	d.Cmd.RunCommand(project.Path, "git", "checkout", "master")
@@ -264,13 +273,13 @@ func (d *Deployment) Checkout(project Project) {
 	d.Cmd.RunCommand(project.Path, "git", "pull")
 }
 
-func (d *Deployment) GetList() []Project {
+func (d *Deployment) GetList() []*DeploymentProjectEntity {
 	d.configMutex.RLock()
 	defer d.configMutex.RUnlock()
 
 	d.LoadConfigUnsafe()
 	if d.Config.Projects == nil {
-		return []Project{}
+		return nil
 	}
 	return d.Config.Projects
 }
@@ -283,125 +292,107 @@ func (d *Deployment) GetConfig() Config {
 	return d.Config
 }
 
-// update check time
 func (d *Deployment) UpdateCheckTime(checkTime int) error {
+	db := d.db()
+	if db == nil {
+		return nil
+	}
 	d.configMutex.Lock()
 	defer d.configMutex.Unlock()
 
 	d.LoadConfigUnsafe()
-	d.Config.Settings.CheckTime = checkTime
-	data, err := yaml.Marshal(d.Config)
-	if err != nil {
-		return err
+	list := memory.FindAll[*DeploymentSettingsEntity](db, "deployment_settings")
+	if len(list) == 0 {
+		return nil
 	}
-	err = os.WriteFile(d.dockerManager.GetWorkDir()+"/data/deployment.json", data, 0644)
-	if err != nil {
-		return err
-	}
-	return nil
+	list[0].CheckTime = checkTime
+	return memory.Update(db, "deployment_settings", list[0])
 }
 
-// add project
-func (d *Deployment) AddProject(project Project) error {
+func (d *Deployment) AddProject(project *DeploymentProjectEntity) error {
+	db := d.db()
+	if db == nil {
+		return nil
+	}
 	d.configMutex.Lock()
 	defer d.configMutex.Unlock()
 
-	d.LoadConfigUnsafe()
-	d.Config.Projects = append(d.Config.Projects, project)
-	data, err := yaml.Marshal(d.Config)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(d.dockerManager.GetWorkDir()+"/data/deployment.json", data, 0644)
-	if err != nil {
-		return err
-	}
-	return nil
+	return memory.Create(db, "deployment_projects", project)
 }
 
-// delete project
 func (d *Deployment) DeleteProject(projectPath string) error {
+	db := d.db()
+	if db == nil {
+		return nil
+	}
 	d.configMutex.Lock()
 	defer d.configMutex.Unlock()
 
-	d.LoadConfigUnsafe()
-	for i, project := range d.Config.Projects {
-		if project.Path == projectPath {
-			d.Config.Projects = append(d.Config.Projects[:i], d.Config.Projects[i+1:]...)
-			data, err := yaml.Marshal(d.Config)
-			if err != nil {
-				return err
-			}
-			err = os.WriteFile(d.dockerManager.GetWorkDir()+"/data/deployment.json", data, 0644)
-			if err != nil {
-				return err
-			}
-			return nil
+	list := memory.Where[*DeploymentProjectEntity](db, "deployment_projects", "Path", projectPath)
+	for _, e := range list {
+		if err := memory.Delete[*DeploymentProjectEntity](db, "deployment_projects", e.GetID()); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
-// update project
-func (d *Deployment) UpdateProject(project Project) error {
+func (d *Deployment) UpdateProject(project *DeploymentProjectEntity) error {
+	db := d.db()
+	if db == nil {
+		return nil
+	}
 	d.configMutex.Lock()
 	defer d.configMutex.Unlock()
 
-	d.LoadConfigUnsafe()
-	for i, p := range d.Config.Projects {
-		if p.Path == project.Path {
-			d.Config.Projects[i] = project
-			data, err := yaml.Marshal(d.Config)
-			if err != nil {
-				return err
-			}
-			err = os.WriteFile(d.dockerManager.GetWorkDir()+"/data/deployment.json", data, 0644)
-			if err != nil {
-				return err
-			}
-			return nil
-		}
-	}
-	return nil
+	return memory.Update(db, "deployment_projects", project)
 }
 
-// GetProjectByPath returns a project by its path.
-func (d *Deployment) GetProjectByPath(path string) (*Project, error) {
+func (d *Deployment) GetProjectByPath(path string) (*DeploymentProjectEntity, error) {
+	db := d.db()
+	if db == nil {
+		return nil, nil
+	}
 	d.configMutex.RLock()
 	defer d.configMutex.RUnlock()
 
-	d.LoadConfigUnsafe()
-	for _, project := range d.Config.Projects {
-		if project.Path == path {
-			return &project, nil
-		}
+	list := memory.Where[*DeploymentProjectEntity](db, "deployment_projects", "Path", path)
+	if len(list) == 0 {
+		return nil, nil
 	}
-	return nil, nil // or return an error if preferred
+	return list[0], nil
 }
 
-// SetCredentials sets the username, token, and checkTime for deployment config and saves it.
 func (d *Deployment) SetCredentials(username, token string, checkTime *int) error {
+	db := d.db()
+	if db == nil {
+		return nil
+	}
 	d.configMutex.Lock()
 	defer d.configMutex.Unlock()
 
 	d.LoadConfigUnsafe()
-	d.Config.Username = username
-	d.Config.Token = token
+	list := memory.FindAll[*DeploymentSettingsEntity](db, "deployment_settings")
+	if len(list) == 0 {
+		entity := &DeploymentSettingsEntity{
+			Username:  username,
+			Token:     token,
+			CheckTime: 60,
+		}
+		if checkTime != nil {
+			entity.CheckTime = *checkTime
+		}
+		return memory.Create(db, "deployment_settings", entity)
+	}
+	entity := list[0]
+	entity.Username = username
+	entity.Token = token
 	if checkTime != nil {
-		d.Config.Settings.CheckTime = *checkTime
+		entity.CheckTime = *checkTime
 	}
-	data, err := yaml.Marshal(d.Config)
-	if err != nil {
-		return err
-	}
-	err = os.WriteFile(d.dockerManager.GetWorkDir()+"/data/deployment.json", data, 0644)
-	if err != nil {
-		return err
-	}
-	return nil
+	return memory.Update(db, "deployment_settings", entity)
 }
 
-// create script random name in tmp directory
 func (d *Deployment) CreateScript(projectPath, scriptContent string) (string, error) {
 	hash := md5.Sum([]byte(projectPath))
 	scriptPath := fmt.Sprintf("%s/deploy_script_%x.sh", os.TempDir(), hash)
@@ -425,8 +416,7 @@ func (d *Deployment) CreateScript(projectPath, scriptContent string) (string, er
 	return scriptPath, nil
 }
 
-// getAuthForProject returns auth for project, falls back to global if project auth is empty
-func (d *Deployment) getAuthForProject(project Project) *http.BasicAuth {
+func (d *Deployment) getAuthForProject(project *DeploymentProjectEntity) *http.BasicAuth {
 	username, token := d.getCredentialsForProject(project)
 	return &http.BasicAuth{
 		Username: username,
@@ -434,18 +424,14 @@ func (d *Deployment) getAuthForProject(project Project) *http.BasicAuth {
 	}
 }
 
-// getCredentialsForProject returns username and token for project, falls back to global if empty
-func (d *Deployment) getCredentialsForProject(project Project) (string, string) {
+func (d *Deployment) getCredentialsForProject(project *DeploymentProjectEntity) (string, string) {
 	username := project.Username
 	token := project.Token
-
-	// Eğer proje seviyesinde username/token yoksa global olanı kullan
 	if username == "" {
 		username = d.Config.Username
 	}
 	if token == "" {
 		token = d.Config.Token
 	}
-
 	return username, token
 }
