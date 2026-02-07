@@ -564,7 +564,7 @@ func DeleteDNSCustomFilterByDetails(c *fiber.Ctx) error {
 	})
 }
 
-// GetDNSQueryLogs returns DNS query logs with pagination
+// GetDNSQueryLogs returns DNS query logs with server-side filter and pagination
 // @Description Get DNS query logs
 // @Summary Get query logs
 // @Tags DNS
@@ -572,6 +572,7 @@ func DeleteDNSCustomFilterByDetails(c *fiber.Ctx) error {
 // @Produce json
 // @Param page query int false "Page number"
 // @Param limit query int false "Items per page"
+// @Param q query string false "Search filter (client_ip, domain, response)"
 // @Success 200 {array} dns_server.DNSQueryLog
 // @Router /v1/dns/logs [get]
 func GetDNSQueryLogs(c *fiber.Ctx) error {
@@ -585,6 +586,7 @@ func GetDNSQueryLogs(c *fiber.Ctx) error {
 
 	page, _ := strconv.Atoi(c.Query("page", "1"))
 	limit, _ := strconv.Atoi(c.Query("limit", "50"))
+	q := strings.TrimSpace(c.Query("q", ""))
 
 	if page < 1 {
 		page = 1
@@ -597,11 +599,25 @@ func GetDNSQueryLogs(c *fiber.Ctx) error {
 	since := time.Now().Add(-24 * time.Hour)
 	logs := server.GetLogsFromMemory(since)
 
+	// Server-side filter: client_ip, domain, response (case-insensitive contains)
+	if q != "" {
+		lowerQ := strings.ToLower(q)
+		filtered := make([]dns_server.DNSQueryLog, 0, len(logs))
+		for _, l := range logs {
+			if strings.Contains(strings.ToLower(l.ClientIP), lowerQ) ||
+				strings.Contains(strings.ToLower(l.Domain), lowerQ) ||
+				strings.Contains(strings.ToLower(l.Response), lowerQ) {
+				filtered = append(filtered, l)
+			}
+		}
+		logs = filtered
+	}
+
 	// Pagination
 	total := len(logs)
 	start := (page - 1) * limit
 	end := start + limit
-	
+
 	if start >= total {
 		logs = []dns_server.DNSQueryLog{}
 	} else {
@@ -610,7 +626,7 @@ func GetDNSQueryLogs(c *fiber.Ctx) error {
 		}
 		logs = logs[start:end]
 	}
-	
+
 	// Assign sequential IDs for frontend (based on position)
 	for i := range logs {
 		logs[i].ID = uint(total - start - i) // Descending ID (newest = highest)

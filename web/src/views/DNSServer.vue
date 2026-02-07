@@ -10,6 +10,8 @@ import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.
 
 import ApiService from "@/services/ApiService";
 import {
+  mdiChevronLeft,
+  mdiChevronRight,
   mdiCog,
   mdiDatabase,
   mdiDelete,
@@ -69,7 +71,11 @@ const customRules = ref({
   client_rules: [],
   banned_clients: []
 })
-const searchQuery = ref('') // Log arama filtresi
+const searchQuery = ref('') // Log search filter (server-side)
+const logsPage = ref(1)
+const logsLimit = ref(50)
+const logsTotal = ref(0)
+const logsLoading = ref(false)
 
 // Modal states
 const activeTab = ref('overview')
@@ -121,20 +127,15 @@ const blockPercentage = computed(() => {
   return ((stats.value.blocked_queries_24h / stats.value.total_queries_24h) * 100).toFixed(2)
 })
 
-const filteredQueryLogs = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return queryLogs.value
-  }
-  
-  const query = searchQuery.value.toLowerCase().trim()
-  return queryLogs.value.filter(log => {
-    return (
-      log.client_ip?.toLowerCase().includes(query) ||
-      log.domain?.toLowerCase().includes(query) ||
-      log.response?.toLowerCase().includes(query)
-    )
-  })
+const logsPaginationInfo = computed(() => {
+  const total = logsTotal.value
+  if (total === 0) return '0 of 0'
+  const start = (logsPage.value - 1) * logsLimit.value + 1
+  const end = Math.min(start + logsLimit.value - 1, total)
+  return `${start}-${end} of ${total}`
 })
+
+const logsTotalPages = computed(() => Math.max(1, Math.ceil(logsTotal.value / logsLimit.value)))
 
 const formattedUpstreamDNS = computed({
   get: () => {
@@ -219,14 +220,40 @@ const fetchRewrites = async () => {
 }
 
 const fetchQueryLogs = async () => {
+  logsLoading.value = true
   try {
-    const response = await ApiService.get('/v1/dns/logs?limit=50')
+    const params = new URLSearchParams({ page: String(logsPage.value), limit: String(logsLimit.value) })
+    if (searchQuery.value.trim()) params.set('q', searchQuery.value.trim())
+    const response = await ApiService.get(`/v1/dns/logs?${params}`)
     if (response.data && !response.data.error) {
-      queryLogs.value = response.data.data.logs || []
+      const d = response.data.data
+      queryLogs.value = d?.logs || []
+      logsTotal.value = d?.total ?? 0
     }
   } catch (error) {
     console.error('Failed to fetch query logs:', error)
+  } finally {
+    logsLoading.value = false
   }
+}
+
+const goToLogsPage = (page) => {
+  const p = Math.max(1, Math.min(Number(page) || 1, logsTotalPages.value))
+  if (p !== logsPage.value) {
+    logsPage.value = p
+    fetchQueryLogs()
+  }
+}
+
+const setLogsLimit = (n) => {
+  logsLimit.value = Math.min(100, Math.max(10, Number(n) || 50))
+  logsPage.value = 1
+  fetchQueryLogs()
+}
+
+const doLogsSearch = () => {
+  logsPage.value = 1
+  fetchQueryLogs()
 }
 
 const fetchClients = async () => {
@@ -1407,9 +1434,9 @@ const deleteClientBan = async (clientIP) => {
         />
       </SectionTitleLineWithButton>
 
-      <!-- Search Input -->
-      <div class="mt-4 mb-6">
-        <div class="relative">
+      <!-- Search Input (server-side filter) -->
+      <div class="mt-4 mb-6 flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <BaseIcon :path="mdiMagnify" class="text-slate-400" size="20" />
           </div>
@@ -1417,11 +1444,12 @@ const deleteClientBan = async (clientIP) => {
             v-model="searchQuery"
             type="text"
             placeholder="Search by client IP, domain or response..."
-            class="w-full pl-10 pr-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+            class="w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+            @keyup.enter="doLogsSearch"
           />
           <div v-if="searchQuery" class="absolute inset-y-0 right-0 pr-3 flex items-center">
             <button
-              @click="searchQuery = ''"
+              @click="searchQuery = ''; logsPage = 1; fetchQueryLogs()"
               class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1430,17 +1458,22 @@ const deleteClientBan = async (clientIP) => {
             </button>
           </div>
         </div>
-        <div v-if="searchQuery" class="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          {{ filteredQueryLogs.length }} result(s) ({{ queryLogs.length }} total)
-        </div>
+        <BaseButton
+          label="Search"
+          :icon="mdiMagnify"
+          color="info"
+          small
+          :loading="logsLoading"
+          @click="doLogsSearch"
+        />
       </div>
 
-      <div v-if="queryLogs.length === 0" class="text-center py-12">
+      <div v-if="!logsLoading && queryLogs.length === 0 && logsTotal === 0" class="text-center py-12">
         <BaseIcon :path="mdiChartLine" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500">No query logs available</p>
       </div>
 
-      <div v-else-if="searchQuery && filteredQueryLogs.length === 0" class="text-center py-12">
+      <div v-else-if="!logsLoading && searchQuery && logsTotal === 0" class="text-center py-12">
         <BaseIcon :path="mdiMagnify" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500">No results for search</p>
         <p class="text-sm text-slate-400 mt-2">No logs matching "{{ searchQuery }}"</p>
@@ -1461,7 +1494,7 @@ const deleteClientBan = async (clientIP) => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="log in filteredQueryLogs" :key="log.id" class="border-b border-slate-100 dark:border-slate-800">
+            <tr v-for="log in queryLogs" :key="log.id" class="border-b border-slate-100 dark:border-slate-800">
               <td class="py-3 text-xs">{{ formatDate(log.created_at) }}</td>
               <td class="py-3 font-medium">{{ log.client_ip }}</td>
               <td class="py-3 font-mono text-xs truncate max-w-xs">{{ log.domain }}</td>
@@ -1586,6 +1619,43 @@ const deleteClientBan = async (clientIP) => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="logsTotal > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm text-slate-700 dark:text-slate-300">Showing {{ logsPaginationInfo }}</span>
+          <select
+            v-model.number="logsLimit"
+            @change="setLogsLimit(logsLimit)"
+            class="text-sm border border-slate-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+          >
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+            <option :value="500">500</option>
+          </select>
+          <span class="text-sm text-slate-500 dark:text-slate-400">per page</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <BaseButton
+            :icon="mdiChevronLeft"
+            color="lightDark"
+            small
+            :disabled="logsPage === 1"
+            @click="goToLogsPage(logsPage - 1)"
+          />
+          <span class="text-sm text-slate-600 dark:text-slate-400 px-2">
+            Page {{ logsPage }} / {{ logsTotalPages }}
+          </span>
+          <BaseButton
+            :icon="mdiChevronRight"
+            color="lightDark"
+            small
+            :disabled="logsPage >= logsTotalPages"
+            @click="goToLogsPage(logsPage + 1)"
+          />
+        </div>
       </div>
     </CardBox>
 
