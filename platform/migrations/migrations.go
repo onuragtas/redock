@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 
 	"redock/app/models"
+	devenv "redock/devenv"
 	dns_server "redock/dns_server"
 	localproxy "redock/local_proxy"
 	"redock/platform/database"
@@ -111,6 +112,45 @@ func MemoryMigrations() []database.MemoryMigration {
 					}
 					f.Close()
 				}
+				return nil
+			},
+		},
+		{
+			Version: 5,
+			Name:    "import_devenv_json",
+			Up: func(db *memory.Database, dataDir string) error {
+				// devenv.json workdir kökünde: dataDir = workdir/data -> workdir = filepath.Dir(dataDir)
+				workdir := filepath.Dir(dataDir)
+				path := filepath.Join(workdir, "devenv.json")
+				data, err := os.ReadFile(path)
+				if err != nil {
+					if os.IsNotExist(err) {
+						return nil
+					}
+					return err
+				}
+				var list []struct {
+					Username   string `json:"username"`
+					Password   string `json:"password"`
+					Port       int    `json:"port"`
+					RedockPort int    `json:"redockPort"`
+				}
+				if err := json.Unmarshal(data, &list); err != nil {
+					return err
+				}
+				for _, item := range list {
+					entity := &devenv.DevEnvEntity{
+						Username:   item.Username,
+						Password:   item.Password,
+						Port:       item.Port,
+						RedockPort: item.RedockPort,
+					}
+					if err := memory.Create(db, "dev_envs", entity); err != nil {
+						return err
+					}
+				}
+				// Eski dosyayı yedekle (tekrar migrate edilmesin)
+				_ = os.Rename(path, path+".bak")
 				return nil
 			},
 		},
