@@ -33,7 +33,9 @@ type Config struct {
 	Token string
 	// Domain is subdomain or full domain to bind (e.g. "myapp" or "myapp.tnpx.org").
 	Domain string
-	// LocalTCPAddr is the destination address for TCP forwarding (e.g. "127.0.0.1:8080" or "192.168.1.100:80"). Empty to disable TCP.
+	// LocalHttpAddr is the destination for HTTP/HTTPS tunneled traffic (e.g. "127.0.0.1:8080"). Empty to disable or fall back to LocalTCPAddr.
+	LocalHttpAddr string
+	// LocalTCPAddr is the destination for raw TCP tunneled traffic (e.g. "127.0.0.1:9000"). Empty to disable TCP.
 	LocalTCPAddr string
 	// LocalUDPAddr is the destination address for UDP forwarding (e.g. "127.0.0.1:53"). Empty to disable UDP.
 	LocalUDPAddr string
@@ -70,6 +72,7 @@ func ConnectOnce(cfg Config) (*Client, error) {
 	}
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	br := bufio.NewReaderSize(conn, maxAuthLineLen)
+	log.Printf("tunnel_client: out auth token len=%d", len(cfg.Token))
 	if _, err := conn.Write([]byte(cfg.Token + "\n")); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("client: write token: %w", err)
@@ -81,6 +84,7 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("client: read auth reply: %w", err)
 	}
 	line = strings.TrimSpace(line)
+	log.Printf("tunnel_client: in auth reply=%q", line)
 	if line != "AUTH_OK" {
 		conn.Close()
 		return nil, fmt.Errorf("client: auth failed: %s", line)
@@ -103,6 +107,7 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		c.Close()
 		return nil, fmt.Errorf("client: read BIND reply: %w", err)
 	}
+	log.Printf("tunnel_client: in control %s", strings.TrimSpace(ctrl))
 	if !strings.HasPrefix(ctrl, "BIND_OK") {
 		c.Close()
 		return nil, fmt.Errorf("client: bind failed: %s", ctrl)
@@ -142,8 +147,21 @@ func (c *Client) run() error {
 		body := payload[1:]
 		switch typ {
 		case frameTypeControl:
+			cmd := strings.TrimSpace(string(body))
+			if idx := strings.Index(cmd, " "); idx > 0 {
+				cmd = cmd[:idx]
+			}
+			log.Printf("tunnel_client: in type=control cmd=%s len=%d", cmd, len(body))
 			c.handleControl(body)
 		case frameTypeData:
+			if len(body) >= 5 {
+				sid := binary.BigEndian.Uint32(body[0:4])
+				proto := "tcp"
+				if body[4] == protocolUDP {
+					proto = "udp"
+				}
+				log.Printf("tunnel_client: in type=data streamID=%d proto=%s len=%d", sid, proto, len(body)-5)
+			}
 			c.handleDataFrame(body)
 		default:
 			log.Printf("tunnel_client: unknown frame type %d", typ)
@@ -182,6 +200,11 @@ func (c *Client) readControl() (string, error) {
 }
 
 func (c *Client) sendControl(msg string) error {
+	msgTrim := strings.TrimSpace(msg)
+	if len(msgTrim) > 50 {
+		msgTrim = msgTrim[:50] + "..."
+	}
+	log.Printf("tunnel_client: out type=control msg=%q", msgTrim)
 	payload := make([]byte, 1+len(msg))
 	payload[0] = frameTypeControl
 	copy(payload[1:], msg)
@@ -199,6 +222,11 @@ func (c *Client) writeFrame(payload []byte) error {
 }
 
 func (c *Client) writeDataFrame(streamID uint32, protocol byte, data []byte) error {
+	proto := "tcp"
+	if protocol == protocolUDP {
+		proto = "udp"
+	}
+	log.Printf("tunnel_client: out type=data streamID=%d proto=%s len=%d", streamID, proto, len(data))
 	payload := make([]byte, 1+4+1+len(data))
 	payload[0] = frameTypeData
 	binary.BigEndian.PutUint32(payload[1:5], streamID)
@@ -220,17 +248,20 @@ func (c *Client) handleControl(body []byte) {
 		// keepalive reply
 	case "NEW_STREAM":
 		if len(parts) < 3 {
+			log.Printf("tunnel_client: NEW_STREAM missing parts (got %d)", len(parts))
 			return
 		}
-		idStr, proto := strings.TrimSpace(parts[1]), strings.TrimSpace(parts[2])
-		if strings.ToLower(proto) != "tcp" {
+		idStr := strings.TrimSpace(parts[1])
+		proto := strings.ToLower(strings.TrimSpace(strings.TrimRight(parts[2], "\r\n")))
+		if proto != "tcp" && proto != "http" {
+			log.Printf("tunnel_client: NEW_STREAM unknown proto %q", proto)
 			return
 		}
 		streamID, err := strconv.ParseUint(idStr, 10, 32)
 		if err != nil {
 			return
 		}
-		c.handleNewStream(uint32(streamID))
+		c.handleNewStream(uint32(streamID), proto)
 	case "CLOSE_STREAM":
 		if len(parts) < 2 {
 			return
@@ -246,18 +277,32 @@ func (c *Client) handleControl(body []byte) {
 	}
 }
 
-func (c *Client) handleNewStream(streamID uint32) {
-	if c.cfg.LocalTCPAddr == "" {
+func (c *Client) handleNewStream(streamID uint32, streamType string) {
+	var addr string
+	switch streamType {
+	case "http":
+		addr = c.cfg.LocalHttpAddr
+		if addr == "" {
+			addr = c.cfg.LocalTCPAddr // fallback for backward compat
+		}
+	case "tcp":
+		addr = c.cfg.LocalTCPAddr
+	default:
+		addr = c.cfg.LocalTCPAddr
+	}
+	if addr == "" {
+		log.Printf("tunnel_client: NEW_STREAM %d %s no backend address (LocalHttp=%q LocalTCP=%q)", streamID, streamType, c.cfg.LocalHttpAddr, c.cfg.LocalTCPAddr)
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}
+	log.Printf("tunnel_client: NEW_STREAM %d %s -> dial %s", streamID, streamType, addr)
 	dialer := &net.Dialer{Timeout: 10 * time.Second}
 	if c.cfg.SourceBindIP != "" {
 		dialer.LocalAddr = &net.TCPAddr{IP: net.ParseIP(c.cfg.SourceBindIP)}
 	}
-	backend, err := dialer.Dial("tcp", c.cfg.LocalTCPAddr)
+	backend, err := dialer.Dial("tcp", addr)
 	if err != nil {
-		log.Printf("tunnel_client: dial %s (source %s): %v", c.cfg.LocalTCPAddr, c.cfg.SourceBindIP, err)
+		log.Printf("tunnel_client: dial %s %s (source %s): %v", streamType, addr, c.cfg.SourceBindIP, err)
 		_ = c.sendControl(fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		return
 	}

@@ -5,6 +5,27 @@ import (
 	"redock/cloudflare"
 )
 
+// UpdateTunnelDNSRecord updates an existing A record's content (e.g. server IP) by zone ID and record ID.
+func UpdateTunnelDNSRecord(zoneID, recordID, name, serverIP string) error {
+	if zoneID == "" || recordID == "" || name == "" || serverIP == "" {
+		return fmt.Errorf("zoneID, recordID, name and serverIP required")
+	}
+	mgr := cloudflare.GetCloudflareManager()
+	if mgr == nil {
+		return fmt.Errorf("cloudflare manager not initialized")
+	}
+	proxied := false
+	_, err := mgr.UpdateDNSRecord(zoneID, recordID, cloudflare.DNSRecordParams{
+		Type:    "A",
+		Name:   name,
+		Content: serverIP,
+		TTL:    1,
+		Proxied: &proxied,
+		Comment: "tunnel",
+	})
+	return err
+}
+
 // CreateTunnelDNSRecord creates an A record for a tunnel subdomain in the configured zone.
 // name: full DNS name (e.g. subdomain.suffix or "myapp.tnpx.org")
 // serverIP: value for the A record (public IP of tunnel server)

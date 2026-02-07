@@ -100,7 +100,7 @@ func CheckUser(c *fiber.Ctx) error {
 func TunnelLogin(c *fiber.Ctx) error {
 
 	type Login struct {
-		Username string `json:"username"`
+		Email    string `json:"email"`
 		Password string `json:"password"`
 	}
 
@@ -113,11 +113,10 @@ func TunnelLogin(c *fiber.Ctx) error {
 		})
 	}
 
-	// Boş kimlik bilgileri → 400 (401 sadece yanlış kullanıcı/şifre için)
-	if model.Username == "" || model.Password == "" {
+	if model.Email == "" || model.Password == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Kullanıcı adı ve şifre gerekli",
+			"msg":   "E-posta ve şifre gerekli",
 			"data":  nil,
 		})
 	}
@@ -129,11 +128,11 @@ func TunnelLogin(c *fiber.Ctx) error {
 			"data":  nil,
 		})
 	}
-	token, err := tunnel_server.LoginTunnelUser(model.Username, model.Password)
+	token, err := tunnel_server.LoginTunnelUser(model.Email, model.Password)
 	if err != nil {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": true,
-			"msg":   "Geçersiz kullanıcı adı veya şifre. Hesabınız yoksa önce kayıt olun.",
+			"msg":   "Geçersiz e-posta veya şifre. Hesabınız yoksa önce kayıt olun.",
 			"data":  nil,
 		})
 	}
@@ -159,7 +158,6 @@ func TunnelRegister(c *fiber.Ctx) error {
 
 	type Model struct {
 		Email    string `json:"email"`
-		Username string `json:"username"`
 		Password string `json:"password"`
 	}
 
@@ -178,7 +176,7 @@ func TunnelRegister(c *fiber.Ctx) error {
 			"data":  nil,
 		})
 	}
-	token, err := tunnel_server.RegisterTunnelUser(model.Username, model.Password)
+	token, err := tunnel_server.RegisterTunnelUser(model.Email, model.Password)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
@@ -224,7 +222,7 @@ func TunnelUserInfo(c *fiber.Ctx) error {
 	if isAdmin {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"error": false,
-			"data":  fiber.Map{"user": fiber.Map{"id": 0, "username": "admin"}},
+			"data":  fiber.Map{"user": fiber.Map{"id": 0, "email": "admin"}},
 		})
 	}
 	u, err := tunnel_server.FindTunnelUserByID(userID)
@@ -236,7 +234,7 @@ func TunnelUserInfo(c *fiber.Ctx) error {
 	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
-		"data":  fiber.Map{"user": fiber.Map{"id": u.ID, "username": u.Username}},
+		"data":  fiber.Map{"user": fiber.Map{"id": u.ID, "email": u.Email}},
 	})
 }
 
@@ -298,15 +296,19 @@ func TunnelStart(c *fiber.Ctx) error {
 		})
 	}
 	var body struct {
-		DomainId      uint   `json:"DomainId"`
-		Domain        string `json:"Domain"`
+		DomainId        uint   `json:"DomainId"`
+		Domain          string `json:"Domain"`
 		LocalIp         string `json:"LocalIp"`
 		DestinationIp   string `json:"DestinationIp"`
 		DestinationPort int    `json:"DestinationPort"`
 		LocalPort       int    `json:"LocalPort"`
+		LocalHttpIp     string `json:"LocalHttpIp"`
+		LocalHttpPort   int    `json:"LocalHttpPort"`
+		LocalTcpIp      string `json:"LocalTcpIp"`
+		LocalTcpPort    int    `json:"LocalTcpPort"`
 		LocalUdpIp      string `json:"LocalUdpIp"`
 		LocalUdpPort    int    `json:"LocalUdpPort"`
-		SourceBindIp    string `json:"SourceBindIp"`   // optional: local IP to bind when connecting to destination (outbound source)
+		SourceBindIp    string `json:"SourceBindIp"`
 		HostRewrite     string `json:"HostRewrite"`
 	}
 	if err := c.BodyParser(&body); err != nil {
@@ -319,18 +321,31 @@ func TunnelStart(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
 	}
-	localTCP := ""
+	// Legacy: single LocalIp+LocalPort / DestinationIp+DestinationPort used for both HTTP and TCP when specific addrs not set
+	legacyAddr := ""
 	if body.DestinationIp != "" && body.DestinationPort > 0 {
-		localTCP = net.JoinHostPort(body.DestinationIp, strconv.Itoa(body.DestinationPort))
+		legacyAddr = net.JoinHostPort(body.DestinationIp, strconv.Itoa(body.DestinationPort))
 	} else if body.LocalIp != "" && body.LocalPort > 0 {
-		localTCP = net.JoinHostPort(body.LocalIp, strconv.Itoa(body.LocalPort))
+		legacyAddr = net.JoinHostPort(body.LocalIp, strconv.Itoa(body.LocalPort))
+	}
+	localHTTP := ""
+	if body.LocalHttpIp != "" && body.LocalHttpPort > 0 {
+		localHTTP = net.JoinHostPort(body.LocalHttpIp, strconv.Itoa(body.LocalHttpPort))
+	} else if legacyAddr != "" {
+		localHTTP = legacyAddr
+	}
+	localTCP := ""
+	if body.LocalTcpIp != "" && body.LocalTcpPort > 0 {
+		localTCP = net.JoinHostPort(body.LocalTcpIp, strconv.Itoa(body.LocalTcpPort))
+	} else if legacyAddr != "" {
+		localTCP = legacyAddr
 	}
 	localUDP := ""
 	if body.LocalUdpIp != "" && body.LocalUdpPort > 0 {
 		localUDP = net.JoinHostPort(body.LocalUdpIp, strconv.Itoa(body.LocalUdpPort))
 	}
-	if localTCP == "" && localUDP == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "DestinationIp+DestinationPort, or LocalIp+LocalPort, or LocalUdpIp+LocalUdpPort required"})
+	if localHTTP == "" && localTCP == "" && localUDP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "at least one of: LocalHttpIp+LocalHttpPort, LocalTcpIp+LocalTcpPort, LocalUdpIp+LocalUdpPort, or legacy LocalIp+LocalPort / DestinationIp+DestinationPort required"})
 	}
 	// Stop existing tunnel for this domain if any
 	if existing, ok := activeTunnels.Load(body.Domain); ok {
@@ -340,13 +355,14 @@ func TunnelStart(c *fiber.Ctx) error {
 		activeTunnels.Delete(body.Domain)
 	}
 	cfg := client.Config{
-		ServerAddr:   daemonAddr(),
-		Token:        token,
-		Domain:       body.Domain,
-		LocalTCPAddr: localTCP,
-		LocalUDPAddr: localUDP,
-		SourceBindIP: strings.TrimSpace(body.SourceBindIp),
-		HostRewrite:  strings.TrimSpace(body.HostRewrite),
+		ServerAddr:    daemonAddr(),
+		Token:         token,
+		Domain:        body.Domain,
+		LocalHttpAddr: localHTTP,
+		LocalTCPAddr:  localTCP,
+		LocalUDPAddr:  localUDP,
+		SourceBindIP:  strings.TrimSpace(body.SourceBindIp),
+		HostRewrite:   strings.TrimSpace(body.HostRewrite),
 	}
 	cl, err := client.ConnectOnce(cfg)
 	if err != nil {
@@ -395,9 +411,10 @@ func TunnelStop(c *fiber.Ctx) error {
 	})
 }
 
-// TunnelRenew accepts POST /tunnel/renew. Body: id, domain. Domain yenileme (DNS/Cloudflare tarafında ek işlem yok; uyumluluk için kabul).
+// TunnelRenew accepts POST /tunnel/renew. Body: id, domain. Re-applies all integrations for the domain (gateway routes/services with correct ports, DNS/Cloudflare A record, Let's Encrypt).
 func TunnelRenew(c *fiber.Ctx) error {
-	if _, _, ok := getTunnelServerAuth(c); !ok {
+	userID, isAdmin, ok := getTunnelServerAuth(c)
+	if !ok {
 		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
 			"error": true,
 			"msg":   "Authorization: Bearer <token> required (tunnel token or Redock JWT)",
@@ -407,10 +424,42 @@ func TunnelRenew(c *fiber.Ctx) error {
 		ID     uint   `json:"id"`
 		Domain string `json:"domain"`
 	}
-	_ = c.BodyParser(&body)
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	var d *tunnel_server.TunnelDomain
+	if body.ID != 0 {
+		var err error
+		d, err = tunnel_server.FindDomainByID(body.ID)
+		if err != nil || d == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": true, "msg": "domain not found"})
+		}
+	} else if strings.TrimSpace(body.Domain) != "" {
+		d = tunnel_server.FindDomainByFullDomain(strings.TrimSpace(body.Domain))
+		if d == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": true, "msg": "domain not found"})
+		}
+	} else {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "id or domain required"})
+	}
+	// Auth: own domain or admin
+	if !isAdmin && d.UserID != userID {
+		return c.Status(fiber.StatusForbidden).JSON(fiber.Map{"error": true, "msg": "forbidden"})
+	}
+	if err := tunnel_server.RefreshTunnelDomainIntegrations(d); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "refresh failed: " + err.Error(),
+		})
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
-		"msg":   nil,
+		"msg":   "refreshed",
+		"data": fiber.Map{
+			"id":          d.ID,
+			"full_domain": d.FullDomain,
+			"port":        d.Port,
+		},
 	})
 }
 
@@ -517,24 +566,77 @@ func TunnelServerListDomains(c *fiber.Ctx) error {
 	list := make([]fiber.Map, 0, len(domains))
 	for _, d := range domains {
 		started := isTunnelStarted(d.FullDomain) || isTunnelStarted(d.Subdomain)
+		active := tunnel_server.IsDomainBound(d.FullDomain)
+		boundUserID := tunnel_server.BoundClientUserID(d.FullDomain)
+		ownerEmail := ""
+		if d.UserID != 0 {
+			if u, err := tunnel_server.FindTunnelUserByID(d.UserID); err == nil && u != nil {
+				ownerEmail = u.Email
+			}
+		}
+		ownerLabel := ownerEmail
+		if ownerLabel == "" && d.UserID == 0 {
+			ownerLabel = "admin"
+		}
 		item := fiber.Map{
-			"id":          d.ID,
-			"subdomain":   d.Subdomain,
-			"full_domain": d.FullDomain,
-			"port":        d.Port,
-			"protocol":    d.Protocol,
-			"created_at":  d.CreatedAt,
-			"started":     started,
+			"id":             d.ID,
+			"subdomain":     d.Subdomain,
+			"full_domain":   d.FullDomain,
+			"port":          d.Port,
+			"protocol":      d.Protocol,
+			"created_at":    d.CreatedAt,
+			"started":       started,
+			"user_id":       d.UserID,
+			"owner_email":   ownerEmail,
+			"owner_label":   ownerLabel,
+			"active":          active,
+			"bound_user_id":   boundUserID,
+			"status":          domainStatusLabel(active, started),
+			"status_summary":  domainStatusSummary(active, started),
 		}
 		if d.LastUsedAt != nil {
 			item["last_used_at"] = d.LastUsedAt
 		}
 		list = append(list, item)
 	}
+	activeCount := 0
+	for _, d := range domains {
+		if tunnel_server.IsDomainBound(d.FullDomain) {
+			activeCount++
+		}
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"data":  list,
+		"error":        false,
+		"data":         list,
+		"total":        len(list),
+		"active_count": activeCount,
 	})
+}
+
+func domainStatusLabel(active, started bool) string {
+	if active && started {
+		return "active_and_started"
+	}
+	if active {
+		return "active"
+	}
+	if started {
+		return "started"
+	}
+	return "idle"
+}
+
+func domainStatusSummary(active, started bool) string {
+	if active && started {
+		return "Connected (server + local client running)"
+	}
+	if active {
+		return "Bound on server (tunnel client did BIND)"
+	}
+	if started {
+		return "Local client running (not yet bound to server)"
+	}
+	return "Idle (not connected)"
 }
 
 // TunnelServerCreateDomain creates a domain (OAuth2 Bearer = tunnel user; Redock JWT = admin, UserID 0).
@@ -954,6 +1056,10 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		DestinationIp   string `json:"DestinationIp"`
 		DestinationPort int    `json:"DestinationPort"`
 		LocalPort       int    `json:"LocalPort"`
+		LocalHttpIp     string `json:"LocalHttpIp"`
+		LocalHttpPort   int    `json:"LocalHttpPort"`
+		LocalTcpIp      string `json:"LocalTcpIp"`
+		LocalTcpPort    int    `json:"LocalTcpPort"`
 		LocalUdpIp      string `json:"LocalUdpIp"`
 		LocalUdpPort    int    `json:"LocalUdpPort"`
 		SourceBindIp    string `json:"SourceBindIp"`
@@ -969,18 +1075,30 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 	if data.Domain == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "domain required"})
 	}
-	localTCP := ""
+	legacyAddr := ""
 	if data.DestinationIp != "" && data.DestinationPort > 0 {
-		localTCP = net.JoinHostPort(data.DestinationIp, strconv.Itoa(data.DestinationPort))
+		legacyAddr = net.JoinHostPort(data.DestinationIp, strconv.Itoa(data.DestinationPort))
 	} else if data.LocalIp != "" && data.LocalPort > 0 {
-		localTCP = net.JoinHostPort(data.LocalIp, strconv.Itoa(data.LocalPort))
+		legacyAddr = net.JoinHostPort(data.LocalIp, strconv.Itoa(data.LocalPort))
+	}
+	localHTTP := ""
+	if data.LocalHttpIp != "" && data.LocalHttpPort > 0 {
+		localHTTP = net.JoinHostPort(data.LocalHttpIp, strconv.Itoa(data.LocalHttpPort))
+	} else if legacyAddr != "" {
+		localHTTP = legacyAddr
+	}
+	localTCP := ""
+	if data.LocalTcpIp != "" && data.LocalTcpPort > 0 {
+		localTCP = net.JoinHostPort(data.LocalTcpIp, strconv.Itoa(data.LocalTcpPort))
+	} else if legacyAddr != "" {
+		localTCP = legacyAddr
 	}
 	localUDP := ""
 	if data.LocalUdpIp != "" && data.LocalUdpPort > 0 {
 		localUDP = net.JoinHostPort(data.LocalUdpIp, strconv.Itoa(data.LocalUdpPort))
 	}
-	if localTCP == "" && localUDP == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "DestinationIp+DestinationPort, or LocalIp+LocalPort, or LocalUdpIp+LocalUdpPort required"})
+	if localHTTP == "" && localTCP == "" && localUDP == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "at least one of: LocalHttpIp+LocalHttpPort, LocalTcpIp+LocalTcpPort, LocalUdpIp+LocalUdpPort, or legacy LocalIp+LocalPort / DestinationIp+DestinationPort required"})
 	}
 	serverDaemonAddr := daemonAddrForBaseURL(baseURL)
 	if serverDaemonAddr == "" {
@@ -994,11 +1112,12 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		activeTunnels.Delete(key)
 	}
 	cfg := client.Config{
-		ServerAddr:   serverDaemonAddr,
-		Token:        cred.AccessToken,
-		Domain:       data.Domain,
-		LocalTCPAddr: localTCP,
-		LocalUDPAddr: localUDP,
+		ServerAddr:    serverDaemonAddr,
+		Token:         cred.AccessToken,
+		Domain:        data.Domain,
+		LocalHttpAddr: localHTTP,
+		LocalTCPAddr:  localTCP,
+		LocalUDPAddr:  localUDP,
 		SourceBindIP: strings.TrimSpace(data.SourceBindIp),
 		HostRewrite:  strings.TrimSpace(data.HostRewrite),
 	}

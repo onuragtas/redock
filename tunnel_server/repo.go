@@ -104,11 +104,11 @@ func FindTunnelUserByID(id uint) (*TunnelUser, error) {
 	return memory.FindByID[*TunnelUser](GetDB(), TableTunnelUsers, id)
 }
 
-// FindTunnelUserByUsername finds a TunnelUser by username.
-func FindTunnelUserByUsername(username string) *TunnelUser {
+// FindTunnelUserByEmail finds a TunnelUser by email.
+func FindTunnelUserByEmail(email string) *TunnelUser {
 	all := memory.FindAll[*TunnelUser](GetDB(), TableTunnelUsers)
 	for _, u := range all {
-		if u.Username == username {
+		if u.Email == email {
 			return u
 		}
 	}

@@ -98,6 +98,7 @@ func app() {
 	routes.SetupVPNRoutes(app)
 	routes.CloudflareRoutes(app)
 	routes.EmailRoutes(app)
+	routes.NetworkRoutes(app)
 	routes.UpdateRoutes(app)
 	// Static SPA after routes.
 	app.Use("/", filesystem.New(filesystem.Config{

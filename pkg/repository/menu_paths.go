@@ -20,13 +20,14 @@ var AllMenuItems = []MenuItem{
 	{Path: "/devenv", Name: "Dev Environment", Icon: "mdiLaptop"},
 	{Path: "/container_settings", Name: "Container Settings", Icon: "mdiDocker"},
 	{Path: "/php-xdebug-adapter", Name: "PHP XDebug", Icon: "mdiBugCheck"},
+	{Path: "/ip_alias", Name: "IP Alias", Icon: "mdiNetworkOutline"},
 	{Path: "/api-gateway", Name: "API Gateway", Icon: "mdiNetworkOutline"},
 	{Path: "/dns-server", Name: "DNS Server", Icon: "mdiDns"},
 	{Path: "/vpn-server", Name: "VPN Server", Icon: "mdiServerNetwork"},
 	{Path: "/email-server", Name: "Email Server", Icon: "mdiEmail"},
 	{Path: "/cloudflare", Name: "Cloudflare", Icon: "mdiCloud"},
-	{Path: "/users", Name: "Kullanıcılar", Icon: "mdiAccountGroup"},
 	{Path: "/tunnel-proxy-server", Name: "Tunnel Proxy Server", Icon: "mdiServerNetwork"},
+	{Path: "/users", Name: "Kullanıcılar", Icon: "mdiAccountGroup"},
 	{Path: "/updates", Name: "Updates", Icon: "mdiDownload"},
 }
 
@@ -36,7 +37,7 @@ var AllMenuPaths = []string{
 	"/api-gateway", "/dns-server", "/vpn-server", "/email-server", "/cloudflare",
 	"/local-proxy", "/exec", "/tunnel-proxy-server", "/tunnel-proxy-client",
 	"/virtual-hosts", "/saved-commands", "/php-xdebug-adapter", "/updates",
-	"/users",
+	"/users", "/ip_alias",
 }
 
 // DefaultUserMenuPaths user rolü için varsayılan menüler (AllowedMenus boşsa).

@@ -13,7 +13,7 @@ const router = useRouter();
 const mode = ref("login"); // "login" | "register"
 const loading = ref(false);
 const errorMsg = ref("");
-const credentials = ref({ email: "", username: "", password: "" });
+const credentials = ref({ email: "", password: "" });
 
 const state = computed(() => {
   const s = route.query.state;
@@ -48,14 +48,7 @@ const callbackUrl = computed(() => {
 
 const isValid = computed(() => {
   if (!state.value || !baseUrl.value) return false;
-  if (mode.value === "login") {
-    return !!(credentials.value.username?.trim() && credentials.value.password);
-  }
-  return !!(
-    credentials.value.email?.trim() &&
-    credentials.value.username?.trim() &&
-    credentials.value.password
-  );
+  return !!(credentials.value.email?.trim() && credentials.value.password);
 });
 
 const goBack = () => {
@@ -72,14 +65,13 @@ const submit = async () => {
       const res = await ApiService.tunnelRegisterExternal(
         baseUrl.value,
         credentials.value.email,
-        credentials.value.username,
         credentials.value.password
       );
       token = res?.data?.data?.token ?? res?.data?.token;
     } else {
       const res = await ApiService.tunnelLoginExternal(
         baseUrl.value,
-        credentials.value.username,
+        credentials.value.email,
         credentials.value.password
       );
       token = res?.data?.data?.token ?? res?.data?.token;
@@ -178,20 +170,14 @@ onMounted(() => {
           </div>
 
           <form class="space-y-4" @submit.prevent="submit">
-            <FormField v-if="mode === 'register'" label="Email">
+            <FormField label="E-posta">
               <FormControl
                 v-model="credentials.email"
                 type="email"
                 placeholder="email@example.com"
               />
             </FormField>
-            <FormField label="Username">
-              <FormControl
-                v-model="credentials.username"
-                placeholder="Username"
-              />
-            </FormField>
-            <FormField label="Password">
+            <FormField label="Şifre">
               <FormControl
                 v-model="credentials.password"
                 type="password"

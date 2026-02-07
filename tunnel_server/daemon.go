@@ -23,18 +23,20 @@ const (
 	protocolTCP          = 0
 	protocolUDP          = 1
 	backendBufSize       = 32 * 1024
-	udpBackendPortOffset = 10000 // Gateway 0.0.0.0:Port ile dinler; daemon 127.0.0.1:(Port+offset) dinler, port çakışması olmaz.
-	tcpBackendPortOffset = 20000 // Raw TCP: gateway 0.0.0.0:Port -> 127.0.0.1:(Port+offset), daemon (Port+offset) dinler.
+	udpBackendPortOffset  = 10000 // Gateway 0.0.0.0:Port UDP -> daemon 127.0.0.1:(Port+10000)
+	tcpBackendPortOffset  = 20000 // Gateway 0.0.0.0:Port TCP -> daemon 127.0.0.1:(Port+20000)
+	httpBackendPortOffset = 30000 // HTTP backend daemon 127.0.0.1:(Port+30000); böylece 0.0.0.0:Port gateway'e kalır (PORTS.md)
 )
 
 // Kontrol komutları (client -> server): "BIND <subdomain|full_domain>\n", "PING\n", "CLOSE_STREAM <id>\n"
-// Server yanıtları: "BIND_OK\n", "BIND_FAILED <reason>\n", "PONG\n", "NEW_STREAM <id> tcp\n", "CLOSE_STREAM <id>\n"
+// Server yanıtları: "BIND_OK\n", "BIND_FAILED <reason>\n", "PONG\n", "NEW_STREAM <id> tcp|http\n", "CLOSE_STREAM <id>\n"
 
 // Client represents a tunnel client connected to the daemon (one TCP connection, validated by OAuth2 token).
 type Client struct {
 	UserID      uint
 	Conn        net.Conn
 	ConnectedAt time.Time
+	WriteMu     sync.Mutex // serialise all writes to Conn so control and data frames do not interleave
 }
 
 // streamKey identifies a single TCP stream (client + stream_id).
@@ -181,9 +183,11 @@ func handleConnection(conn net.Conn) {
 	}
 	token := strings.TrimSpace(line)
 	if token == "" {
+		log.Printf("tunnel_server: auth in: empty token, reject")
 		_, _ = conn.Write([]byte(authFailReply))
 		return
 	}
+	log.Printf("tunnel_server: auth in: token len=%d", len(token))
 	userID, err := ValidateTunnelToken(token)
 	if err != nil {
 		log.Printf("tunnel_server: daemon auth invalid token: %v", err)
@@ -193,6 +197,7 @@ func handleConnection(conn net.Conn) {
 	if _, err := conn.Write([]byte(authOKReply)); err != nil {
 		return
 	}
+	log.Printf("tunnel_server: auth out: AUTH_OK userID=%d", userID)
 
 	client := &Client{
 		UserID:      userID,
@@ -255,8 +260,21 @@ func serveClient(c *Client, br *bufio.Reader) {
 		body := payload[1:]
 		switch typ {
 		case frameTypeControl:
+			cmd := strings.TrimSpace(string(body))
+			if idx := strings.Index(cmd, " "); idx > 0 {
+				cmd = cmd[:idx]
+			}
+			log.Printf("tunnel_server: in userID=%d type=control cmd=%s len=%d", c.UserID, cmd, len(body))
 			handleControlMessage(c, body)
 		case frameTypeData:
+			if len(body) >= 5 {
+				sid := binary.BigEndian.Uint32(body[0:4])
+				proto := "tcp"
+				if body[4] == protocolUDP {
+					proto = "udp"
+				}
+				log.Printf("tunnel_server: in userID=%d type=data streamID=%d proto=%s len=%d", c.UserID, sid, proto, len(body)-5)
+			}
 			// 3.3: stream_id (4) + protocol (1) + data; server may forward to backend
 			handleDataFrame(c, body)
 		default:
@@ -285,22 +303,11 @@ func readFrame(br *bufio.Reader) ([]byte, error) {
 	return payload, nil
 }
 
-// writeControlFrame sends a control message (e.g. BIND_OK, BIND_FAILED reason, PONG).
-func writeControlFrame(conn net.Conn, msg string) error {
-	payload := make([]byte, 1+len(msg))
-	payload[0] = frameTypeControl
-	copy(payload[1:], msg)
-	return writeFrame(conn, payload)
-}
-
-// writeDataFrame sends a data frame (stream_id, protocol, payload) to client (3.3 backend -> client).
-func writeDataFrame(conn net.Conn, streamID uint32, protocol byte, data []byte) error {
-	payload := make([]byte, 1+4+1+len(data))
-	payload[0] = frameTypeData
-	binary.BigEndian.PutUint32(payload[1:5], streamID)
-	payload[5] = protocol
-	copy(payload[6:], data)
-	return writeFrame(conn, payload)
+// writeFrameLocked writes a single frame to the client's connection with the client's write mutex held (so control and data frames do not interleave).
+func writeFrameLocked(c *Client, payload []byte) error {
+	c.WriteMu.Lock()
+	defer c.WriteMu.Unlock()
+	return writeFrame(c.Conn, payload)
 }
 
 func writeFrame(conn net.Conn, payload []byte) error {
@@ -311,6 +318,34 @@ func writeFrame(conn net.Conn, payload []byte) error {
 	}
 	_, err := conn.Write(payload)
 	return err
+}
+
+// writeControlFrameToClient sends a control message to the client (holds WriteMu so frames do not interleave).
+func writeControlFrameToClient(c *Client, msg string) error {
+	msgTrim := strings.TrimSpace(msg)
+	if len(msgTrim) > 60 {
+		msgTrim = msgTrim[:60] + "..."
+	}
+	log.Printf("tunnel_server: out type=control msg=%q", msgTrim)
+	payload := make([]byte, 1+len(msg))
+	payload[0] = frameTypeControl
+	copy(payload[1:], msg)
+	return writeFrameLocked(c, payload)
+}
+
+// writeDataFrameToClient sends a data frame to the client (holds WriteMu so frames do not interleave).
+func writeDataFrameToClient(c *Client, streamID uint32, protocol byte, data []byte) error {
+	proto := "tcp"
+	if protocol == protocolUDP {
+		proto = "udp"
+	}
+	log.Printf("tunnel_server: out type=data streamID=%d proto=%s len=%d", streamID, proto, len(data))
+	payload := make([]byte, 1+4+1+len(data))
+	payload[0] = frameTypeData
+	binary.BigEndian.PutUint32(payload[1:5], streamID)
+	payload[5] = protocol
+	copy(payload[6:], data)
+	return writeFrameLocked(c, payload)
 }
 
 func handleControlMessage(c *Client, body []byte) {
@@ -332,7 +367,7 @@ func handleControlMessage(c *Client, body []byte) {
 	case "BIND":
 		handleBind(c, arg)
 	case "PING":
-		_ = writeControlFrame(c.Conn, "PONG\n")
+		_ = writeControlFrameToClient(c, "PONG\n")
 	case "CLOSE_STREAM":
 		handleCloseStream(c, arg)
 	default:
@@ -342,7 +377,7 @@ func handleControlMessage(c *Client, body []byte) {
 
 func handleBind(c *Client, domainArg string) {
 	if domainArg == "" {
-		_ = writeControlFrame(c.Conn, "BIND_FAILED domain required\n")
+		_ = writeControlFrameToClient(c, "BIND_FAILED domain required\n")
 		return
 	}
 	// Optional host_rewrite: "domain\thost_rewrite" (tab-separated). If no tab, only domain.
@@ -355,7 +390,7 @@ func handleBind(c *Client, domainArg string) {
 		}
 	}
 	if domainPart == "" {
-		_ = writeControlFrame(c.Conn, "BIND_FAILED domain required\n")
+		_ = writeControlFrameToClient(c, "BIND_FAILED domain required\n")
 		return
 	}
 	var d *TunnelDomain
@@ -365,17 +400,22 @@ func handleBind(c *Client, domainArg string) {
 		d = FindDomainBySubdomain(domainPart)
 	}
 	if d == nil {
-		_ = writeControlFrame(c.Conn, "BIND_FAILED domain not found\n")
+		_ = writeControlFrameToClient(c, "BIND_FAILED domain not found\n")
 		return
 	}
 	// Sadece domain sahibi bind edebilir; UserID 0 (admin oluşturdu) ise herhangi bir client bind edebilir
 	if d.UserID != 0 && d.UserID != c.UserID {
-		_ = writeControlFrame(c.Conn, "BIND_FAILED forbidden\n")
+		_ = writeControlFrameToClient(c, "BIND_FAILED forbidden\n")
 		return
 	}
 	boundDomainsMu.Lock()
+	prev := boundDomains[d.FullDomain]
 	boundDomains[d.FullDomain] = c
 	boundDomainsMu.Unlock()
+	if prev != nil && prev != c {
+		log.Printf("tunnel_server: domain %s rebound, closing previous client userID=%d", d.FullDomain, prev.UserID)
+		_ = prev.Conn.Close()
+	}
 	log.Printf("tunnel_server: domain %s bound to client userID=%d", d.FullDomain, c.UserID)
 	now := time.Now()
 	d.LastUsedAt = &now
@@ -386,7 +426,7 @@ func handleBind(c *Client, domainArg string) {
 			log.Printf("tunnel_server: SetTunnelRouteHostRewrite %s: %v", d.FullDomain, err)
 		}
 	}
-	_ = writeControlFrame(c.Conn, "BIND_OK\n")
+	_ = writeControlFrameToClient(c, "BIND_OK\n")
 }
 
 // handleDataFrame processes a data frame from client (3.3 TCP, 3.4 UDP). Forward to backend.
@@ -408,7 +448,7 @@ func handleDataFrame(c *Client, body []byte) {
 		}
 		if _, err := st.backend.Write(data); err != nil {
 			closeStream(key)
-			_ = writeControlFrame(c.Conn, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
+			_ = writeControlFrameToClient(c, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 		}
 	case protocolUDP:
 		udpStreamsMu.RLock()
@@ -473,7 +513,21 @@ func GetClientByDomain(fullDomain string) *Client {
 	return boundDomains[fullDomain]
 }
 
-// GetDomainByPort returns the tunnel domain for the given port (for backend TCP listener 3.3).
+// IsDomainBound returns true if a tunnel client is currently bound to the domain (aktif).
+func IsDomainBound(fullDomain string) bool {
+	return GetClientByDomain(fullDomain) != nil
+}
+
+// BoundClientUserID returns the tunnel user ID of the client bound to the domain, or 0 if none.
+func BoundClientUserID(fullDomain string) uint {
+	c := GetClientByDomain(fullDomain)
+	if c == nil {
+		return 0
+	}
+	return c.UserID
+}
+
+// GetDomainByPort returns the tunnel domain for the given public port.
 func GetDomainByPort(port int) *TunnelDomain {
 	all := AllDomains()
 	for _, d := range all {
@@ -482,6 +536,27 @@ func GetDomainByPort(port int) *TunnelDomain {
 		}
 	}
 	return nil
+}
+
+// internalHttpPort returns the port the daemon listens on for HTTP backend (gateway 80/443 -> 127.0.0.1:this).
+func internalHttpPort(domainPort int) int {
+	return domainPort + httpBackendPortOffset
+}
+
+// GetDomainByInternalHttpPort returns the domain for the given daemon HTTP backend port.
+func GetDomainByInternalHttpPort(internalPort int) *TunnelDomain {
+	all := AllDomains()
+	for _, d := range all {
+		if needHTTPForDomain(d) && internalHttpPort(d.Port) == internalPort {
+			return d
+		}
+	}
+	return nil
+}
+
+// needHTTPForDomain returns true if domain uses HTTP/HTTPS backend.
+func needHTTPForDomain(d *TunnelDomain) bool {
+	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
 }
 
 // internalUDPPort returns the port the daemon listens on for UDP backend (gateway forwards to this).
@@ -536,31 +611,27 @@ func startAllBackendListeners() {
 	}
 }
 
-func needHTTPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
-}
-
 func needUDPForDomain(d *TunnelDomain) bool {
 	return d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
 }
 
-// StartBackendListener starts listening on 127.0.0.1:port for tunnel backend (gateway proxies HTTP here).
-// Call when a domain with HTTP/TCP is created.
+// StartBackendListener starts listening on 127.0.0.1:(port+30000) for HTTP backend so 0.0.0.0:port stays free for gateway TCP/UDP.
 func StartBackendListener(port int) {
 	backendListenersMu.Lock()
 	defer backendListenersMu.Unlock()
 	if _, ok := backendListeners[port]; ok {
 		return
 	}
-	addr := fmt.Sprintf("127.0.0.1:%d", port)
+	internalPort := internalHttpPort(port)
+	addr := fmt.Sprintf("127.0.0.1:%d", internalPort)
 	ln, err := net.Listen("tcp", addr)
 	if err != nil {
 		log.Printf("tunnel_server: backend listen %s: %v", addr, err)
 		return
 	}
 	backendListeners[port] = ln
-	log.Printf("tunnel_server: backend listening on %s", addr)
-	go backendAcceptLoop(port, ln)
+	log.Printf("tunnel_server: backend listening on %s (domain port %d)", addr, port)
+	go backendAcceptLoop(internalPort, ln)
 }
 
 // StopBackendListener stops the backend listener for the given port. Call when domain is deleted.
@@ -602,17 +673,22 @@ func backendAcceptLoop(port int, ln net.Listener) {
 	}
 }
 
-func handleBackendConnection(port int, backendConn net.Conn) {
+func handleBackendConnection(internalPort int, backendConn net.Conn) {
 	defer backendConn.Close()
-	d := GetDomainByPort(port)
+	d := GetDomainByInternalHttpPort(internalPort)
 	if d == nil {
 		return
 	}
-	handleBackendTCPStream(d, backendConn)
+	handleBackendTCPStream(d, backendConn, "http")
 }
 
 // handleBackendTCPStream finds client by domain and forwards backendConn bidirectionally to the tunnel client.
-func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
+// streamType is "http" (from HTTP/HTTPS gateway) or "tcp" (from raw TCP gateway).
+func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn, streamType string) {
+	if streamType != "http" && streamType != "tcp" {
+		streamType = "tcp"
+	}
+	log.Printf("tunnel_server: backend %s new connection domain=%s from=%s", streamType, d.FullDomain, backendConn.RemoteAddr())
 	client := GetClientByDomain(d.FullDomain)
 	if client == nil {
 		return
@@ -624,10 +700,12 @@ func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
 	streamsMu.Unlock()
 	defer func() {
 		closeStream(key)
-		_ = writeControlFrame(client.Conn, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
+		_ = writeControlFrameToClient(client, fmt.Sprintf("CLOSE_STREAM %d\n", streamID))
 	}()
 
-	_ = writeControlFrame(client.Conn, fmt.Sprintf("NEW_STREAM %d tcp\n", streamID))
+	msg := fmt.Sprintf("NEW_STREAM %d %s\n", streamID, streamType)
+	log.Printf("tunnel_server: send %s", strings.TrimSpace(msg))
+	_ = writeControlFrameToClient(client, msg)
 
 	buf := make([]byte, backendBufSize)
 	for {
@@ -638,7 +716,7 @@ func handleBackendTCPStream(d *TunnelDomain, backendConn net.Conn) {
 		if n == 0 {
 			continue
 		}
-		if err := writeDataFrame(client.Conn, streamID, protocolTCP, buf[:n]); err != nil {
+		if err := writeDataFrameToClient(client, streamID, protocolTCP, buf[:n]); err != nil {
 			return
 		}
 	}
@@ -692,7 +770,7 @@ func handleBackendTCPConnection(internalPort int, backendConn net.Conn) {
 	if d == nil {
 		return
 	}
-	handleBackendTCPStream(d, backendConn)
+	handleBackendTCPStream(d, backendConn, "tcp")
 }
 
 func stopAllBackendTCPListeners() {
@@ -852,6 +930,7 @@ func backendUDPReadLoop(port int, conn *net.UDPConn) {
 }
 
 func handleBackendUDPPacket(internalPort int, clientAddr *net.UDPAddr, packet []byte) {
+	log.Printf("tunnel_server: backend udp in port=%d from=%s len=%d", internalPort, clientAddr.String(), len(packet))
 	d := GetDomainByInternalUDPPort(internalPort)
 	if d == nil {
 		return
@@ -870,7 +949,7 @@ func handleBackendUDPPacket(internalPort int, clientAddr *net.UDPAddr, packet []
 		udpStreamByAddr[addrKey] = sk
 	}
 	udpStreamsMu.Unlock()
-	if err := writeDataFrame(client.Conn, sk.streamID, protocolUDP, packet); err != nil {
+	if err := writeDataFrameToClient(client, sk.streamID, protocolUDP, packet); err != nil {
 		return
 	}
 }

@@ -67,14 +67,15 @@ const selectedServer = computed(
 );
 
 const credentials = ref({
-  username: "",
-  password: "",
-  email: ""
+  email: "",
+  password: ""
 });
 
 const start = ref({
-  destinationIp: "127.0.0.1",
-  destinationPort: 80,
+  localHttpIp: "127.0.0.1",
+  localHttpPort: 80,
+  localTcpIp: "127.0.0.1",
+  localTcpPort: "",
   localUdpIp: "127.0.0.1",
   localUdpPort: "",
   sourceBindIp: "",
@@ -162,7 +163,7 @@ const checkLogin = async () => {
 const loginSubmit = async () => {
   try {
     const response = await ApiService.tunnelLogin(
-      credentials.value.username,
+      credentials.value.email,
       credentials.value.password
     );
     if (response?.data?.data?.token) {
@@ -184,7 +185,6 @@ const registerSubmit = async () => {
   try {
     const response = await ApiService.tunnelRegister(
       credentials.value.email,
-      credentials.value.username,
       credentials.value.password
     );
     if (response?.data?.data?.token) {
@@ -211,7 +211,7 @@ const logoutSubmit = async () => {
     ApiService.setTunnelServerContext(null);
     login.value = false;
     proxies.value = [];
-    credentials.value = { username: "", password: "", email: "" };
+    credentials.value = { email: "", password: "" };
     start.value = {
       destinationIp: "127.0.0.1",
       destinationPort: 80,
@@ -294,17 +294,28 @@ const startModal = (data) => {
 
 const startSubmit = async () => {
   try {
-    const tcpIp = (start.value.destinationIp || "").trim();
-    const tcpPort = parseInt(start.value.destinationPort) || 0;
+    const httpIp = (start.value.localHttpIp || "").trim();
+    const httpPort = parseInt(start.value.localHttpPort) || 0;
+    const tcpIp = (start.value.localTcpIp || "").trim();
+    const tcpPort = parseInt(start.value.localTcpPort) || 0;
+    const udpIp = (start.value.localUdpIp || "").trim();
+    const udpPort = parseInt(start.value.localUdpPort) || 0;
+    const hasHttp = httpIp !== "" && httpPort > 0;
+    const hasTcp = tcpIp !== "" && tcpPort > 0;
+    const hasUdp = udpIp !== "" && udpPort > 0;
+    if (!hasHttp && !hasTcp && !hasUdp) {
+      toast.warning("Fill at least one target: HTTP, TCP, or UDP (IP + Port)");
+      return;
+    }
     const data = {
       DomainId: startDomain.value.id,
       Domain: startDomain.value.domain,
-      LocalIp: tcpIp,
-      DestinationIp: tcpIp,
-      DestinationPort: tcpPort,
-      LocalPort: tcpPort,
-      LocalUdpIp: (start.value.localUdpIp || "").trim(),
-      LocalUdpPort: parseInt(start.value.localUdpPort) || 0,
+      LocalHttpIp: hasHttp ? httpIp : "",
+      LocalHttpPort: hasHttp ? httpPort : 0,
+      LocalTcpIp: hasTcp ? tcpIp : "",
+      LocalTcpPort: hasTcp ? tcpPort : 0,
+      LocalUdpIp: hasUdp ? udpIp : "",
+      LocalUdpPort: hasUdp ? udpPort : 0,
       SourceBindIp: (start.value.sourceBindIp || "").trim(),
       HostRewrite: (start.value.hostRewrite || "").trim()
     };
@@ -475,14 +486,13 @@ const externalLoginSubmit = async () => {
       const res = await ApiService.tunnelRegisterExternal(
         effectiveBaseUrl,
         credentials.value.email,
-        credentials.value.username,
         credentials.value.password
       );
       token = res?.data?.data?.token;
     } else {
       const res = await ApiService.tunnelLoginExternal(
         effectiveBaseUrl,
-        credentials.value.username,
+        credentials.value.email,
         credentials.value.password
       );
       token = res?.data?.data?.token;
@@ -1059,7 +1069,7 @@ onMounted(async () => {
     :title="externalAuthMode === 'register' ? 'Register on tunnel server' : 'Sign in to tunnel server'"
     button="info"
     :button-label="externalLoginLoading ? (externalAuthMode === 'register' ? 'Registering...' : 'Signing in...') : (externalAuthMode === 'register' ? 'Register' : 'Sign in')"
-    :button-disabled="externalLoginLoading || !credentials.username || !credentials.password || (externalAuthMode === 'register' && !credentials.email)"
+    :button-disabled="externalLoginLoading || !credentials.email || !credentials.password"
     :cancel-disabled="externalLoginLoading"
     has-cancel
     @confirm="externalLoginSubmit"
@@ -1085,17 +1095,11 @@ onMounted(async () => {
         Register
       </button>
     </div>
-    <FormField v-if="externalAuthMode === 'register'" label="E-posta">
+    <FormField label="E-posta">
       <FormControl
         v-model="credentials.email"
         type="email"
         placeholder="email@example.com"
-      />
-    </FormField>
-    <FormField label="Username">
-      <FormControl
-        v-model="credentials.username"
-        placeholder="username"
       />
     </FormField>
     <FormField label="Password" class="mt-4">
@@ -1153,21 +1157,44 @@ onMounted(async () => {
         </div>
       </div>
 
-      <!-- TCP forwarding -->
+      <!-- HTTP forwarding -->
       <div class="start-tunnel-section">
-        <h5 class="start-tunnel-section-title">TCP / HTTP</h5>
+        <h5 class="start-tunnel-section-title">HTTP / HTTPS (optional)</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">Web traffic (HTTP/HTTPS) will be forwarded to this address.</p>
         <div class="start-tunnel-row">
-          <FormField label="Target IP" help="IP to forward traffic to (e.g. 127.0.0.1 or 192.168.1.100)">
+          <FormField label="Target IP" help="e.g. 127.0.0.1 or 192.168.1.100">
             <FormControl
-              v-model="start.destinationIp"
+              v-model="start.localHttpIp"
               placeholder="127.0.0.1"
             />
           </FormField>
           <FormField label="Port">
             <FormControl
-              v-model="start.destinationPort"
+              v-model="start.localHttpPort"
               type="number"
               placeholder="80"
+              class="w-full"
+            />
+          </FormField>
+        </div>
+      </div>
+
+      <!-- TCP forwarding -->
+      <div class="start-tunnel-section">
+        <h5 class="start-tunnel-section-title">TCP (optional)</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">Raw TCP connections will be forwarded to this address.</p>
+        <div class="start-tunnel-row">
+          <FormField label="Target IP">
+            <FormControl
+              v-model="start.localTcpIp"
+              placeholder="127.0.0.1"
+            />
+          </FormField>
+          <FormField label="Port">
+            <FormControl
+              v-model="start.localTcpPort"
+              type="number"
+              placeholder="9000"
               class="w-full"
             />
           </FormField>
@@ -1177,6 +1204,7 @@ onMounted(async () => {
       <!-- UDP forwarding -->
       <div class="start-tunnel-section">
         <h5 class="start-tunnel-section-title">UDP (optional)</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">UDP packets will be forwarded to this address.</p>
         <div class="start-tunnel-row">
           <FormField label="Target IP">
             <FormControl

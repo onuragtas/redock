@@ -253,6 +253,22 @@ const routes = [
       },
       {
         meta: {
+          title: 'IP Alias'
+        },
+        path: 'ip_alias',
+        name: 'ip_alias',
+        component: () => import('@/views/IPAlias.vue')
+      },
+      {
+        meta: {
+          title: 'IP Alias'
+        },
+        path: 'ip-alias',
+        name: 'ip-alias',
+        component: () => import('@/views/IPAlias.vue')
+      },
+      {
+        meta: {
           title: 'VPN Server'
         },
         path: 'vpn_server',

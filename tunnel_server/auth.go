@@ -58,15 +58,15 @@ func ValidateTunnelToken(accessToken string) (tunnelUserID uint, err error) {
 }
 
 // RegisterTunnelUser creates a new tunnel user and returns an access token.
-func RegisterTunnelUser(username, password string) (accessToken string, err error) {
-	if username == "" || password == "" {
-		return "", fmt.Errorf("username and password required")
+func RegisterTunnelUser(email, password string) (accessToken string, err error) {
+	if email == "" || password == "" {
+		return "", fmt.Errorf("email and password required")
 	}
-	if FindTunnelUserByUsername(username) != nil {
-		return "", fmt.Errorf("username already exists")
+	if FindTunnelUserByEmail(email) != nil {
+		return "", fmt.Errorf("email already registered")
 	}
 	u := &TunnelUser{
-		Username:     username,
+		Email:        email,
 		PasswordHash: utils.GeneratePassword(password),
 	}
 	if err := CreateTunnelUser(u); err != nil {
@@ -75,12 +75,12 @@ func RegisterTunnelUser(username, password string) (accessToken string, err erro
 	return GenerateTunnelToken(u.ID)
 }
 
-// LoginTunnelUser verifies username/password and returns an access token.
-func LoginTunnelUser(username, password string) (accessToken string, err error) {
-	if username == "" || password == "" {
-		return "", fmt.Errorf("username and password required")
+// LoginTunnelUser verifies email/password and returns an access token.
+func LoginTunnelUser(email, password string) (accessToken string, err error) {
+	if email == "" || password == "" {
+		return "", fmt.Errorf("email and password required")
 	}
-	u := FindTunnelUserByUsername(username)
+	u := FindTunnelUserByEmail(email)
 	if u == nil {
 		return "", fmt.Errorf("invalid credentials")
 	}

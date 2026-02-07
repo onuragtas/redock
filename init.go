@@ -14,6 +14,7 @@ import (
 	"redock/email_server"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
+	"redock/pkg/network"
 	"redock/platform/database"
 	"redock/platform/memory"
 	"redock/platform/migrations"
@@ -94,6 +95,7 @@ func initialize() {
 	go deployment.GetDeployment().Run()
 	localproxy.GetLocalProxyManager().StartAll()
 	api_gateway.GetGateway().StartAll()
+	network.ApplyPersistedAliases(globalDB)
 }
 
 // registerEntities registers all entity types with the database
@@ -157,6 +159,7 @@ func registerEntities(db *memory.Database) error {
 			return memory.Register[*tunnel_server.TunnelServerCredential](db, "tunnel_server_credentials")
 		}},
 		{"tunnel_servers", func() error { return memory.Register[*tunnel_server.TunnelServer](db, "tunnel_servers") }},
+		{"network_ip_aliases", func() error { return memory.Register[*network.PersistedIPAlias](db, network.TableIPAliases) }},
 	}
 
 	for _, entity := range entities {
