@@ -2,8 +2,9 @@
 import BaseIcon from '@/components/BaseIcon.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
 import FormCheckRadio from '@/components/FormCheckRadio.vue'
-import menuAside from '@/menuAside.js'
+import menuIconMap from '@/menuIcons.js'
 import ApiService from '@/services/ApiService'
+import { useAuthStore } from '@/stores/authStore'
 import { useLayoutStore } from '@/stores/layout'
 import { useMenuVisibilityStore } from '@/stores/menuVisibility'
 import { useTerminalStore } from '@/stores/terminalStore'
@@ -33,6 +34,7 @@ const router = useRouter()
 const terminalStore = useTerminalStore()
 const layoutStore = useLayoutStore()
 const menuVisibilityStore = useMenuVisibilityStore()
+const authStore = useAuthStore()
 
 // State
 const sidebarOpen = ref(false)
@@ -48,12 +50,13 @@ const filteredCommands = ref([])
 const commandFilter = ref('')
 const windowWidth = ref(typeof window !== 'undefined' ? window.innerWidth : 1024)
 const userInfo = ref({ username: '-' }) // Default to '-' if API fails
+const menuItemsFromApi = ref([]) // Backend'den gelen menü listesi (path, name, icon)
 
 // Computed properties
 const activeTab = computed(() => terminalStore.getActiveTab)
 
 const visibleMenuItems = computed(() =>
-  menuAside.filter((item) => menuVisibilityStore.isEnabled(item.path))
+  menuItemsFromApi.value.filter((item) => menuVisibilityStore.isEnabled(item.path))
 )
 
 // Methods
@@ -69,19 +72,33 @@ const logout = async () => {
   try {
     await ApiService.tunnelLogout()
   } catch (_) {}
+  authStore.clearUser()
   ApiService.logout()
   router.push('/login')
 }
 
-// Get user info (Redock JWT auth/me)
+// Get user info (Redock JWT auth/me) — role ve allowed_menus layout menü filtresi için kullanılır
 const getUserInfo = async () => {
   try {
     const response = await ApiService.authMe()
     if (response.data && response.data.data && (response.data.data.email || response.data.data.id)) {
-      userInfo.value = { ...response.data.data, username: response.data.data.email }
+      const data = response.data.data
+      userInfo.value = { ...data, username: data.email }
+      authStore.setUser(data)
     }
   } catch (error) {
     console.warn('Failed to fetch user info:', error)
+  }
+}
+
+// Menüler backend'den alınır (GET /api/v1/menus)
+const fetchMenus = async () => {
+  try {
+    const res = await ApiService.getMenus()
+    menuItemsFromApi.value = res.data?.data || []
+  } catch (error) {
+    console.warn('Failed to fetch menus:', error)
+    menuItemsFromApi.value = []
   }
 }
 
@@ -431,6 +448,8 @@ const executeSelectedCommand = () => {
 onMounted(() => {
   // Load user info
   getUserInfo()
+  // Menüler backend'den (kullanıcıya göre filtrelenmiş)
+  fetchMenus()
 
   // Load saved commands
   getAllSavedCommands()
@@ -557,7 +576,7 @@ onMounted(() => {
           ]"
           :title="layoutStore.sidebarCollapsed ? item.name : undefined"
         >
-          <BaseIcon :path="item.icon" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
+          <BaseIcon :path="menuIconMap[item.icon] || item.icon" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
           <span v-show="!layoutStore.sidebarCollapsed" class="flex-1 truncate">{{ item.name }}</span>
         </router-link>
       </nav>
@@ -608,7 +627,7 @@ onMounted(() => {
       </p>
       <div class="space-y-3 max-h-[60vh] overflow-y-auto">
         <div
-          v-for="item in menuAside"
+          v-for="item in menuItemsFromApi"
           :key="item.path"
           class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
         >

@@ -26,8 +26,8 @@ const hasAnyUser = ref(true)
 
 // Login form (Redock: email + password)
 const loginForm = ref({
-  email: '',
-  password: ''
+  email: 'agtasonur@gmail.com',
+  password: 'onuragtas100'
 })
 
 // Register form (Redock: email + password + user_role)
@@ -92,7 +92,7 @@ const handleRegister = async () => {
 
   loading.value = true
   try {
-    await ApiService.signUp(email, password, 'user')
+    await ApiService.signUp(email, password)
     const loginRes = await ApiService.login(email, password)
     const tokens = loginRes.data?.tokens || loginRes.data
     const access = tokens?.access

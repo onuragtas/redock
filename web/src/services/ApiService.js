@@ -237,6 +237,10 @@ class ApiService {
     return await this.get('/api/v1/auth/me', { skipPrecheck: true });
   }
 
+  static async getMenus() {
+    return await this.get('/api/v1/menus');
+  }
+
   static async userInfo() {
     return await this.authMe();
   }
@@ -266,8 +270,28 @@ class ApiService {
     return await this.post('/api/v1/user/sign/in', parameters, { skipPrecheck: true });
   }
 
-  static async signUp(email, password, userRole = 'user') {
-    return await this.post('/api/v1/user/sign/up', { email, password, user_role: userRole }, { skipPrecheck: true });
+  static async signUp(email, password) {
+    return await this.post('/api/v1/user/sign/up', { email, password }, { skipPrecheck: true });
+  }
+
+  static async getUsers() {
+    return await this.get('/api/v1/users');
+  }
+
+  static async createUser(data) {
+    return await this.post('/api/v1/users', data);
+  }
+
+  static async updateUser(id, data) {
+    return await this.put(`/api/v1/users/${id}`, data);
+  }
+
+  static async deleteUser(id) {
+    return await this.delete(`/api/v1/users/${id}`);
+  }
+
+  static async getMenuOptions() {
+    return await this.get('/api/v1/users/menu-options');
   }
 
   static logout() {

@@ -3,7 +3,11 @@ package middleware
 import (
 	"strings"
 
+	"redock/app/models"
+	"redock/pkg/repository"
 	"redock/pkg/utils"
+	"redock/platform/database"
+	"redock/platform/memory"
 
 	"github.com/gofiber/fiber/v2"
 
@@ -37,6 +41,40 @@ func jwtError(c *fiber.Ctx, err error) error {
 		"error": true,
 		"msg":   err.Error(),
 	})
+}
+
+// AdminOnly requires JWT + admin role. JWTProtected() ile birlikte kullanılmalı (önce JWT, sonra AdminOnly).
+func AdminOnly() func(*fiber.Ctx) error {
+	return func(c *fiber.Ctx) error {
+		claims, err := utils.ExtractTokenMetadata(c)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": true,
+				"msg":   err.Error(),
+			})
+		}
+		db := database.GetMemoryDB()
+		if db == nil {
+			return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+				"error": true,
+				"msg":   "database not initialized",
+			})
+		}
+		userPtr, err := memory.FindByID[*models.User](db, "users", uint(claims.UserID))
+		if err != nil || userPtr == nil {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": true,
+				"msg":   "user not found",
+			})
+		}
+		if userPtr.UserRole != repository.AdminRoleName {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": true,
+				"msg":   "sadece admin bu işlemi yapabilir",
+			})
+		}
+		return c.Next()
+	}
 }
 
 // WebSocketAccessToken requires a valid access token for WebSocket upgrade.

@@ -14,6 +14,16 @@ func PrivateRoutes(a *fiber.App) {
 
 	// Auth: current user from JWT
 	route.Get("/auth/me", controllers.AuthMe)
+	// Menus: kullanıcının görebileceği menü listesi (path, name, icon)
+	route.Get("/menus", controllers.Menus)
+
+	// Users (admin only)
+	adminRoute := route.Group("/users", middleware.AdminOnly())
+	adminRoute.Get("/", controllers.ListUsers)
+	adminRoute.Post("/", controllers.CreateUser)
+	adminRoute.Get("/menu-options", controllers.GetMenuOptions)
+	adminRoute.Put("/:id", controllers.UpdateUser)
+	adminRoute.Delete("/:id", controllers.DeleteUser)
 	// User / token
 	route.Post("/user/sign/out", controllers.UserSignOut)
 	// Docker

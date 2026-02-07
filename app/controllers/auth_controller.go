@@ -2,6 +2,7 @@ package controllers
 
 import (
 	"redock/app/models"
+	"redock/pkg/repository"
 	"redock/pkg/utils"
 	"redock/platform/database"
 	"redock/platform/memory"
@@ -9,36 +10,28 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// UserSignUp method to create a new user.
-// @Description Create a new user.
-// @Summary create a new user
+// UserSignUp method to create the first user only (always admin). Sonraki kullanıcılar sadece admin panelinden eklenir.
+// @Description Create the first user (admin). Further users must be added by an admin.
+// @Summary create first user (admin)
 // @Tags User
 // @Accept json
 // @Produce json
 // @Param email body string true "Email"
 // @Param password body string true "Password"
-// @Param user_role body string true "User role"
 // @Success 200 {object} models.User
 // @Router /v1/user/sign/up [post]
 func UserSignUp(c *fiber.Ctx) error {
-	// Create a new user auth struct.
 	signUp := &models.SignUp{}
 
-	// Checking received data from JSON body.
 	if err := c.BodyParser(signUp); err != nil {
-		// Return status 400 and error message.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
 		})
 	}
 
-	// Create a new validator for a User model.
 	validate := utils.NewValidator()
-
-	// Validate sign up fields.
 	if err := validate.Struct(signUp); err != nil {
-		// Return, if some fields are not valid.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   utils.ValidatorErrors(err),
@@ -53,35 +46,28 @@ func UserSignUp(c *fiber.Ctx) error {
 		})
 	}
 
-	// Checking role from sign up data.
-	role, err := utils.VerifyRole(signUp.UserRole)
-	if err != nil {
-		// Return status 400 and error message.
+	existing := memory.FindAll[*models.User](db, "users")
+	if len(existing) > 0 {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   err.Error(),
+			"msg":   "Yeni kullanıcı sadece mevcut bir admin tarafından eklenebilir",
 		})
 	}
 
-	// Create a new user struct.
 	user := &models.User{}
 	user.Email = signUp.Email
 	user.PasswordHash = utils.GeneratePassword(signUp.Password)
-	user.UserStatus = 1 // 0 == blocked, 1 == active
-	user.UserRole = role
+	user.UserStatus = 1
+	user.UserRole = repository.AdminRoleName // İlk kullanıcı her zaman admin
 
-	// Validate user fields.
 	if err := validate.Struct(user); err != nil {
-		// Return, if some fields are not valid.
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
 			"msg":   utils.ValidatorErrors(err),
 		})
 	}
 
-	// Create a new user with validated data.
 	if err := memory.Create(db, "users", user); err != nil {
-		// Return status 500 and create user process error.
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -91,7 +77,6 @@ func UserSignUp(c *fiber.Ctx) error {
 	responseUser := *user
 	responseUser.PasswordHash = ""
 
-	// Return status 200 OK.
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
@@ -252,9 +237,66 @@ func AuthMe(c *fiber.Ctx) error {
 	}
 	user := *userPtr
 	user.PasswordHash = ""
+
+	allowedMenus := user.AllowedMenus
+	if user.UserRole == repository.AdminRoleName {
+		allowedMenus = repository.AllMenuPaths
+	} else if len(allowedMenus) == 0 {
+		allowedMenus = repository.DefaultUserMenuPaths
+	}
+
 	return c.JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
-		"data":  user,
+		"data": fiber.Map{
+			"id":            user.ID,
+			"email":         user.Email,
+			"user_status":   user.UserStatus,
+			"user_role":     user.UserRole,
+			"allowed_menus": allowedMenus,
+		},
+	})
+}
+
+// Menus returns menu items for the current user (allowed paths + name + icon). Frontend sadece route tanımlar, menü verisi backend'den.
+// @Summary get menus for current user
+// @Tags Auth
+// @Security ApiKeyAuth
+// @Produce json
+// @Router /v1/menus [get]
+func Menus(c *fiber.Ctx) error {
+	claims, err := utils.ExtractTokenMetadata(c)
+	if err != nil {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	db := database.GetMemoryDB()
+	if db == nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "database not initialized",
+		})
+	}
+	userPtr, err := memory.FindByID[*models.User](db, "users", uint(claims.UserID))
+	if err != nil || userPtr == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+			"error": true,
+			"msg":   "user not found",
+		})
+	}
+
+	users := memory.FindAll[*models.User](db, "users")
+
+	if len(users) == 1 {
+		userPtr.UserRole = repository.AdminRoleName
+	}
+
+	items := repository.GetMenuItemsForUser(userPtr.UserRole, userPtr.AllowedMenus)
+	return c.JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  items,
 	})
 }

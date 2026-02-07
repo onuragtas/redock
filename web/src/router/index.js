@@ -301,6 +301,15 @@ const routes = [
       },
       {
         meta: {
+          title: 'Kullanıcılar',
+          requiresAdmin: true
+        },
+        path: 'users',
+        name: 'users',
+        component: () => import('@/views/UsersView.vue')
+      },
+      {
+        meta: {
           title: 'Forms'
         },
         path: 'forms',
