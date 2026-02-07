@@ -841,21 +841,23 @@ const deleteClientBan = async (clientIP) => {
       </CardBox>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex border-b border-gray-200 dark:border-gray-700">
-      <button
-        v-for="tab in ['overview', 'blocklists', 'filters', 'rewrites', 'custom-rules', 'logs']"
-        :key="tab"
-        :class="[
-          'px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
-          activeTab === tab
-            ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-        ]"
-        @click="switchTab(tab)"
-      >
-        {{ tab.replace('-', ' ') }}
-      </button>
+    <!-- Tabs (responsive: horizontal scroll on small screens) -->
+    <div class="overflow-x-auto pb-px -mx-1 px-1">
+      <div class="flex flex-nowrap gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          v-for="tab in ['overview', 'blocklists', 'filters', 'rewrites', 'custom-rules', 'logs']"
+          :key="tab"
+          :class="[
+            'shrink-0 whitespace-nowrap px-4 sm:px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
+            activeTab === tab
+              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+          ]"
+          @click="switchTab(tab)"
+        >
+          {{ tab.replace('-', ' ') }}
+        </button>
+      </div>
     </div>
 
     <!-- Overview Tab -->

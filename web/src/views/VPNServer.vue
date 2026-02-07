@@ -507,52 +507,21 @@ onUnmounted(() => {
       />
     </SectionTitleLineWithButton>
 
-    <!-- Tabs -->
-    <div class="mb-6">
-      <div class="flex space-x-1 border-b border-slate-200 dark:border-slate-700">
+    <!-- Tabs (responsive: horizontal scroll on small screens) -->
+    <div class="mb-6 overflow-x-auto pb-px -mx-1 px-1">
+      <div class="flex flex-nowrap gap-2 border-b border-slate-200 dark:border-slate-700">
         <button
-          @click="activeTab = 'overview'"
+          v-for="t in ['overview', 'servers', 'users', 'statistics']"
+          :key="t"
+          @click="activeTab = t"
           :class="[
-            'px-4 py-2 font-medium text-sm transition-colors',
-            activeTab === 'overview'
+            'shrink-0 whitespace-nowrap px-4 py-2 font-medium text-sm transition-colors',
+            activeTab === t
               ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           ]"
         >
-          Overview
-        </button>
-        <button
-          @click="activeTab = 'servers'"
-          :class="[
-            'px-4 py-2 font-medium text-sm transition-colors',
-            activeTab === 'servers'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          ]"
-        >
-          Servers
-        </button>
-        <button
-          @click="activeTab = 'users'"
-          :class="[
-            'px-4 py-2 font-medium text-sm transition-colors',
-            activeTab === 'users'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          ]"
-        >
-          Users
-        </button>
-        <button
-          @click="activeTab = 'statistics'"
-          :class="[
-            'px-4 py-2 font-medium text-sm transition-colors',
-            activeTab === 'statistics'
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
-          ]"
-        >
-          Statistics
+          {{ t.charAt(0).toUpperCase() + t.slice(1) }}
         </button>
       </div>
     </div>
