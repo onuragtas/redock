@@ -79,7 +79,8 @@ const start = ref({
   localUdpIp: "127.0.0.1",
   localUdpPort: "",
   sourceBindIp: "",
-  hostRewrite: ""
+  hostRewrite: "",
+  keepaliveIntervalSeconds: 30
 });
 
 const toast = useToast();
@@ -218,7 +219,8 @@ const logoutSubmit = async () => {
       localUdpIp: "127.0.0.1",
       localUdpPort: "",
       sourceBindIp: "",
-      hostRewrite: ""
+      hostRewrite: "",
+      keepaliveIntervalSeconds: 30
     };
     selectedTunnel.value = null;
     isAddModalActive.value = false;
@@ -307,6 +309,7 @@ const startSubmit = async () => {
       toast.warning("Fill at least one target: HTTP, TCP, or UDP (IP + Port)");
       return;
     }
+    const keepaliveSec = parseInt(start.value.keepaliveIntervalSeconds, 10);
     const data = {
       DomainId: startDomain.value.id,
       Domain: startDomain.value.domain,
@@ -317,7 +320,8 @@ const startSubmit = async () => {
       LocalUdpIp: hasUdp ? udpIp : "",
       LocalUdpPort: hasUdp ? udpPort : 0,
       SourceBindIp: (start.value.sourceBindIp || "").trim(),
-      HostRewrite: (start.value.hostRewrite || "").trim()
+      HostRewrite: (start.value.hostRewrite || "").trim(),
+      KeepaliveIntervalSeconds: Number.isNaN(keepaliveSec) || keepaliveSec < 0 ? 0 : keepaliveSec
     };
     await ApiService.tunnelStart(data, selectedServerId.value);
     isStartModalActive.value = false;
@@ -1243,6 +1247,18 @@ onMounted(async () => {
           <FormControl
             v-model="start.hostRewrite"
             placeholder="backend.example.com"
+          />
+        </FormField>
+        <FormField
+          label="Keepalive interval (seconds)"
+          help="PING interval to keep connection alive. 0 = disabled. Recommended 30–60 for unstable networks."
+        >
+          <FormControl
+            v-model.number="start.keepaliveIntervalSeconds"
+            type="number"
+            min="0"
+            placeholder="30"
+            class="w-full"
           />
         </FormField>
       </div>

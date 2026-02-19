@@ -18,8 +18,18 @@ import (
 	"github.com/gofiber/fiber/v2"
 )
 
-// activeTunnels holds running tunnel clients by domain (key = body.Domain).
+// activeTunnels holds running tunnel sessions by domain (key = body.Domain). Value is *tunnelRunner for stop signal.
 var activeTunnels sync.Map
+
+// tunnelRunner allows stopping the reconnect loop (close stop channel once).
+type tunnelRunner struct {
+	stop chan struct{}
+	once sync.Once
+}
+
+func (r *tunnelRunner) Stop() {
+	r.once.Do(func() { close(r.stop) })
+}
 
 // requireTunnelServerBearer returns tunnel user ID if Authorization: Bearer <token> is valid (tunnel_server OAuth2).
 func requireTunnelServerBearer(c *fiber.Ctx) (uint, bool) {
@@ -296,20 +306,21 @@ func TunnelStart(c *fiber.Ctx) error {
 		})
 	}
 	var body struct {
-		DomainId        uint   `json:"DomainId"`
-		Domain          string `json:"Domain"`
-		LocalIp         string `json:"LocalIp"`
-		DestinationIp   string `json:"DestinationIp"`
-		DestinationPort int    `json:"DestinationPort"`
-		LocalPort       int    `json:"LocalPort"`
-		LocalHttpIp     string `json:"LocalHttpIp"`
-		LocalHttpPort   int    `json:"LocalHttpPort"`
-		LocalTcpIp      string `json:"LocalTcpIp"`
-		LocalTcpPort    int    `json:"LocalTcpPort"`
-		LocalUdpIp      string `json:"LocalUdpIp"`
-		LocalUdpPort    int    `json:"LocalUdpPort"`
-		SourceBindIp    string `json:"SourceBindIp"`
-		HostRewrite     string `json:"HostRewrite"`
+		DomainId                 uint   `json:"DomainId"`
+		Domain                   string `json:"Domain"`
+		LocalIp                  string `json:"LocalIp"`
+		DestinationIp            string `json:"DestinationIp"`
+		DestinationPort          int    `json:"DestinationPort"`
+		LocalPort                int    `json:"LocalPort"`
+		LocalHttpIp              string `json:"LocalHttpIp"`
+		LocalHttpPort            int    `json:"LocalHttpPort"`
+		LocalTcpIp               string `json:"LocalTcpIp"`
+		LocalTcpPort             int    `json:"LocalTcpPort"`
+		LocalUdpIp               string `json:"LocalUdpIp"`
+		LocalUdpPort             int    `json:"LocalUdpPort"`
+		SourceBindIp             string `json:"SourceBindIp"`
+		HostRewrite              string `json:"HostRewrite"`
+		KeepaliveIntervalSeconds int    `json:"KeepaliveIntervalSeconds"`
 	}
 	if err := c.BodyParser(&body); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
@@ -349,31 +360,31 @@ func TunnelStart(c *fiber.Ctx) error {
 	}
 	// Stop existing tunnel for this domain if any
 	if existing, ok := activeTunnels.Load(body.Domain); ok {
-		if cl, _ := existing.(*client.Client); cl != nil {
-			_ = cl.Close()
+		if runner, _ := existing.(*tunnelRunner); runner != nil {
+			runner.Stop()
 		}
 		activeTunnels.Delete(body.Domain)
 	}
+	keepaliveInterval := time.Duration(body.KeepaliveIntervalSeconds) * time.Second
+	if body.KeepaliveIntervalSeconds < 0 {
+		keepaliveInterval = 0
+	}
 	cfg := client.Config{
-		ServerAddr:    daemonAddr(),
-		Token:         token,
-		Domain:        body.Domain,
-		LocalHttpAddr: localHTTP,
-		LocalTCPAddr:  localTCP,
-		LocalUDPAddr:  localUDP,
-		SourceBindIP:  strings.TrimSpace(body.SourceBindIp),
-		HostRewrite:   strings.TrimSpace(body.HostRewrite),
+		ServerAddr:         daemonAddr(),
+		Token:              token,
+		Domain:             body.Domain,
+		LocalHttpAddr:      localHTTP,
+		LocalTCPAddr:       localTCP,
+		LocalUDPAddr:       localUDP,
+		SourceBindIP:       strings.TrimSpace(body.SourceBindIp),
+		HostRewrite:        strings.TrimSpace(body.HostRewrite),
+		KeepaliveInterval:  keepaliveInterval,
 	}
-	cl, err := client.ConnectOnce(cfg)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "tunnel connect: " + err.Error(),
-		})
-	}
-	activeTunnels.Store(body.Domain, cl)
+	stopCh := make(chan struct{})
+	runner := &tunnelRunner{stop: stopCh}
+	activeTunnels.Store(body.Domain, runner)
 	go func() {
-		_ = cl.Run()
+		_ = client.RunWithReconnect(cfg, stopCh)
 		activeTunnels.Delete(body.Domain)
 	}()
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -398,8 +409,8 @@ func TunnelStop(c *fiber.Ctx) error {
 	_ = c.BodyParser(&body)
 	if body.Domain != "" {
 		if existing, ok := activeTunnels.Load(body.Domain); ok {
-			if cl, _ := existing.(*client.Client); cl != nil {
-				_ = cl.Close()
+			if runner, _ := existing.(*tunnelRunner); runner != nil {
+				runner.Stop()
 			}
 			activeTunnels.Delete(body.Domain)
 		}
@@ -1050,20 +1061,21 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 	}
 	// Parse data (same shape as TunnelStart)
 	var data struct {
-		DomainId        uint   `json:"DomainId"`
-		Domain          string `json:"Domain"`
-		LocalIp         string `json:"LocalIp"`
-		DestinationIp   string `json:"DestinationIp"`
-		DestinationPort int    `json:"DestinationPort"`
-		LocalPort       int    `json:"LocalPort"`
-		LocalHttpIp     string `json:"LocalHttpIp"`
-		LocalHttpPort   int    `json:"LocalHttpPort"`
-		LocalTcpIp      string `json:"LocalTcpIp"`
-		LocalTcpPort    int    `json:"LocalTcpPort"`
-		LocalUdpIp      string `json:"LocalUdpIp"`
-		LocalUdpPort    int    `json:"LocalUdpPort"`
-		SourceBindIp    string `json:"SourceBindIp"`
-		HostRewrite     string `json:"HostRewrite"`
+		DomainId                 uint   `json:"DomainId"`
+		Domain                   string `json:"Domain"`
+		LocalIp                  string `json:"LocalIp"`
+		DestinationIp            string `json:"DestinationIp"`
+		DestinationPort          int    `json:"DestinationPort"`
+		LocalPort                int    `json:"LocalPort"`
+		LocalHttpIp              string `json:"LocalHttpIp"`
+		LocalHttpPort            int    `json:"LocalHttpPort"`
+		LocalTcpIp               string `json:"LocalTcpIp"`
+		LocalTcpPort             int    `json:"LocalTcpPort"`
+		LocalUdpIp               string `json:"LocalUdpIp"`
+		LocalUdpPort             int    `json:"LocalUdpPort"`
+		SourceBindIp             string `json:"SourceBindIp"`
+		HostRewrite              string `json:"HostRewrite"`
+		KeepaliveIntervalSeconds int    `json:"KeepaliveIntervalSeconds"`
 	}
 	raw, _ := json.Marshal(body.Data)
 	if len(raw) == 0 || string(raw) == "null" {
@@ -1106,31 +1118,31 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 	}
 	key := proxyTunnelKey(body.ServerID, data.Domain)
 	if existing, ok := activeTunnels.Load(key); ok {
-		if cl, _ := existing.(*client.Client); cl != nil {
-			_ = cl.Close()
+		if runner, _ := existing.(*tunnelRunner); runner != nil {
+			runner.Stop()
 		}
 		activeTunnels.Delete(key)
 	}
+	keepaliveInterval := time.Duration(data.KeepaliveIntervalSeconds) * time.Second
+	if data.KeepaliveIntervalSeconds < 0 {
+		keepaliveInterval = 0
+	}
 	cfg := client.Config{
-		ServerAddr:    serverDaemonAddr,
-		Token:         cred.AccessToken,
-		Domain:        data.Domain,
-		LocalHttpAddr: localHTTP,
-		LocalTCPAddr:  localTCP,
-		LocalUDPAddr:  localUDP,
-		SourceBindIP: strings.TrimSpace(data.SourceBindIp),
-		HostRewrite:  strings.TrimSpace(data.HostRewrite),
+		ServerAddr:         serverDaemonAddr,
+		Token:              cred.AccessToken,
+		Domain:             data.Domain,
+		LocalHttpAddr:      localHTTP,
+		LocalTCPAddr:       localTCP,
+		LocalUDPAddr:       localUDP,
+		SourceBindIP:       strings.TrimSpace(data.SourceBindIp),
+		HostRewrite:        strings.TrimSpace(data.HostRewrite),
+		KeepaliveInterval:  keepaliveInterval,
 	}
-	cl, err := client.ConnectOnce(cfg)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "tunnel connect: " + err.Error(),
-		})
-	}
-	activeTunnels.Store(key, cl)
+	stopCh := make(chan struct{})
+	runner := &tunnelRunner{stop: stopCh}
+	activeTunnels.Store(key, runner)
 	go func() {
-		_ = cl.Run()
+		_ = client.RunWithReconnect(cfg, stopCh)
 		activeTunnels.Delete(key)
 	}()
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -1170,8 +1182,8 @@ func TunnelProxyStop(c *fiber.Ctx) error {
 	}
 	key := proxyTunnelKey(body.ServerID, data.Domain)
 	if existing, ok := activeTunnels.Load(key); ok {
-		if cl, _ := existing.(*client.Client); cl != nil {
-			_ = cl.Close()
+		if runner, _ := existing.(*tunnelRunner); runner != nil {
+			runner.Stop()
 		}
 		activeTunnels.Delete(key)
 	}

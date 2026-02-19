@@ -43,6 +43,8 @@ type Config struct {
 	SourceBindIP string
 	// HostRewrite is sent to the daemon on BIND to set/clear the route's Host header override (HTTP/HTTPS only). Empty clears.
 	HostRewrite string
+	// KeepaliveInterval is the interval for PING keepalive and TCP keepalive. Zero disables both.
+	KeepaliveInterval time.Duration
 }
 
 // Client is a tunnel client connected to the daemon.
@@ -71,6 +73,12 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		return nil, fmt.Errorf("client: dial: %w", err)
 	}
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
+	if tcpConn, ok := conn.(*net.TCPConn); ok {
+		tcpConn.SetKeepAlive(true)
+		if cfg.KeepaliveInterval > 0 {
+			tcpConn.SetKeepAlivePeriod(cfg.KeepaliveInterval)
+		}
+	}
 	br := bufio.NewReaderSize(conn, maxAuthLineLen)
 	log.Printf("tunnel_client: out auth token len=%d", len(cfg.Token))
 	if _, err := conn.Write([]byte(cfg.Token + "\n")); err != nil {
@@ -131,7 +139,80 @@ func (c *Client) Run() error {
 	return c.run()
 }
 
+// RunWithReconnect runs the tunnel with automatic reconnect on disconnect. It blocks until stop is closed.
+// Backoff: 2s initial, max 60s. When stop is closed, returns nil.
+func RunWithReconnect(cfg Config, stop <-chan struct{}) error {
+	const initialBackoff = 2 * time.Second
+	const maxBackoff = 60 * time.Second
+	backoff := initialBackoff
+	for {
+		select {
+		case <-stop:
+			return nil
+		default:
+		}
+		cl, err := ConnectOnce(cfg)
+		if err != nil {
+			log.Printf("tunnel_client: connect: %v (retry in %v)", err, backoff)
+			select {
+			case <-stop:
+				return nil
+			case <-time.After(backoff):
+				if backoff < maxBackoff {
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+				}
+			}
+			continue
+		}
+		backoff = initialBackoff
+		runDone := make(chan error, 1)
+		go func() { runDone <- cl.Run() }()
+		select {
+		case <-stop:
+			_ = cl.Close()
+			return nil
+		case err := <-runDone:
+			_ = cl.Close()
+			if err != nil && err != io.EOF {
+				log.Printf("tunnel_client: reconnecting in %v after: %v", backoff, err)
+			}
+			select {
+			case <-stop:
+				return nil
+			case <-time.After(backoff):
+				if backoff < maxBackoff {
+					backoff *= 2
+					if backoff > maxBackoff {
+						backoff = maxBackoff
+					}
+				}
+			}
+		}
+	}
+}
+
 func (c *Client) run() error {
+	if c.cfg.KeepaliveInterval > 0 {
+		done := make(chan struct{})
+		defer close(done)
+		go func() {
+			ticker := time.NewTicker(c.cfg.KeepaliveInterval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-done:
+					return
+				case <-c.closed:
+					return
+				case <-ticker.C:
+					_ = c.sendControl("PING\n")
+				}
+			}
+		}()
+	}
 	for {
 		payload, err := c.readFrame()
 		if err != nil {
