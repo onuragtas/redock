@@ -341,7 +341,7 @@ func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) er
 		return errors.New("email is required for Let's Encrypt")
 	}
 
-	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v", leConfig.Domains)
+	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v (production)", leConfig.Domains)
 
 	certPath := filepath.Join(g.workDir, "data", "tls.crt")
 	keyPath := filepath.Join(g.workDir, "data", "tls.key")
@@ -379,11 +379,9 @@ func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) er
 }
 
 // obtainCertificateViaACME runs the ACME flow (HTTP-01) and writes cert and key to the given paths.
+// Always uses Let's Encrypt production; staging is no longer configurable.
 func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, keyPath string) error {
 	dirURL := acme.LetsEncryptURL
-	if cfg.Staging {
-		dirURL = "https://acme-staging-v02.api.letsencrypt.org/directory"
-	}
 
 	accountKey, err := loadOrCreateACMEAccountKey(workDir)
 	if err != nil {

@@ -115,7 +115,6 @@ const letsEncryptConfig = ref({
   enabled: false,
   email: '',
   domains: '',
-  staging: true,
   auto_renew: true,
   renew_before_days: 30
 })
@@ -484,7 +483,6 @@ const openLetsEncryptModal = () => {
       enabled: certificateInfo.value.lets_encrypt || false,
       email: certificateInfo.value.lets_encrypt_email || '',
       domains: (certificateInfo.value.lets_encrypt_domains || []).join(', '),
-      staging: certificateInfo.value.lets_encrypt_staging || true,
       auto_renew: certificateInfo.value.auto_renew !== false,
       renew_before_days: certificateInfo.value.renew_before_days || 30
     }
@@ -1541,9 +1539,6 @@ onUnmounted(() => {
         </FormField>
         <FormField label="Domains (comma-separated)">
           <FormControl v-model="letsEncryptConfig.domains" placeholder="example.com, www.example.com" />
-        </FormField>
-        <FormField>
-          <FormCheckRadio v-model="letsEncryptConfig.staging" label="Use Staging Server (for testing)" name="le_staging" />
         </FormField>
         <FormField>
           <FormCheckRadio v-model="letsEncryptConfig.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
