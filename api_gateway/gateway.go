@@ -593,6 +593,7 @@ func (g *Gateway) startLocked() error {
 				}
 				cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 				if err != nil {
+					log.Printf("API Gateway: TLS certificate load failed (cert=%s): %v", certFile, err)
 					return nil, err
 				}
 				return &cert, nil

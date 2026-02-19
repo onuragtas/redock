@@ -9,6 +9,7 @@ import FormField from "@/components/FormField.vue";
 import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
 
 import ApiService from "@/services/ApiService";
+import { useToast } from "vue-toastification";
 import {
   mdiCertificate,
   mdiChartLine,
@@ -32,6 +33,8 @@ import {
   mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
+
+const toast = useToast();
 
 // Reactive state
 const loading = ref(false)
@@ -506,8 +509,11 @@ const saveLetsEncrypt = async () => {
 const requestCertificate = async () => {
   try {
     await ApiService.apiGatewayRequestCertificate()
+    toast.success('Sertifika başarıyla alındı. HTTPS kullanılabilir.')
     await loadData()
   } catch (error) {
+    const msg = error.response?.data?.msg || error.message || 'Sertifika alınamadı'
+    toast.error('Sertifika hatası: ' + msg)
     console.error('Failed to request certificate:', error)
   }
 }
@@ -1301,6 +1307,9 @@ onUnmounted(() => {
                 @click="requestCertificate"
               />
             </div>
+            <p v-if="!certificateInfo.lets_encrypt || !certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+              Sertifika almak için önce "Configure Let's Encrypt" ile e-posta ve domain ekleyip kaydedin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
+            </p>
           </div>
         </div>
       </div>
