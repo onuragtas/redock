@@ -54,6 +54,7 @@ type Client struct {
 	br     *bufio.Reader
 	closed chan struct{}
 	once   sync.Once
+	writeMu sync.Mutex // serialize all writes to conn (data frames, control, PING)
 	// tcpStreams: streamID -> local backend connection
 	tcpStreams   map[uint32]net.Conn
 	tcpStreamsMu sync.RWMutex
@@ -293,6 +294,8 @@ func (c *Client) sendControl(msg string) error {
 }
 
 func (c *Client) writeFrame(payload []byte) error {
+	c.writeMu.Lock()
+	defer c.writeMu.Unlock()
 	var lenBuf [4]byte
 	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(payload)))
 	if _, err := c.conn.Write(lenBuf[:]); err != nil {
