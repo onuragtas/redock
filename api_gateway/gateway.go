@@ -779,6 +779,14 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	routeID = route.ID
 	routeName = route.Name
 
+	// OPTIONS preflight: respond with route CORS headers and 204 without proxying
+	if r.Method == http.MethodOptions && route.CORS != nil && route.CORS.Enabled {
+		applyCORSHeaders(lw.Header(), r.Header.Get("Origin"), route.CORS)
+		lw.WriteHeader(http.StatusNoContent)
+		g.logRequest(r, http.StatusNoContent, startTime, routeID, routeName, "", "", g.isRouteObservabilityEnabled(route), "", reqInfo, lw.LogInfo())
+		return
+	}
+
 	routeObservability := g.isRouteObservabilityEnabled(route)
 
 	// Check route-level rate limit
@@ -1093,6 +1101,52 @@ func matchWildcard(pattern, value string) bool {
 	return pattern == value
 }
 
+// applyCORSHeaders sets CORS response headers on the given header map.
+// origin is the request's Origin header; if empty, Allow-Origin may still be set to *.
+func applyCORSHeaders(h http.Header, origin string, cors *CORSConfig) {
+	if cors == nil || !cors.Enabled {
+		return
+	}
+	allowOrigin := ""
+	for _, o := range cors.AllowOrigins {
+		if o == "*" {
+			if !cors.AllowCredentials {
+				allowOrigin = "*"
+			}
+			break
+		}
+		if origin != "" && (o == origin || matchWildcard(o, origin)) {
+			allowOrigin = origin
+			break
+		}
+	}
+	if allowOrigin != "" {
+		h.Set("Access-Control-Allow-Origin", allowOrigin)
+	}
+	if len(cors.AllowMethods) > 0 {
+		h.Set("Access-Control-Allow-Methods", strings.Join(cors.AllowMethods, ", "))
+	}
+	if len(cors.AllowHeaders) > 0 {
+		h.Set("Access-Control-Allow-Headers", strings.Join(cors.AllowHeaders, ", "))
+	}
+	if len(cors.ExposeHeaders) > 0 {
+		h.Set("Access-Control-Expose-Headers", strings.Join(cors.ExposeHeaders, ", "))
+	}
+	if cors.AllowCredentials {
+		h.Set("Access-Control-Allow-Credentials", "true")
+	}
+	if cors.MaxAge > 0 {
+		h.Set("Access-Control-Max-Age", fmt.Sprintf("%d", cors.MaxAge))
+	}
+}
+
+// applyResponseHeaders adds custom response headers to the given header map.
+func applyResponseHeaders(h http.Header, headers map[string]string) {
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+}
+
 // proxyRequest forwards the request to the upstream service
 func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service) error {
 	// Build target URL
@@ -1186,6 +1240,16 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		proxyErr = fmt.Errorf("proxy error: %w", err)
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+	}
+
+	// Add route CORS and response headers to every proxied response (including WebSocket 101 upgrade)
+	origin := r.Header.Get("Origin")
+	corsCfg := route.CORS
+	respHeaders := route.ResponseHeaders
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		applyCORSHeaders(resp.Header, origin, corsCfg)
+		applyResponseHeaders(resp.Header, respHeaders)
+		return nil
 	}
 
 	proxy.ServeHTTP(w, r)

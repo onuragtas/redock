@@ -108,7 +108,17 @@ const newRoute = ref({
   auth_required: false,
   auth_type: '',
   observability_enabled: true,
-  enabled: true
+  enabled: true,
+  cors: {
+    enabled: false,
+    allow_origins: '',
+    allow_methods: 'GET, POST, PUT, DELETE, OPTIONS',
+    allow_headers: 'Content-Type, Authorization',
+    expose_headers: '',
+    allow_credentials: false,
+    max_age: 86400
+  },
+  response_headers: []
 })
 
 const letsEncryptConfig = ref({
@@ -394,9 +404,41 @@ const openAddRouteModal = () => {
     auth_required: false,
     auth_type: '',
     observability_enabled: true,
-    enabled: true
+    enabled: true,
+    cors: {
+      enabled: false,
+      allow_origins: '',
+      allow_methods: 'GET, POST, PUT, DELETE, OPTIONS',
+      allow_headers: 'Content-Type, Authorization',
+      expose_headers: '',
+      allow_credentials: false,
+      max_age: 86400
+    },
+    response_headers: []
   }
   isAddRouteModalActive.value = true
+}
+
+function buildCorsPayload(cors) {
+  if (!cors || !cors.enabled) return null
+  return {
+    enabled: true,
+    allow_origins: (cors.allow_origins || '').split(',').map(s => s.trim()).filter(Boolean),
+    allow_methods: (cors.allow_methods || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+    allow_headers: (cors.allow_headers || '').split(',').map(s => s.trim()).filter(Boolean),
+    expose_headers: (cors.expose_headers || '').split(',').map(s => s.trim()).filter(Boolean),
+    allow_credentials: !!cors.allow_credentials,
+    max_age: parseInt(cors.max_age, 10) || 0
+  }
+}
+
+function buildResponseHeadersPayload(arr) {
+  if (!Array.isArray(arr)) return undefined
+  const out = {}
+  for (const { key, value } of arr) {
+    if (key && String(key).trim()) out[String(key).trim()] = value == null ? '' : String(value)
+  }
+  return out
 }
 
 const addRoute = async () => {
@@ -406,7 +448,9 @@ const addRoute = async () => {
       paths: newRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: newRoute.value.methods ? newRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: newRoute.value.service_id?.value || newRoute.value.service_id
+      service_id: newRoute.value.service_id?.value || newRoute.value.service_id,
+      cors: buildCorsPayload(newRoute.value.cors),
+      response_headers: buildResponseHeadersPayload(newRoute.value.response_headers)
     }
     const response = await ApiService.apiGatewayAddRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -421,6 +465,10 @@ const addRoute = async () => {
 const openEditRouteModal = (route) => {
   const serviceId = route.service_id?.value || route.service_id
   const serviceMatch = services.value.find(s => s.id === serviceId)
+  const cors = route.cors
+  const responseHeaders = route.response_headers && typeof route.response_headers === 'object'
+    ? Object.entries(route.response_headers).map(([key, value]) => ({ key, value }))
+    : []
 
   editingRoute.value = {
     ...route,
@@ -434,7 +482,17 @@ const openEditRouteModal = (route) => {
       ? { value: serviceMatch.id, label: serviceMatch.name }
       : serviceId
         ? { value: serviceId, label: route.service_name || serviceId }
-        : null
+        : null,
+    cors: cors ? {
+      enabled: !!cors.enabled,
+      allow_origins: Array.isArray(cors.allow_origins) ? cors.allow_origins.join(', ') : (cors.allow_origins || ''),
+      allow_methods: Array.isArray(cors.allow_methods) ? cors.allow_methods.join(', ') : (cors.allow_methods || ''),
+      allow_headers: Array.isArray(cors.allow_headers) ? cors.allow_headers.join(', ') : (cors.allow_headers || ''),
+      expose_headers: Array.isArray(cors.expose_headers) ? cors.expose_headers.join(', ') : (cors.expose_headers || ''),
+      allow_credentials: !!cors.allow_credentials,
+      max_age: parseInt(cors.max_age, 10) || 0
+    } : { enabled: false, allow_origins: '', allow_methods: '', allow_headers: '', expose_headers: '', allow_credentials: false, max_age: 0 },
+    response_headers: responseHeaders
   }
   isEditRouteModalActive.value = true
 }
@@ -446,7 +504,9 @@ const updateRoute = async () => {
       paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id
+      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id,
+      cors: buildCorsPayload(editingRoute.value.cors),
+      response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers)
     }
     const response = await ApiService.apiGatewayUpdateRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -1518,6 +1578,44 @@ onUnmounted(() => {
             <FormControl v-model="newRoute.rate_limit_window" type="number" placeholder="60" />
           </FormField>
         </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">CORS (route bazlı)</h4>
+          <p class="text-xs text-slate-500 mb-2">OPTIONS preflight ve tüm yanıtlara (WebSocket upgrade dahil) uygulanır.</p>
+          <FormField>
+            <FormCheckRadio v-model="newRoute.cors.enabled" label="CORS etkin" name="new_route_cors" />
+          </FormField>
+          <template v-if="newRoute.cors.enabled">
+            <FormField label="Allow Origins (virgülle)">
+              <FormControl v-model="newRoute.cors.allow_origins" placeholder="* veya https://app.example.com" />
+            </FormField>
+            <FormField label="Allow Methods">
+              <FormControl v-model="newRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
+            </FormField>
+            <FormField label="Allow Headers">
+              <FormControl v-model="newRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
+            </FormField>
+            <FormField label="Expose Headers (opsiyonel)">
+              <FormControl v-model="newRoute.cors.expose_headers" placeholder="X-Request-Id" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField>
+                <FormCheckRadio v-model="newRoute.cors.allow_credentials" label="Allow Credentials" name="new_cors_creds" />
+              </FormField>
+              <FormField label="Max-Age (saniye)">
+                <FormControl v-model.number="newRoute.cors.max_age" type="number" placeholder="86400" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Ek response header'lar</h4>
+          <div v-for="(entry, idx) in newRoute.response_headers" :key="'rh-' + idx" class="flex gap-2 items-end mb-2">
+            <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
+            <FormControl v-model="entry.value" placeholder="değer" class="flex-1" />
+            <BaseButton label="" color="danger" small @click="newRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+          </div>
+          <BaseButton label="Header ekle" color="info" small @click="newRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+        </div>
       </div>
     </CardBoxModal>
 
@@ -1697,6 +1795,44 @@ onUnmounted(() => {
           <FormField label="Window (seconds)">
             <FormControl v-model="editingRoute.rate_limit_window" type="number" placeholder="60" />
           </FormField>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">CORS (route bazlı)</h4>
+          <p class="text-xs text-slate-500 mb-2">OPTIONS preflight ve tüm yanıtlara (WebSocket upgrade dahil) uygulanır.</p>
+          <FormField>
+            <FormCheckRadio v-model="editingRoute.cors.enabled" label="CORS etkin" name="edit_route_cors" />
+          </FormField>
+          <template v-if="editingRoute.cors && editingRoute.cors.enabled">
+            <FormField label="Allow Origins (virgülle)">
+              <FormControl v-model="editingRoute.cors.allow_origins" placeholder="* veya https://app.example.com" />
+            </FormField>
+            <FormField label="Allow Methods">
+              <FormControl v-model="editingRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
+            </FormField>
+            <FormField label="Allow Headers">
+              <FormControl v-model="editingRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
+            </FormField>
+            <FormField label="Expose Headers (opsiyonel)">
+              <FormControl v-model="editingRoute.cors.expose_headers" placeholder="X-Request-Id" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField>
+                <FormCheckRadio v-model="editingRoute.cors.allow_credentials" label="Allow Credentials" name="edit_cors_creds" />
+              </FormField>
+              <FormField label="Max-Age (saniye)">
+                <FormControl v-model.number="editingRoute.cors.max_age" type="number" placeholder="86400" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Ek response header'lar</h4>
+          <div v-for="(entry, idx) in editingRoute.response_headers" :key="'erh-' + idx" class="flex gap-2 items-end mb-2">
+            <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
+            <FormControl v-model="entry.value" placeholder="değer" class="flex-1" />
+            <BaseButton label="" color="danger" small @click="editingRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+          </div>
+          <BaseButton label="Header ekle" color="info" small @click="editingRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
         </div>
       </div>
     </CardBoxModal>

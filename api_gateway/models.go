@@ -42,6 +42,8 @@ type Route struct {
 	AuthRequired         bool              `json:"auth_required"`
 	AuthType             string            `json:"auth_type,omitempty"` // basic, jwt, api-key
 	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
+	CORS                 *CORSConfig       `json:"cors,omitempty"`           // CORS response headers for this route (incl. WebSocket)
+	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route
 	Enabled              bool              `json:"enabled"`
 }
 
@@ -72,6 +74,17 @@ type TCPRoute struct {
 	Enabled    bool   `json:"enabled"`
 }
 
+// CORSConfig holds CORS response header settings for the gateway
+type CORSConfig struct {
+	Enabled          bool     `json:"enabled"`
+	AllowOrigins     []string `json:"allow_origins,omitempty"`     // e.g. ["*"] or ["https://app.example.com"]
+	AllowMethods     []string `json:"allow_methods,omitempty"`     // e.g. ["GET","POST","PUT","DELETE","OPTIONS"]
+	AllowHeaders     []string `json:"allow_headers,omitempty"`     // e.g. ["Content-Type","Authorization"]
+	ExposeHeaders    []string `json:"expose_headers,omitempty"`   // headers exposed to the browser
+	AllowCredentials bool     `json:"allow_credentials"`         // Access-Control-Allow-Credentials
+	MaxAge           int      `json:"max_age"`                    // preflight cache in seconds (0 = no cache)
+}
+
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
 	HTTPPort         int                   `json:"http_port"`
@@ -82,8 +95,8 @@ type GatewayConfig struct {
 	LetsEncrypt      *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
 	Services         []Service             `json:"services"`
 	Routes           []Route               `json:"routes"`
-	UDPRoutes       []UDPRoute             `json:"udp_routes,omitempty"`
-	TCPRoutes       []TCPRoute             `json:"tcp_routes,omitempty"`
+	UDPRoutes        []UDPRoute            `json:"udp_routes,omitempty"`
+	TCPRoutes        []TCPRoute            `json:"tcp_routes,omitempty"`
 	GlobalRateLimit  *RateLimitConfig      `json:"global_rate_limit,omitempty"`
 	LogLevel         string                `json:"log_level"`
 	AccessLogEnabled bool                  `json:"access_log_enabled"`
