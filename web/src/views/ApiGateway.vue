@@ -1579,14 +1579,14 @@ onUnmounted(() => {
           </FormField>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">CORS (route bazlı)</h4>
-          <p class="text-xs text-slate-500 mb-2">OPTIONS preflight ve tüm yanıtlara (WebSocket upgrade dahil) uygulanır.</p>
+          <h4 class="font-semibold mb-3">CORS (per route)</h4>
+          <p class="text-xs text-slate-500 mb-2">Applied to OPTIONS preflight and all responses (including WebSocket upgrade).</p>
           <FormField>
-            <FormCheckRadio v-model="newRoute.cors.enabled" label="CORS etkin" name="new_route_cors" />
+            <FormCheckRadio v-model="newRoute.cors.enabled" label="Enable CORS" name="new_route_cors" />
           </FormField>
           <template v-if="newRoute.cors.enabled">
-            <FormField label="Allow Origins (virgülle)">
-              <FormControl v-model="newRoute.cors.allow_origins" placeholder="* veya https://app.example.com" />
+            <FormField label="Allow Origins (comma-separated)">
+              <FormControl v-model="newRoute.cors.allow_origins" placeholder="* or https://app.example.com" />
             </FormField>
             <FormField label="Allow Methods">
               <FormControl v-model="newRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
@@ -1594,27 +1594,27 @@ onUnmounted(() => {
             <FormField label="Allow Headers">
               <FormControl v-model="newRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
             </FormField>
-            <FormField label="Expose Headers (opsiyonel)">
+            <FormField label="Expose Headers (optional)">
               <FormControl v-model="newRoute.cors.expose_headers" placeholder="X-Request-Id" />
             </FormField>
             <div class="grid grid-cols-2 gap-4">
               <FormField>
                 <FormCheckRadio v-model="newRoute.cors.allow_credentials" label="Allow Credentials" name="new_cors_creds" />
               </FormField>
-              <FormField label="Max-Age (saniye)">
+              <FormField label="Max-Age (seconds)">
                 <FormControl v-model.number="newRoute.cors.max_age" type="number" placeholder="86400" />
               </FormField>
             </div>
           </template>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Ek response header'lar</h4>
+          <h4 class="font-semibold mb-3">Additional response headers</h4>
           <div v-for="(entry, idx) in newRoute.response_headers" :key="'rh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
-            <FormControl v-model="entry.value" placeholder="değer" class="flex-1" />
+            <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
             <BaseButton label="" color="danger" small @click="newRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
           </div>
-          <BaseButton label="Header ekle" color="info" small @click="newRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          <BaseButton label="Add header" color="info" small @click="newRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
         </div>
       </div>
     </CardBoxModal>
@@ -1797,14 +1797,14 @@ onUnmounted(() => {
           </FormField>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">CORS (route bazlı)</h4>
-          <p class="text-xs text-slate-500 mb-2">OPTIONS preflight ve tüm yanıtlara (WebSocket upgrade dahil) uygulanır.</p>
+          <h4 class="font-semibold mb-3">CORS (per route)</h4>
+          <p class="text-xs text-slate-500 mb-2">Applied to OPTIONS preflight and all responses (including WebSocket upgrade).</p>
           <FormField>
-            <FormCheckRadio v-model="editingRoute.cors.enabled" label="CORS etkin" name="edit_route_cors" />
+            <FormCheckRadio v-model="editingRoute.cors.enabled" label="Enable CORS" name="edit_route_cors" />
           </FormField>
           <template v-if="editingRoute.cors && editingRoute.cors.enabled">
-            <FormField label="Allow Origins (virgülle)">
-              <FormControl v-model="editingRoute.cors.allow_origins" placeholder="* veya https://app.example.com" />
+            <FormField label="Allow Origins (comma-separated)">
+              <FormControl v-model="editingRoute.cors.allow_origins" placeholder="* or https://app.example.com" />
             </FormField>
             <FormField label="Allow Methods">
               <FormControl v-model="editingRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
@@ -1812,27 +1812,27 @@ onUnmounted(() => {
             <FormField label="Allow Headers">
               <FormControl v-model="editingRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
             </FormField>
-            <FormField label="Expose Headers (opsiyonel)">
+            <FormField label="Expose Headers (optional)">
               <FormControl v-model="editingRoute.cors.expose_headers" placeholder="X-Request-Id" />
             </FormField>
             <div class="grid grid-cols-2 gap-4">
               <FormField>
                 <FormCheckRadio v-model="editingRoute.cors.allow_credentials" label="Allow Credentials" name="edit_cors_creds" />
               </FormField>
-              <FormField label="Max-Age (saniye)">
+              <FormField label="Max-Age (seconds)">
                 <FormControl v-model.number="editingRoute.cors.max_age" type="number" placeholder="86400" />
               </FormField>
             </div>
           </template>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Ek response header'lar</h4>
+          <h4 class="font-semibold mb-3">Additional response headers</h4>
           <div v-for="(entry, idx) in editingRoute.response_headers" :key="'erh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
-            <FormControl v-model="entry.value" placeholder="değer" class="flex-1" />
+            <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
             <BaseButton label="" color="danger" small @click="editingRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
           </div>
-          <BaseButton label="Header ekle" color="info" small @click="editingRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          <BaseButton label="Add header" color="info" small @click="editingRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
         </div>
       </div>
     </CardBoxModal>
