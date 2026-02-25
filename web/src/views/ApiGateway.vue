@@ -453,17 +453,26 @@ function buildAuthHeadersPayload(arr) {
   return out.length ? out : undefined
 }
 
+function normalizeAuthType(v) {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'object' && v !== null && 'value' in v) return v.value ?? ''
+  return ''
+}
+
 const addRoute = async () => {
   try {
+    const authType = normalizeAuthType(newRoute.value.auth_type)
     const routeData = {
       ...newRoute.value,
       paths: newRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: newRoute.value.methods ? newRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
       service_id: newRoute.value.service_id?.value || newRoute.value.service_id,
+      auth_type: authType,
       cors: buildCorsPayload(newRoute.value.cors),
       response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
-      auth_headers: newRoute.value.auth_type === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined
     }
     const response = await ApiService.apiGatewayAddRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -516,15 +525,17 @@ const openEditRouteModal = (route) => {
 
 const updateRoute = async () => {
   try {
+    const authType = normalizeAuthType(editingRoute.value.auth_type)
     const routeData = {
       ...editingRoute.value,
       paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
       service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id,
+      auth_type: authType,
       cors: buildCorsPayload(editingRoute.value.cors),
       response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
-      auth_headers: editingRoute.value.auth_type === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined
     }
     const response = await ApiService.apiGatewayUpdateRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -1596,7 +1607,7 @@ onUnmounted(() => {
             <FormControl v-model="newRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
           </FormField>
         </div>
-        <template v-if="newRoute.auth_required && newRoute.auth_type === 'header'">
+        <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'header'">
           <div class="border-t pt-4 mt-4">
             <h4 class="font-semibold mb-3">Required headers</h4>
             <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value. Add one or more (e.g. X-API-Key).</p>
@@ -1829,7 +1840,7 @@ onUnmounted(() => {
         <FormField v-if="editingRoute.auth_required" label="Auth Type">
           <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
         </FormField>
-        <template v-if="editingRoute.auth_required && editingRoute.auth_type === 'header'">
+        <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'header'">
           <div class="border-t pt-4 mt-4">
             <h4 class="font-semibold mb-3">Required headers</h4>
             <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value.</p>
