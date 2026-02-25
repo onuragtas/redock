@@ -270,14 +270,14 @@ func TestGatewayCheckAuth(t *testing.T) {
 			expected: false,
 		},
 		{
-			name:     "API key auth success - header",
-			route:    &Route{AuthRequired: true, AuthType: "api-key"},
+			name:     "Header auth success",
+			route:    &Route{AuthRequired: true, AuthType: "header", AuthHeaders: []AuthHeader{{Key: "X-API-Key", Value: "my-api-key"}}},
 			headers:  map[string]string{"X-API-Key": "my-api-key"},
 			expected: true,
 		},
 		{
-			name:     "API key auth failure - no key",
-			route:    &Route{AuthRequired: true, AuthType: "api-key"},
+			name:     "Header auth failure - missing header",
+			route:    &Route{AuthRequired: true, AuthType: "header", AuthHeaders: []AuthHeader{{Key: "X-API-Key", Value: "my-api-key"}}},
 			headers:  map[string]string{},
 			expected: false,
 		},

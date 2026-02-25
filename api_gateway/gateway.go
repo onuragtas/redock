@@ -1288,8 +1288,6 @@ func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
 		if !ok {
 			return false
 		}
-		// For now, just check that credentials are provided
-		// In a real implementation, this would validate against a database
 		return username != "" && password != ""
 
 	case "jwt":
@@ -1297,23 +1295,33 @@ func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
 		if authHeader == "" {
 			return false
 		}
-		// Check if it starts with "Bearer "
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			return false
 		}
-		// For now, just check that a token is provided
-		// In a real implementation, this would validate the JWT
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		return token != ""
 
-	case "api-key":
-		apiKey := r.Header.Get("X-API-Key")
-		if apiKey == "" {
-			apiKey = r.URL.Query().Get("api_key")
+	case "header":
+		if len(route.AuthHeaders) == 0 {
+			return false
 		}
-		// For now, just check that an API key is provided
-		// In a real implementation, this would validate against a database
-		return apiKey != ""
+		for _, h := range route.AuthHeaders {
+			key := strings.TrimSpace(h.Key)
+			if key == "" {
+				continue
+			}
+			got := r.Header.Get(key)
+			if h.Value == "" {
+				if got == "" {
+					return false
+				}
+				continue
+			}
+			if got != h.Value {
+				return false
+			}
+		}
+		return true
 
 	default:
 		return true

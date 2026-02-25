@@ -23,6 +23,12 @@ type Service struct {
 	Enabled     bool              `json:"enabled"`
 }
 
+// AuthHeader defines a required request header for auth type "header" (key must match value).
+type AuthHeader struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // Route represents a routing rule that maps incoming requests to services
 type Route struct {
 	ID                   string            `json:"id"`
@@ -40,7 +46,8 @@ type Route struct {
 	RateLimitRequests    int               `json:"rate_limit_requests"` // requests per window
 	RateLimitWindow      int               `json:"rate_limit_window"`   // window in seconds
 	AuthRequired         bool              `json:"auth_required"`
-	AuthType             string            `json:"auth_type,omitempty"` // basic, jwt, api-key
+	AuthType             string            `json:"auth_type,omitempty"`     // basic, jwt, header
+	AuthHeaders          []AuthHeader      `json:"auth_headers,omitempty"`   // required header key-value pairs when auth_type=header
 	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
 	CORS                 *CORSConfig       `json:"cors,omitempty"`           // CORS response headers for this route (incl. WebSocket)
 	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route

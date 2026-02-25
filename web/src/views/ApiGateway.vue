@@ -107,6 +107,7 @@ const newRoute = ref({
   rate_limit_window: 60,
   auth_required: false,
   auth_type: '',
+  auth_headers: [],
   observability_enabled: true,
   enabled: true,
   cors: {
@@ -403,6 +404,7 @@ const openAddRouteModal = () => {
     rate_limit_window: 60,
     auth_required: false,
     auth_type: '',
+    auth_headers: [],
     observability_enabled: true,
     enabled: true,
     cors: {
@@ -441,6 +443,16 @@ function buildResponseHeadersPayload(arr) {
   return out
 }
 
+function buildAuthHeadersPayload(arr) {
+  if (!Array.isArray(arr)) return undefined
+  const out = []
+  for (const { key, value } of arr) {
+    const k = key != null ? String(key).trim() : ''
+    if (k) out.push({ key: k, value: value == null ? '' : String(value) })
+  }
+  return out.length ? out : undefined
+}
+
 const addRoute = async () => {
   try {
     const routeData = {
@@ -450,7 +462,8 @@ const addRoute = async () => {
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
       service_id: newRoute.value.service_id?.value || newRoute.value.service_id,
       cors: buildCorsPayload(newRoute.value.cors),
-      response_headers: buildResponseHeadersPayload(newRoute.value.response_headers)
+      response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
+      auth_headers: newRoute.value.auth_type === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined
     }
     const response = await ApiService.apiGatewayAddRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -468,6 +481,9 @@ const openEditRouteModal = (route) => {
   const cors = route.cors
   const responseHeaders = route.response_headers && typeof route.response_headers === 'object'
     ? Object.entries(route.response_headers).map(([key, value]) => ({ key, value }))
+    : []
+  const authHeaders = Array.isArray(route.auth_headers)
+    ? route.auth_headers.map(h => ({ key: h.key || h.Key || '', value: h.value != null ? String(h.value) : (h.Value != null ? String(h.Value) : '') }))
     : []
 
   editingRoute.value = {
@@ -492,7 +508,8 @@ const openEditRouteModal = (route) => {
       allow_credentials: !!cors.allow_credentials,
       max_age: parseInt(cors.max_age, 10) || 0
     } : { enabled: false, allow_origins: '', allow_methods: '', allow_headers: '', expose_headers: '', allow_credentials: false, max_age: 0 },
-    response_headers: responseHeaders
+    response_headers: responseHeaders,
+    auth_headers: authHeaders
   }
   isEditRouteModalActive.value = true
 }
@@ -506,7 +523,8 @@ const updateRoute = async () => {
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
       service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id,
       cors: buildCorsPayload(editingRoute.value.cors),
-      response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers)
+      response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
+      auth_headers: editingRoute.value.auth_type === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined
     }
     const response = await ApiService.apiGatewayUpdateRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -1239,7 +1257,7 @@ onUnmounted(() => {
               Rate Limited
             </span>
             <span v-if="route.auth_required" class="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs rounded">
-              Auth: {{ route.auth_type }}
+              Auth: {{ route.auth_type }}{{ route.auth_type === 'header' && (route.auth_headers?.length) ? ` (${route.auth_headers.length})` : '' }}
             </span>
             <span v-if="route.strip_path" class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded">
               Strip Path
@@ -1570,6 +1588,26 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
         </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField>
+            <FormCheckRadio v-model="newRoute.auth_required" label="Require Auth" name="new_route_auth" />
+          </FormField>
+          <FormField v-if="newRoute.auth_required" label="Auth Type">
+            <FormControl v-model="newRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
+          </FormField>
+        </div>
+        <template v-if="newRoute.auth_required && newRoute.auth_type === 'header'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Required headers</h4>
+            <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value. Add one or more (e.g. X-API-Key).</p>
+            <div v-for="(entry, idx) in newRoute.auth_headers" :key="'ah-' + idx" class="flex gap-2 items-end mb-2">
+              <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
+              <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
+              <BaseButton label="" color="danger" small @click="newRoute.auth_headers.splice(idx, 1)" :icon="mdiDelete" />
+            </div>
+            <BaseButton label="Add header" color="info" small @click="newRoute.auth_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          </div>
+        </template>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
           <FormField label="Requests">
             <FormControl v-model="newRoute.rate_limit_requests" type="number" placeholder="100" />
@@ -1788,6 +1826,21 @@ onUnmounted(() => {
             <FormCheckRadio v-model="editingRoute.auth_required" label="Require Auth" name="edit_auth" />
           </FormField>
         </div>
+        <FormField v-if="editingRoute.auth_required" label="Auth Type">
+          <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
+        </FormField>
+        <template v-if="editingRoute.auth_required && editingRoute.auth_type === 'header'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Required headers</h4>
+            <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value.</p>
+            <div v-for="(entry, idx) in (editingRoute.auth_headers || [])" :key="'eah-' + idx" class="flex gap-2 items-end mb-2">
+              <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
+              <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
+              <BaseButton label="" color="danger" small @click="(editingRoute.auth_headers || []).splice(idx, 1)" :icon="mdiDelete" />
+            </div>
+            <BaseButton label="Add header" color="info" small @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" :icon="mdiPlus" />
+          </div>
+        </template>
         <div v-if="editingRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
           <FormField label="Requests">
             <FormControl v-model="editingRoute.rate_limit_requests" type="number" placeholder="100" />
