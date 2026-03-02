@@ -10,6 +10,8 @@ import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.
 
 import ApiService from "@/services/ApiService";
 import {
+  mdiChevronLeft,
+  mdiChevronRight,
   mdiCog,
   mdiDatabase,
   mdiDelete,
@@ -69,7 +71,11 @@ const customRules = ref({
   client_rules: [],
   banned_clients: []
 })
-const searchQuery = ref('') // Log arama filtresi
+const searchQuery = ref('') // Log search filter (server-side)
+const logsPage = ref(1)
+const logsLimit = ref(50)
+const logsTotal = ref(0)
+const logsLoading = ref(false)
 
 // Modal states
 const activeTab = ref('overview')
@@ -121,20 +127,15 @@ const blockPercentage = computed(() => {
   return ((stats.value.blocked_queries_24h / stats.value.total_queries_24h) * 100).toFixed(2)
 })
 
-const filteredQueryLogs = computed(() => {
-  if (!searchQuery.value.trim()) {
-    return queryLogs.value
-  }
-  
-  const query = searchQuery.value.toLowerCase().trim()
-  return queryLogs.value.filter(log => {
-    return (
-      log.client_ip?.toLowerCase().includes(query) ||
-      log.domain?.toLowerCase().includes(query) ||
-      log.response?.toLowerCase().includes(query)
-    )
-  })
+const logsPaginationInfo = computed(() => {
+  const total = logsTotal.value
+  if (total === 0) return '0 of 0'
+  const start = (logsPage.value - 1) * logsLimit.value + 1
+  const end = Math.min(start + logsLimit.value - 1, total)
+  return `${start}-${end} of ${total}`
 })
+
+const logsTotalPages = computed(() => Math.max(1, Math.ceil(logsTotal.value / logsLimit.value)))
 
 const formattedUpstreamDNS = computed({
   get: () => {
@@ -219,14 +220,40 @@ const fetchRewrites = async () => {
 }
 
 const fetchQueryLogs = async () => {
+  logsLoading.value = true
   try {
-    const response = await ApiService.get('/v1/dns/logs?limit=50')
+    const params = new URLSearchParams({ page: String(logsPage.value), limit: String(logsLimit.value) })
+    if (searchQuery.value.trim()) params.set('q', searchQuery.value.trim())
+    const response = await ApiService.get(`/v1/dns/logs?${params}`)
     if (response.data && !response.data.error) {
-      queryLogs.value = response.data.data.logs || []
+      const d = response.data.data
+      queryLogs.value = d?.logs || []
+      logsTotal.value = d?.total ?? 0
     }
   } catch (error) {
     console.error('Failed to fetch query logs:', error)
+  } finally {
+    logsLoading.value = false
   }
+}
+
+const goToLogsPage = (page) => {
+  const p = Math.max(1, Math.min(Number(page) || 1, logsTotalPages.value))
+  if (p !== logsPage.value) {
+    logsPage.value = p
+    fetchQueryLogs()
+  }
+}
+
+const setLogsLimit = (n) => {
+  logsLimit.value = Math.min(100, Math.max(10, Number(n) || 50))
+  logsPage.value = 1
+  fetchQueryLogs()
+}
+
+const doLogsSearch = () => {
+  logsPage.value = 1
+  fetchQueryLogs()
 }
 
 const fetchClients = async () => {
@@ -415,15 +442,15 @@ const updateRewrite = async () => {
   try {
     const response = await ApiService.put(`/v1/dns/rewrites/${editingRewrite.value.id}`, editingRewrite.value)
     if (response.data && !response.data.error) {
-      toast.success('DNS Rewrite güncellendi')
+      toast.success('DNS Rewrite updated')
       await fetchRewrites()
       isEditRewriteModalActive.value = false
       editingRewrite.value = null
     } else {
-      toast.error('Rewrite güncellenemedi: ' + (response.data.msg || 'Bilinmeyen hata'))
+      toast.error('Failed to update rewrite: ' + (response.data.msg || 'Unknown error'))
     }
   } catch (error) {
-    toast.error('Rewrite güncellenemedi: ' + error.message)
+    toast.error('Failed to update rewrite: ' + error.message)
   }
   loading.value = false
 }
@@ -638,7 +665,7 @@ const toggleClientMenu = (clientIP) => {
 
 // Lifecycle hooks
 onMounted(async () => {
-  // Tüm verileri paralel çek (daha hızlı yükleme)
+  // Fetch all data in parallel (faster load)
   await Promise.all([
     fetchStatus(),
     fetchConfig(),
@@ -841,21 +868,23 @@ const deleteClientBan = async (clientIP) => {
       </CardBox>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex border-b border-gray-200 dark:border-gray-700">
-      <button
-        v-for="tab in ['overview', 'blocklists', 'filters', 'rewrites', 'custom-rules', 'logs']"
-        :key="tab"
-        :class="[
-          'px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
-          activeTab === tab
-            ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
-            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-        ]"
-        @click="switchTab(tab)"
-      >
-        {{ tab.replace('-', ' ') }}
-      </button>
+    <!-- Tabs (responsive: horizontal scroll on small screens) -->
+    <div class="overflow-x-auto pb-px -mx-1 px-1">
+      <div class="flex flex-nowrap gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          v-for="tab in ['overview', 'blocklists', 'filters', 'rewrites', 'custom-rules', 'logs']"
+          :key="tab"
+          :class="[
+            'shrink-0 whitespace-nowrap px-4 sm:px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
+            activeTab === tab
+              ? 'border-emerald-500 text-emerald-600 dark:text-emerald-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+          ]"
+          @click="switchTab(tab)"
+        >
+          {{ tab.replace('-', ' ') }}
+        </button>
+      </div>
     </div>
 
     <!-- Overview Tab -->
@@ -1312,7 +1341,7 @@ const deleteClientBan = async (clientIP) => {
 
       <div class="mt-6 space-y-4">
         <div v-if="rewrites.length === 0" class="text-center py-12 text-slate-500">
-          Henüz DNS rewrite kuralı eklenmemiş
+          No DNS rewrite rules added yet
         </div>
 
         <div v-for="rewrite in rewrites" :key="rewrite.id" class="group relative bg-slate-50 dark:bg-slate-800/50 rounded-lg p-6 hover:shadow-md transition-all border border-slate-200 dark:border-slate-700">
@@ -1405,21 +1434,22 @@ const deleteClientBan = async (clientIP) => {
         />
       </SectionTitleLineWithButton>
 
-      <!-- Search Input -->
-      <div class="mt-4 mb-6">
-        <div class="relative">
+      <!-- Search Input (server-side filter) -->
+      <div class="mt-4 mb-6 flex flex-col sm:flex-row gap-3">
+        <div class="relative flex-1">
           <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
             <BaseIcon :path="mdiMagnify" class="text-slate-400" size="20" />
           </div>
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Client IP, Domain veya Response içinde ara..."
-            class="w-full pl-10 pr-4 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+            placeholder="Search by client IP, domain or response..."
+            class="w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
+            @keyup.enter="doLogsSearch"
           />
           <div v-if="searchQuery" class="absolute inset-y-0 right-0 pr-3 flex items-center">
             <button
-              @click="searchQuery = ''"
+              @click="searchQuery = ''; logsPage = 1; fetchQueryLogs()"
               class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1428,20 +1458,25 @@ const deleteClientBan = async (clientIP) => {
             </button>
           </div>
         </div>
-        <div v-if="searchQuery" class="mt-2 text-sm text-slate-600 dark:text-slate-400">
-          {{ filteredQueryLogs.length }} sonuç bulundu ({{ queryLogs.length }} toplam)
-        </div>
+        <BaseButton
+          label="Search"
+          :icon="mdiMagnify"
+          color="info"
+          small
+          :loading="logsLoading"
+          @click="doLogsSearch"
+        />
       </div>
 
-      <div v-if="queryLogs.length === 0" class="text-center py-12">
+      <div v-if="!logsLoading && queryLogs.length === 0 && logsTotal === 0" class="text-center py-12">
         <BaseIcon :path="mdiChartLine" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500">No query logs available</p>
       </div>
 
-      <div v-else-if="searchQuery && filteredQueryLogs.length === 0" class="text-center py-12">
+      <div v-else-if="!logsLoading && searchQuery && logsTotal === 0" class="text-center py-12">
         <BaseIcon :path="mdiMagnify" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500">Arama için sonuç bulunamadı</p>
-        <p class="text-sm text-slate-400 mt-2">"{{ searchQuery }}" için eşleşen log yok</p>
+        <p class="text-slate-500">No results for search</p>
+        <p class="text-sm text-slate-400 mt-2">No logs matching "{{ searchQuery }}"</p>
       </div>
 
       <div v-else class="mt-4 overflow-x-auto">
@@ -1459,7 +1494,7 @@ const deleteClientBan = async (clientIP) => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="log in filteredQueryLogs" :key="log.id" class="border-b border-slate-100 dark:border-slate-800">
+            <tr v-for="log in queryLogs" :key="log.id" class="border-b border-slate-100 dark:border-slate-800">
               <td class="py-3 text-xs">{{ formatDate(log.created_at) }}</td>
               <td class="py-3 font-medium">{{ log.client_ip }}</td>
               <td class="py-3 font-mono text-xs truncate max-w-xs">{{ log.domain }}</td>
@@ -1472,7 +1507,7 @@ const deleteClientBan = async (clientIP) => {
                 >
                   {{ log.response.length > 40 ? log.response.substring(0, 40) + '...' : log.response }}
                   
-                  <!-- Tooltip (hover'da görünür) -->
+                  <!-- Tooltip (visible on hover) -->
                   <span 
                     v-if="log.response.length > 40"
                     class="invisible group-hover:visible absolute z-50 left-0 top-full mt-1 px-3 py-2 bg-slate-800 dark:bg-slate-700 text-white text-xs rounded-lg shadow-xl max-w-sm break-all whitespace-normal pointer-events-none"
@@ -1584,6 +1619,43 @@ const deleteClientBan = async (clientIP) => {
             </tr>
           </tbody>
         </table>
+      </div>
+
+      <!-- Pagination -->
+      <div v-if="logsTotal > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
+        <div class="flex flex-wrap items-center gap-3">
+          <span class="text-sm text-slate-700 dark:text-slate-300">Showing {{ logsPaginationInfo }}</span>
+          <select
+            v-model.number="logsLimit"
+            @change="setLogsLimit(logsLimit)"
+            class="text-sm border border-slate-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+          >
+            <option :value="25">25</option>
+            <option :value="50">50</option>
+            <option :value="100">100</option>
+            <option :value="500">500</option>
+          </select>
+          <span class="text-sm text-slate-500 dark:text-slate-400">per page</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <BaseButton
+            :icon="mdiChevronLeft"
+            color="lightDark"
+            small
+            :disabled="logsPage === 1"
+            @click="goToLogsPage(logsPage - 1)"
+          />
+          <span class="text-sm text-slate-600 dark:text-slate-400 px-2">
+            Page {{ logsPage }} / {{ logsTotalPages }}
+          </span>
+          <BaseButton
+            :icon="mdiChevronRight"
+            color="lightDark"
+            small
+            :disabled="logsPage >= logsTotalPages"
+            @click="goToLogsPage(logsPage + 1)"
+          />
+        </div>
       </div>
     </CardBox>
 
@@ -1791,8 +1863,8 @@ const deleteClientBan = async (clientIP) => {
           placeholder="1.1.1.1:53&#10;8.8.8.8:53"
         />
         <p class="text-xs text-gray-500 mt-1">
-          DNS sunucularının yönlendirileceği upstream DNS sunucuları. 
-          Varsayılan: Cloudflare (1.1.1.1), Google (8.8.8.8), Quad9 (9.9.9.9)
+          Upstream DNS servers to forward queries to. 
+          Default: Cloudflare (1.1.1.1), Google (8.8.8.8), Quad9 (9.9.9.9)
         </p>
       </FormField>
 
@@ -1944,53 +2016,53 @@ const deleteClientBan = async (clientIP) => {
     <!-- Add DNS Rewrite Modal -->
     <CardBoxModal
       v-model="isAddRewriteModalActive"
-      title="DNS Rewrite Ekle"
+      title="Add DNS Rewrite"
       has-cancel
-      button-label="Ekle"
+      button-label="Add"
       @confirm="addRewrite"
     >
       <div class="space-y-4">
         <!-- Domain Field with Info -->
-        <FormField label="Alan Adı (Domain)">
-          <FormControl v-model="newRewrite.domain" placeholder="example.org veya *.example.org" required />
+        <FormField label="Domain Name">
+          <FormControl v-model="newRewrite.domain" placeholder="example.org or *.example.org" required />
           <div class="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-700 dark:text-blue-300">
-            <div class="font-medium mb-1">Örnekler:</div>
+            <div class="font-medium mb-1">Examples:</div>
             <ul class="list-disc list-inside space-y-1 text-xs">
-              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">example.org</code> - Sadece bu domain</li>
-              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">*.example.org</code> - Tüm subdomain'ler (api.example.org, cdn.example.org, vb.)</li>
+              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">example.org</code> - This domain only</li>
+              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">*.example.org</code> - All subdomains (api.example.org, cdn.example.org, etc.)</li>
             </ul>
           </div>
         </FormField>
 
         <!-- Answer/Target Field with Info -->
-        <FormField label="Hedef (IP Adresi / Domain)">
-          <FormControl v-model="newRewrite.answer" placeholder="192.168.1.1 veya target.example.com" required />
+        <FormField label="Target (IP Address / Domain)">
+          <FormControl v-model="newRewrite.answer" placeholder="192.168.1.1 or target.example.com" required />
           <div class="mt-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-sm text-emerald-700 dark:text-emerald-300">
-            <div class="font-medium mb-1">Kullanım:</div>
+            <div class="font-medium mb-1">Usage:</div>
             <ul class="list-disc list-inside space-y-1 text-xs">
-              <li><strong>IP Adresi:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">192.168.1.100</code> - Bu IP'ye yönlendir</li>
-              <li><strong>Domain:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">real.example.com</code> - CNAME kaydı oluştur</li>
-              <li><strong>Özel:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">A</code> - Upstream'den gelen A kayıtlarını koru</li>
-              <li><strong>Özel:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">AAAA</code> - Upstream'den gelen AAAA kayıtlarını koru</li>
+              <li><strong>IP Address:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">192.168.1.100</code> - Resolve to this IP</li>
+              <li><strong>Domain:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">real.example.com</code> - Create CNAME record</li>
+              <li><strong>Special:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">A</code> - Preserve A records from upstream</li>
+              <li><strong>Special:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">AAAA</code> - Preserve AAAA records from upstream</li>
             </ul>
           </div>
         </FormField>
 
         <!-- Type Field -->
-        <FormField label="Kayıt Tipi">
+        <FormField label="Record Type">
           <select v-model="newRewrite.type" class="w-full px-3 py-2 border dark:border-slate-600 rounded bg-white dark:bg-slate-800">
             <option value="A">A (IPv4)</option>
             <option value="AAAA">AAAA (IPv6)</option>
             <option value="CNAME">CNAME (Alias)</option>
           </select>
           <div class="mt-1 text-xs text-slate-500">
-            IP adresi için A/AAAA, domain için CNAME seçin
+            Choose A/AAAA for IP address, CNAME for domain
           </div>
         </FormField>
 
         <!-- Comment Field -->
-        <FormField label="Açıklama (Opsiyonel)">
-          <FormControl v-model="newRewrite.comment" placeholder="Bu rewrite kuralı hakkında not..." />
+        <FormField label="Description (Optional)">
+          <FormControl v-model="newRewrite.comment" placeholder="Note about this rewrite rule..." />
         </FormField>
 
         <!-- Enabled Checkbox -->
@@ -1999,7 +2071,7 @@ const deleteClientBan = async (clientIP) => {
             v-model="newRewrite.enabled"
             name="rewrite_enabled"
             type="checkbox"
-            label="Kuralı aktif et"
+            label="Enable rule"
           />
         </FormField>
       </div>
@@ -2008,21 +2080,21 @@ const deleteClientBan = async (clientIP) => {
     <!-- Edit DNS Rewrite Modal -->
     <CardBoxModal
       v-model="isEditRewriteModalActive"
-      title="DNS Rewrite Düzenle"
+      title="Edit DNS Rewrite"
       has-cancel
-      button-label="Güncelle"
+      button-label="Update"
       @confirm="updateRewrite"
     >
       <div v-if="editingRewrite" class="space-y-4">
-        <FormField label="Alan Adı (Domain)">
-          <FormControl v-model="editingRewrite.domain" placeholder="example.org veya *.example.org" required />
+        <FormField label="Domain Name">
+          <FormControl v-model="editingRewrite.domain" placeholder="example.org or *.example.org" required />
         </FormField>
 
-        <FormField label="Hedef (IP Adresi / Domain)">
-          <FormControl v-model="editingRewrite.answer" placeholder="192.168.1.1 veya target.example.com" required />
+        <FormField label="Target (IP Address / Domain)">
+          <FormControl v-model="editingRewrite.answer" placeholder="192.168.1.1 or target.example.com" required />
         </FormField>
 
-        <FormField label="Kayıt Tipi">
+        <FormField label="Record Type">
           <select v-model="editingRewrite.type" class="w-full px-3 py-2 border dark:border-slate-600 rounded bg-white dark:bg-slate-800">
             <option value="A">A (IPv4)</option>
             <option value="AAAA">AAAA (IPv6)</option>
@@ -2030,8 +2102,8 @@ const deleteClientBan = async (clientIP) => {
           </select>
         </FormField>
 
-        <FormField label="Açıklama (Opsiyonel)">
-          <FormControl v-model="editingRewrite.comment" placeholder="Bu rewrite kuralı hakkında not..." />
+        <FormField label="Description (Optional)">
+          <FormControl v-model="editingRewrite.comment" placeholder="Note about this rewrite rule..." />
         </FormField>
 
         <FormField label="Durum">
@@ -2039,7 +2111,7 @@ const deleteClientBan = async (clientIP) => {
             v-model="editingRewrite.enabled"
             name="edit_rewrite_enabled"
             type="checkbox"
-            label="Kuralı aktif et"
+            label="Enable rule"
           />
         </FormField>
       </div>
@@ -2072,7 +2144,7 @@ const deleteClientBan = async (clientIP) => {
         </p>
       </div>
       <p class="text-xs text-slate-500 mt-2">
-        Metni seçip kopyalayabilirsiniz (Ctrl+C / Cmd+C)
+        You can select and copy the text (Ctrl+C / Cmd+C)
       </p>
     </CardBoxModal>
   </div>

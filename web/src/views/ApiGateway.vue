@@ -9,6 +9,7 @@ import FormField from "@/components/FormField.vue";
 import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
 
 import ApiService from "@/services/ApiService";
+import { useToast } from "vue-toastification";
 import {
   mdiCertificate,
   mdiChartLine,
@@ -32,6 +33,8 @@ import {
   mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
+
+const toast = useToast();
 
 // Reactive state
 const loading = ref(false)
@@ -104,15 +107,25 @@ const newRoute = ref({
   rate_limit_window: 60,
   auth_required: false,
   auth_type: '',
+  auth_headers: [],
   observability_enabled: true,
-  enabled: true
+  enabled: true,
+  cors: {
+    enabled: false,
+    allow_origins: '',
+    allow_methods: 'GET, POST, PUT, DELETE, OPTIONS',
+    allow_headers: 'Content-Type, Authorization',
+    expose_headers: '',
+    allow_credentials: false,
+    max_age: 86400
+  },
+  response_headers: []
 })
 
 const letsEncryptConfig = ref({
   enabled: false,
   email: '',
   domains: '',
-  staging: true,
   auto_renew: true,
   renew_before_days: 30
 })
@@ -391,20 +404,75 @@ const openAddRouteModal = () => {
     rate_limit_window: 60,
     auth_required: false,
     auth_type: '',
+    auth_headers: [],
     observability_enabled: true,
-    enabled: true
+    enabled: true,
+    cors: {
+      enabled: false,
+      allow_origins: '',
+      allow_methods: 'GET, POST, PUT, DELETE, OPTIONS',
+      allow_headers: 'Content-Type, Authorization',
+      expose_headers: '',
+      allow_credentials: false,
+      max_age: 86400
+    },
+    response_headers: []
   }
   isAddRouteModalActive.value = true
 }
 
+function buildCorsPayload(cors) {
+  if (!cors || !cors.enabled) return null
+  return {
+    enabled: true,
+    allow_origins: (cors.allow_origins || '').split(',').map(s => s.trim()).filter(Boolean),
+    allow_methods: (cors.allow_methods || '').split(',').map(s => s.trim().toUpperCase()).filter(Boolean),
+    allow_headers: (cors.allow_headers || '').split(',').map(s => s.trim()).filter(Boolean),
+    expose_headers: (cors.expose_headers || '').split(',').map(s => s.trim()).filter(Boolean),
+    allow_credentials: !!cors.allow_credentials,
+    max_age: parseInt(cors.max_age, 10) || 0
+  }
+}
+
+function buildResponseHeadersPayload(arr) {
+  if (!Array.isArray(arr)) return undefined
+  const out = {}
+  for (const { key, value } of arr) {
+    if (key && String(key).trim()) out[String(key).trim()] = value == null ? '' : String(value)
+  }
+  return out
+}
+
+function buildAuthHeadersPayload(arr) {
+  if (!Array.isArray(arr)) return undefined
+  const out = []
+  for (const { key, value } of arr) {
+    const k = key != null ? String(key).trim() : ''
+    if (k) out.push({ key: k, value: value == null ? '' : String(value) })
+  }
+  return out.length ? out : undefined
+}
+
+function normalizeAuthType(v) {
+  if (v == null) return ''
+  if (typeof v === 'string') return v
+  if (typeof v === 'object' && v !== null && 'value' in v) return v.value ?? ''
+  return ''
+}
+
 const addRoute = async () => {
   try {
+    const authType = normalizeAuthType(newRoute.value.auth_type)
     const routeData = {
       ...newRoute.value,
       paths: newRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: newRoute.value.methods ? newRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: newRoute.value.service_id?.value || newRoute.value.service_id
+      service_id: newRoute.value.service_id?.value || newRoute.value.service_id,
+      auth_type: authType,
+      cors: buildCorsPayload(newRoute.value.cors),
+      response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined
     }
     const response = await ApiService.apiGatewayAddRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -419,6 +487,13 @@ const addRoute = async () => {
 const openEditRouteModal = (route) => {
   const serviceId = route.service_id?.value || route.service_id
   const serviceMatch = services.value.find(s => s.id === serviceId)
+  const cors = route.cors
+  const responseHeaders = route.response_headers && typeof route.response_headers === 'object'
+    ? Object.entries(route.response_headers).map(([key, value]) => ({ key, value }))
+    : []
+  const authHeaders = Array.isArray(route.auth_headers)
+    ? route.auth_headers.map(h => ({ key: h.key || h.Key || '', value: h.value != null ? String(h.value) : (h.Value != null ? String(h.Value) : '') }))
+    : []
 
   editingRoute.value = {
     ...route,
@@ -432,19 +507,35 @@ const openEditRouteModal = (route) => {
       ? { value: serviceMatch.id, label: serviceMatch.name }
       : serviceId
         ? { value: serviceId, label: route.service_name || serviceId }
-        : null
+        : null,
+    cors: cors ? {
+      enabled: !!cors.enabled,
+      allow_origins: Array.isArray(cors.allow_origins) ? cors.allow_origins.join(', ') : (cors.allow_origins || ''),
+      allow_methods: Array.isArray(cors.allow_methods) ? cors.allow_methods.join(', ') : (cors.allow_methods || ''),
+      allow_headers: Array.isArray(cors.allow_headers) ? cors.allow_headers.join(', ') : (cors.allow_headers || ''),
+      expose_headers: Array.isArray(cors.expose_headers) ? cors.expose_headers.join(', ') : (cors.expose_headers || ''),
+      allow_credentials: !!cors.allow_credentials,
+      max_age: parseInt(cors.max_age, 10) || 0
+    } : { enabled: false, allow_origins: '', allow_methods: '', allow_headers: '', expose_headers: '', allow_credentials: false, max_age: 0 },
+    response_headers: responseHeaders,
+    auth_headers: authHeaders
   }
   isEditRouteModalActive.value = true
 }
 
 const updateRoute = async () => {
   try {
+    const authType = normalizeAuthType(editingRoute.value.auth_type)
     const routeData = {
       ...editingRoute.value,
       paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id
+      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id,
+      auth_type: authType,
+      cors: buildCorsPayload(editingRoute.value.cors),
+      response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined
     }
     const response = await ApiService.apiGatewayUpdateRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -481,7 +572,6 @@ const openLetsEncryptModal = () => {
       enabled: certificateInfo.value.lets_encrypt || false,
       email: certificateInfo.value.lets_encrypt_email || '',
       domains: (certificateInfo.value.lets_encrypt_domains || []).join(', '),
-      staging: certificateInfo.value.lets_encrypt_staging || true,
       auto_renew: certificateInfo.value.auto_renew !== false,
       renew_before_days: certificateInfo.value.renew_before_days || 30
     }
@@ -506,8 +596,11 @@ const saveLetsEncrypt = async () => {
 const requestCertificate = async () => {
   try {
     await ApiService.apiGatewayRequestCertificate()
+    toast.success('Sertifika başarıyla alındı. HTTPS kullanılabilir.')
     await loadData()
   } catch (error) {
+    const msg = error.response?.data?.msg || error.message || 'Sertifika alınamadı'
+    toast.error('Sertifika hatası: ' + msg)
     console.error('Failed to request certificate:', error)
   }
 }
@@ -794,21 +887,23 @@ onUnmounted(() => {
       </CardBox>
     </div>
 
-    <!-- Tabs -->
-    <div class="flex border-b border-gray-200 dark:border-gray-700">
-      <button
-        v-for="tab in ['overview', 'services', 'routes', 'clients', 'certificates', 'observability']"
-        :key="tab"
-        :class="[
-          'px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
-          activeTab === tab
-            ? 'border-blue-500 text-blue-600 dark:text-blue-400'
-            : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
-        ]"
-        @click="activeTab = tab"
-      >
-        {{ tab }}
-      </button>
+    <!-- Tabs (responsive: horizontal scroll on small screens) -->
+    <div class="overflow-x-auto pb-px -mx-1 px-1">
+      <div class="flex flex-nowrap gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-700">
+        <button
+          v-for="tab in ['overview', 'services', 'routes', 'clients', 'certificates', 'observability']"
+          :key="tab"
+          :class="[
+            'shrink-0 whitespace-nowrap px-4 sm:px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
+            activeTab === tab
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
+          ]"
+          @click="activeTab = tab"
+        >
+          {{ tab }}
+        </button>
+      </div>
     </div>
 
     <!-- Overview Tab -->
@@ -1173,7 +1268,7 @@ onUnmounted(() => {
               Rate Limited
             </span>
             <span v-if="route.auth_required" class="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs rounded">
-              Auth: {{ route.auth_type }}
+              Auth: {{ route.auth_type }}{{ route.auth_type === 'header' && (route.auth_headers?.length) ? ` (${route.auth_headers.length})` : '' }}
             </span>
             <span v-if="route.strip_path" class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded">
               Strip Path
@@ -1299,6 +1394,9 @@ onUnmounted(() => {
                 @click="requestCertificate"
               />
             </div>
+            <p v-if="!certificateInfo.lets_encrypt || !certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+              Sertifika almak için önce "Configure Let's Encrypt" ile e-posta ve domain ekleyip kaydedin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
+            </p>
           </div>
         </div>
       </div>
@@ -1501,6 +1599,26 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
         </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField>
+            <FormCheckRadio v-model="newRoute.auth_required" label="Require Auth" name="new_route_auth" />
+          </FormField>
+          <FormField v-if="newRoute.auth_required" label="Auth Type">
+            <FormControl v-model="newRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
+          </FormField>
+        </div>
+        <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'header'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Required headers</h4>
+            <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value. Add one or more (e.g. X-API-Key).</p>
+            <div v-for="(entry, idx) in newRoute.auth_headers" :key="'ah-' + idx" class="flex gap-2 items-end mb-2">
+              <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
+              <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
+              <BaseButton label="" color="danger" small @click="newRoute.auth_headers.splice(idx, 1)" :icon="mdiDelete" />
+            </div>
+            <BaseButton label="Add header" color="info" small @click="newRoute.auth_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          </div>
+        </template>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
           <FormField label="Requests">
             <FormControl v-model="newRoute.rate_limit_requests" type="number" placeholder="100" />
@@ -1508,6 +1626,44 @@ onUnmounted(() => {
           <FormField label="Window (seconds)">
             <FormControl v-model="newRoute.rate_limit_window" type="number" placeholder="60" />
           </FormField>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">CORS (per route)</h4>
+          <p class="text-xs text-slate-500 mb-2">Applied to OPTIONS preflight and all responses (including WebSocket upgrade).</p>
+          <FormField>
+            <FormCheckRadio v-model="newRoute.cors.enabled" label="Enable CORS" name="new_route_cors" />
+          </FormField>
+          <template v-if="newRoute.cors.enabled">
+            <FormField label="Allow Origins (comma-separated)">
+              <FormControl v-model="newRoute.cors.allow_origins" placeholder="* or https://app.example.com" />
+            </FormField>
+            <FormField label="Allow Methods">
+              <FormControl v-model="newRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
+            </FormField>
+            <FormField label="Allow Headers">
+              <FormControl v-model="newRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
+            </FormField>
+            <FormField label="Expose Headers (optional)">
+              <FormControl v-model="newRoute.cors.expose_headers" placeholder="X-Request-Id" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField>
+                <FormCheckRadio v-model="newRoute.cors.allow_credentials" label="Allow Credentials" name="new_cors_creds" />
+              </FormField>
+              <FormField label="Max-Age (seconds)">
+                <FormControl v-model.number="newRoute.cors.max_age" type="number" placeholder="86400" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Additional response headers</h4>
+          <div v-for="(entry, idx) in newRoute.response_headers" :key="'rh-' + idx" class="flex gap-2 items-end mb-2">
+            <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
+            <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
+            <BaseButton label="" color="danger" small @click="newRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+          </div>
+          <BaseButton label="Add header" color="info" small @click="newRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
         </div>
       </div>
     </CardBoxModal>
@@ -1530,9 +1686,6 @@ onUnmounted(() => {
         </FormField>
         <FormField label="Domains (comma-separated)">
           <FormControl v-model="letsEncryptConfig.domains" placeholder="example.com, www.example.com" />
-        </FormField>
-        <FormField>
-          <FormCheckRadio v-model="letsEncryptConfig.staging" label="Use Staging Server (for testing)" name="le_staging" />
         </FormField>
         <FormField>
           <FormCheckRadio v-model="letsEncryptConfig.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
@@ -1684,6 +1837,21 @@ onUnmounted(() => {
             <FormCheckRadio v-model="editingRoute.auth_required" label="Require Auth" name="edit_auth" />
           </FormField>
         </div>
+        <FormField v-if="editingRoute.auth_required" label="Auth Type">
+          <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
+        </FormField>
+        <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'header'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Required headers</h4>
+            <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value.</p>
+            <div v-for="(entry, idx) in (editingRoute.auth_headers || [])" :key="'eah-' + idx" class="flex gap-2 items-end mb-2">
+              <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
+              <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
+              <BaseButton label="" color="danger" small @click="(editingRoute.auth_headers || []).splice(idx, 1)" :icon="mdiDelete" />
+            </div>
+            <BaseButton label="Add header" color="info" small @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" :icon="mdiPlus" />
+          </div>
+        </template>
         <div v-if="editingRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
           <FormField label="Requests">
             <FormControl v-model="editingRoute.rate_limit_requests" type="number" placeholder="100" />
@@ -1691,6 +1859,44 @@ onUnmounted(() => {
           <FormField label="Window (seconds)">
             <FormControl v-model="editingRoute.rate_limit_window" type="number" placeholder="60" />
           </FormField>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">CORS (per route)</h4>
+          <p class="text-xs text-slate-500 mb-2">Applied to OPTIONS preflight and all responses (including WebSocket upgrade).</p>
+          <FormField>
+            <FormCheckRadio v-model="editingRoute.cors.enabled" label="Enable CORS" name="edit_route_cors" />
+          </FormField>
+          <template v-if="editingRoute.cors && editingRoute.cors.enabled">
+            <FormField label="Allow Origins (comma-separated)">
+              <FormControl v-model="editingRoute.cors.allow_origins" placeholder="* or https://app.example.com" />
+            </FormField>
+            <FormField label="Allow Methods">
+              <FormControl v-model="editingRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
+            </FormField>
+            <FormField label="Allow Headers">
+              <FormControl v-model="editingRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
+            </FormField>
+            <FormField label="Expose Headers (optional)">
+              <FormControl v-model="editingRoute.cors.expose_headers" placeholder="X-Request-Id" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField>
+                <FormCheckRadio v-model="editingRoute.cors.allow_credentials" label="Allow Credentials" name="edit_cors_creds" />
+              </FormField>
+              <FormField label="Max-Age (seconds)">
+                <FormControl v-model.number="editingRoute.cors.max_age" type="number" placeholder="86400" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Additional response headers</h4>
+          <div v-for="(entry, idx) in editingRoute.response_headers" :key="'erh-' + idx" class="flex gap-2 items-end mb-2">
+            <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
+            <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
+            <BaseButton label="" color="danger" small @click="editingRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+          </div>
+          <BaseButton label="Add header" color="info" small @click="editingRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
         </div>
       </div>
     </CardBoxModal>

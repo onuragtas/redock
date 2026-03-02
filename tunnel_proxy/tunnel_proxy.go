@@ -34,16 +34,16 @@ func (t *TunnelProxy) CheckUser(token string) bool {
 	return t.client.CheckUser(tokenPtr(token))
 }
 
-func (t *TunnelProxy) Login(username, password string) models.Login {
-	return t.client.Login(username, password)
+func (t *TunnelProxy) Login(email, password string) models.Login {
+	return t.client.Login(email, password)
 }
 
 func (t *TunnelProxy) Logout() bool {
 	return t.client.Logout()
 }
 
-func (t *TunnelProxy) Register(username, password, email string) models.Register {
-	return t.client.Register(username, password, email)
+func (t *TunnelProxy) Register(email, password string) models.Register {
+	return t.client.Register(email, password, email)
 }
 
 func (t *TunnelProxy) ListDomain(token string) models.Domain {

@@ -21,6 +21,8 @@ import (
 	"time"
 
 	dockermanager "redock/docker-manager"
+	"redock/platform/database"
+	"redock/platform/memory"
 )
 
 var (
@@ -149,51 +151,50 @@ func parseTime(value string) time.Time {
 	return t
 }
 
+func (g *Gateway) db() *memory.Database {
+	return database.GetMemoryDB()
+}
+
 func (g *Gateway) blockListFilePath() string {
 	return filepath.Join(g.workDir, "data", "api_gateway_blocks.json")
 }
 
 func (g *Gateway) loadBlockList() {
-	path := g.blockListFilePath()
-	data, err := os.ReadFile(path)
-	if err != nil {
-		if os.IsNotExist(err) {
-			g.blockListMu.Lock()
-			g.persistentBlocks = make(map[string]BlockedClient)
-			g.blockListMu.Unlock()
+	db := g.db()
+	if db != nil {
+		all := memory.FindAll[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks)
+		now := time.Now()
+		valid := make([]BlockedClient, 0, len(all))
+		for _, e := range all {
+			if e.IP == "" {
+				continue
+			}
+			if !e.Manual && !e.BlockedUntil.IsZero() && e.BlockedUntil.Before(now) {
+				_ = memory.Delete[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, e.GetID())
+				continue
+			}
+			valid = append(valid, BlockedClient{
+				IP:           e.IP,
+				Manual:       e.Manual,
+				BlockedAt:    e.BlockedAt,
+				BlockedUntil: e.BlockedUntil,
+				Reason:       e.Reason,
+			})
 		}
+		g.blockListMu.Lock()
+		g.persistentBlocks = make(map[string]BlockedClient, len(valid))
+		for _, entry := range valid {
+			g.persistentBlocks[entry.IP] = entry
+		}
+		g.blockListMu.Unlock()
+		g.applyPersistentBlocks(valid)
 		return
 	}
-
-	var entries []BlockedClient
-	if err := json.Unmarshal(data, &entries); err != nil {
-		log.Printf("API Gateway: failed to parse block list: %v", err)
-		return
-	}
-
-	now := time.Now()
-	valid := make([]BlockedClient, 0, len(entries))
-	for _, entry := range entries {
-		if entry.IP == "" {
-			continue
-		}
-		if !entry.BlockedUntil.IsZero() && entry.BlockedUntil.Before(now) && !entry.Manual {
-			continue
-		}
-		valid = append(valid, entry)
-	}
-
 	g.blockListMu.Lock()
-	g.persistentBlocks = make(map[string]BlockedClient, len(valid))
-	for _, entry := range valid {
-		g.persistentBlocks[entry.IP] = entry
+	if g.persistentBlocks == nil {
+		g.persistentBlocks = make(map[string]BlockedClient)
 	}
 	g.blockListMu.Unlock()
-
-	g.applyPersistentBlocks(valid)
-	if len(valid) != len(entries) {
-		g.writeBlockList(valid)
-	}
 }
 
 func (g *Gateway) applyPersistentBlocks(entries []BlockedClient) {
@@ -222,6 +223,25 @@ func (g *Gateway) persistBlockEntry(entry BlockedClient) {
 	g.persistentBlocks[entry.IP] = entry
 	entries := g.blockMapToSliceLocked()
 	g.blockListMu.Unlock()
+
+	db := g.db()
+	if db != nil {
+		existing := memory.Where[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, "IP", entry.IP)
+		entity := &ApiGatewayBlockEntity{
+			IP:           entry.IP,
+			Manual:       entry.Manual,
+			BlockedAt:    entry.BlockedAt,
+			BlockedUntil: entry.BlockedUntil,
+			Reason:       entry.Reason,
+		}
+		if len(existing) > 0 {
+			entity.BaseEntity = existing[0].BaseEntity
+			_ = memory.Update(db, tableApiGatewayBlocks, entity)
+		} else {
+			_ = memory.Create(db, tableApiGatewayBlocks, entity)
+		}
+		return
+	}
 	g.writeBlockList(entries)
 }
 
@@ -241,6 +261,15 @@ func (g *Gateway) removePersistentBlock(ip string) {
 	delete(g.persistentBlocks, ip)
 	entries := g.blockMapToSliceLocked()
 	g.blockListMu.Unlock()
+
+	db := g.db()
+	if db != nil {
+		existing := memory.Where[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, "IP", ip)
+		for _, e := range existing {
+			_ = memory.Delete[*ApiGatewayBlockEntity](db, tableApiGatewayBlocks, e.GetID())
+		}
+		return
+	}
 	g.writeBlockList(entries)
 }
 
@@ -259,6 +288,9 @@ func (g *Gateway) blockMapToSliceLocked() []BlockedClient {
 }
 
 func (g *Gateway) writeBlockList(entries []BlockedClient) {
+	if g.db() != nil {
+		return
+	}
 	path := g.blockListFilePath()
 	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		log.Printf("API Gateway: failed to create block list directory: %v", err)
@@ -319,12 +351,9 @@ func NewGateway(workDir string) *Gateway {
 	return g
 }
 
-// loadConfig loads the gateway configuration from file
+// loadConfig loads the gateway configuration from memory DB or (fallback) file
 func (g *Gateway) loadConfig() {
-	configPath := g.workDir + "/data/api_gateway.json"
-	file, err := os.ReadFile(configPath)
-	if err != nil {
-		// Default configuration
+	defaultConfig := func() {
 		g.config = &GatewayConfig{
 			HTTPPort:         8080,
 			HTTPSPort:        8081,
@@ -334,28 +363,45 @@ func (g *Gateway) loadConfig() {
 			Enabled:          false,
 			Services:         []Service{},
 			Routes:           []Route{},
+			UDPRoutes:        []UDPRoute{},
+			TCPRoutes:        []TCPRoute{},
 			ClientSecurity:   defaultClientSecurityConfig(),
 		}
 		g.refreshClientSecurity()
 		g.loadBlockList()
+	}
+
+	db := g.db()
+	if db != nil {
+		list := memory.FindAll[*ApiGatewayConfigEntity](db, tableApiGatewayConfig)
+		if len(list) > 0 && list[0].ConfigJSON != "" {
+			var config GatewayConfig
+			if err := json.Unmarshal([]byte(list[0].ConfigJSON), &config); err != nil {
+				log.Printf("API Gateway: Error parsing config from memory: %v", err)
+				defaultConfig()
+				return
+			}
+			g.config = &config
+			g.refreshClientSecurity()
+			g.loadBlockList()
+			g.refreshServicesAndRoutes()
+			return
+		}
+		defaultConfig()
+		return
+	}
+
+	configPath := g.workDir + "/data/api_gateway.json"
+	file, err := os.ReadFile(configPath)
+	if err != nil {
+		defaultConfig()
 		return
 	}
 
 	var config GatewayConfig
 	if err := json.Unmarshal(file, &config); err != nil {
 		log.Printf("API Gateway: Error parsing config: %v", err)
-		g.config = &GatewayConfig{
-			HTTPPort:         8080,
-			HTTPSPort:        8081,
-			HTTPSEnabled:     false,
-			LogLevel:         "info",
-			AccessLogEnabled: true,
-			Enabled:          false,
-			Services:         []Service{},
-			Routes:           []Route{},
-		}
-		g.refreshClientSecurity()
-		g.loadBlockList()
+		defaultConfig()
 		return
 	}
 
@@ -373,15 +419,27 @@ func (g *Gateway) SaveConfig() error {
 	return g.saveConfigLocked()
 }
 
-// saveConfigLocked saves the configuration without acquiring a lock (caller must hold lock)
+// saveConfigLocked saves the configuration to memory DB or (fallback) file
 func (g *Gateway) saveConfigLocked() error {
-	configPath := g.workDir + "/data/api_gateway.json"
-	data, err := json.MarshalIndent(g.config, "", "  ")
+	data, err := json.Marshal(g.config)
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(configPath, data, 0644)
+	db := g.db()
+	if db != nil {
+		list := memory.FindAll[*ApiGatewayConfigEntity](db, tableApiGatewayConfig)
+		if len(list) > 0 {
+			list[0].ConfigJSON = string(data)
+			return memory.Update(db, tableApiGatewayConfig, list[0])
+		}
+		entity := &ApiGatewayConfigEntity{ConfigJSON: string(data)}
+		return memory.Create(db, tableApiGatewayConfig, entity)
+	}
+
+	configPath := g.workDir + "/data/api_gateway.json"
+	indented, _ := json.MarshalIndent(g.config, "", "  ")
+	return os.WriteFile(configPath, indented, 0644)
 }
 
 // refreshServicesAndRoutes refreshes internal maps from config
@@ -426,6 +484,24 @@ func (g *Gateway) GetConfig() *GatewayConfig {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
 	return g.config
+}
+
+// GetConfigCopy returns a deep copy of the current config (for building merged config then UpdateConfig).
+func (g *Gateway) GetConfigCopy() *GatewayConfig {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil {
+		return nil
+	}
+	data, err := json.Marshal(g.config)
+	if err != nil {
+		return nil
+	}
+	var copy GatewayConfig
+	if err := json.Unmarshal(data, &copy); err != nil {
+		return nil
+	}
+	return &copy
 }
 
 // UpdateConfig updates the gateway configuration
@@ -503,37 +579,60 @@ func (g *Gateway) startLocked() error {
 		}
 	}()
 
-	// Start HTTPS if enabled
+	// Start HTTPS if enabled. Use GetCertificate so renewed certs are picked up without restart.
 	if g.config.HTTPSEnabled && g.config.TLSCertFile != "" && g.config.TLSKeyFile != "" {
-		cert, err := tls.LoadX509KeyPair(g.config.TLSCertFile, g.config.TLSKeyFile)
+		g.tlsConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+			GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+				g.mu.RLock()
+				certFile := g.config.TLSCertFile
+				keyFile := g.config.TLSKeyFile
+				g.mu.RUnlock()
+				if certFile == "" || keyFile == "" {
+					return nil, fmt.Errorf("TLS cert/key not configured")
+				}
+				cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+				if err != nil {
+					log.Printf("API Gateway: TLS certificate load failed (cert=%s): %v", certFile, err)
+					return nil, err
+				}
+				return &cert, nil
+			},
+		}
+
+		g.httpsServer = &http.Server{
+			Handler:      mux,
+			TLSConfig:    g.tlsConfig,
+			ReadTimeout:  30 * time.Second,
+			WriteTimeout: 30 * time.Second,
+			IdleTimeout:  60 * time.Second,
+		}
+
+		httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
+		g.httpsListener, err = tls.Listen("tcp", httpsAddr, g.tlsConfig)
 		if err != nil {
-			log.Printf("API Gateway: Failed to load TLS certificates: %v", err)
+			log.Printf("API Gateway: Failed to listen on %s: %v", httpsAddr, err)
 		} else {
-			g.tlsConfig = &tls.Config{
-				Certificates: []tls.Certificate{cert},
-				MinVersion:   tls.VersionTLS12,
-			}
+			go func() {
+				log.Printf("API Gateway: HTTPS server listening on %s", httpsAddr)
+				if err := g.httpsServer.Serve(g.httpsListener); err != nil && err != http.ErrServerClosed {
+					log.Printf("API Gateway: HTTPS server error: %v", err)
+				}
+			}()
+		}
+	}
 
-			g.httpsServer = &http.Server{
-				Handler:      mux,
-				TLSConfig:    g.tlsConfig,
-				ReadTimeout:  30 * time.Second,
-				WriteTimeout: 30 * time.Second,
-				IdleTimeout:  60 * time.Second,
-			}
+	// Start UDP route listeners
+	for _, r := range g.config.UDPRoutes {
+		if r.Enabled {
+			go g.runUDPRoute(r, g.stopChan)
+		}
+	}
 
-			httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
-			g.httpsListener, err = tls.Listen("tcp", httpsAddr, g.tlsConfig)
-			if err != nil {
-				log.Printf("API Gateway: Failed to listen on %s: %v", httpsAddr, err)
-			} else {
-				go func() {
-					log.Printf("API Gateway: HTTPS server listening on %s", httpsAddr)
-					if err := g.httpsServer.Serve(g.httpsListener); err != nil && err != http.ErrServerClosed {
-						log.Printf("API Gateway: HTTPS server error: %v", err)
-					}
-				}()
-			}
+	// Start TCP route listeners
+	for _, r := range g.config.TCPRoutes {
+		if r.Enabled {
+			go g.runTCPRoute(r, g.stopChan)
 		}
 	}
 
@@ -572,12 +671,16 @@ func (g *Gateway) stopLocked() error {
 		if err := g.httpServer.Shutdown(ctx); err != nil {
 			log.Printf("API Gateway: HTTP server shutdown error: %v", err)
 		}
+		g.httpServer = nil
+		g.httpListener = nil
 	}
 
 	if g.httpsServer != nil {
 		if err := g.httpsServer.Shutdown(ctx); err != nil {
 			log.Printf("API Gateway: HTTPS server shutdown error: %v", err)
 		}
+		g.httpsServer = nil
+		g.httpsListener = nil
 	}
 
 	g.running = false
@@ -675,6 +778,14 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	matchedRoute = true
 	routeID = route.ID
 	routeName = route.Name
+
+	// OPTIONS preflight: respond with route CORS headers and 204 without proxying
+	if r.Method == http.MethodOptions && route.CORS != nil && route.CORS.Enabled {
+		applyCORSHeaders(lw.Header(), r.Header.Get("Origin"), route.CORS)
+		lw.WriteHeader(http.StatusNoContent)
+		g.logRequest(r, http.StatusNoContent, startTime, routeID, routeName, "", "", g.isRouteObservabilityEnabled(route), "", reqInfo, lw.LogInfo())
+		return
+	}
 
 	routeObservability := g.isRouteObservabilityEnabled(route)
 
@@ -990,6 +1101,52 @@ func matchWildcard(pattern, value string) bool {
 	return pattern == value
 }
 
+// applyCORSHeaders sets CORS response headers on the given header map.
+// origin is the request's Origin header; if empty, Allow-Origin may still be set to *.
+func applyCORSHeaders(h http.Header, origin string, cors *CORSConfig) {
+	if cors == nil || !cors.Enabled {
+		return
+	}
+	allowOrigin := ""
+	for _, o := range cors.AllowOrigins {
+		if o == "*" {
+			if !cors.AllowCredentials {
+				allowOrigin = "*"
+			}
+			break
+		}
+		if origin != "" && (o == origin || matchWildcard(o, origin)) {
+			allowOrigin = origin
+			break
+		}
+	}
+	if allowOrigin != "" {
+		h.Set("Access-Control-Allow-Origin", allowOrigin)
+	}
+	if len(cors.AllowMethods) > 0 {
+		h.Set("Access-Control-Allow-Methods", strings.Join(cors.AllowMethods, ", "))
+	}
+	if len(cors.AllowHeaders) > 0 {
+		h.Set("Access-Control-Allow-Headers", strings.Join(cors.AllowHeaders, ", "))
+	}
+	if len(cors.ExposeHeaders) > 0 {
+		h.Set("Access-Control-Expose-Headers", strings.Join(cors.ExposeHeaders, ", "))
+	}
+	if cors.AllowCredentials {
+		h.Set("Access-Control-Allow-Credentials", "true")
+	}
+	if cors.MaxAge > 0 {
+		h.Set("Access-Control-Max-Age", fmt.Sprintf("%d", cors.MaxAge))
+	}
+}
+
+// applyResponseHeaders adds custom response headers to the given header map.
+func applyResponseHeaders(h http.Header, headers map[string]string) {
+	for k, v := range headers {
+		h.Set(k, v)
+	}
+}
+
 // proxyRequest forwards the request to the upstream service
 func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service) error {
 	// Build target URL
@@ -1085,6 +1242,16 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	}
 
+	// Add route CORS and response headers to every proxied response (including WebSocket 101 upgrade)
+	origin := r.Header.Get("Origin")
+	corsCfg := route.CORS
+	respHeaders := route.ResponseHeaders
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		applyCORSHeaders(resp.Header, origin, corsCfg)
+		applyResponseHeaders(resp.Header, respHeaders)
+		return nil
+	}
+
 	proxy.ServeHTTP(w, r)
 	return proxyErr
 }
@@ -1121,8 +1288,6 @@ func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
 		if !ok {
 			return false
 		}
-		// For now, just check that credentials are provided
-		// In a real implementation, this would validate against a database
 		return username != "" && password != ""
 
 	case "jwt":
@@ -1130,23 +1295,33 @@ func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
 		if authHeader == "" {
 			return false
 		}
-		// Check if it starts with "Bearer "
 		if !strings.HasPrefix(authHeader, "Bearer ") {
 			return false
 		}
-		// For now, just check that a token is provided
-		// In a real implementation, this would validate the JWT
 		token := strings.TrimPrefix(authHeader, "Bearer ")
 		return token != ""
 
-	case "api-key":
-		apiKey := r.Header.Get("X-API-Key")
-		if apiKey == "" {
-			apiKey = r.URL.Query().Get("api_key")
+	case "header":
+		if len(route.AuthHeaders) == 0 {
+			return false
 		}
-		// For now, just check that an API key is provided
-		// In a real implementation, this would validate against a database
-		return apiKey != ""
+		for _, h := range route.AuthHeaders {
+			key := strings.TrimSpace(h.Key)
+			if key == "" {
+				continue
+			}
+			got := r.Header.Get(key)
+			if h.Value == "" {
+				if got == "" {
+					return false
+				}
+				continue
+			}
+			if got != h.Value {
+				return false
+			}
+		}
+		return true
 
 	default:
 		return true
@@ -1764,6 +1939,7 @@ func (g *Gateway) UpdateRoute(route Route) error {
 		if r.ID == route.ID {
 			g.config.Routes[i] = route
 			g.refreshRoutes()
+			g.clearRouteCache()
 			return g.saveConfigLocked()
 		}
 	}
@@ -1787,6 +1963,104 @@ func (g *Gateway) DeleteRoute(routeID string) error {
 	return fmt.Errorf("route with ID %s not found", routeID)
 }
 
+// ListUDPRoutes returns all UDP routes from the current config.
+func (g *Gateway) ListUDPRoutes() []UDPRoute {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil || len(g.config.UDPRoutes) == 0 {
+		return nil
+	}
+	out := make([]UDPRoute, len(g.config.UDPRoutes))
+	copy(out, g.config.UDPRoutes)
+	return out
+}
+
+// AddUDPRoute adds a new UDP route and restarts the gateway if running.
+func (g *Gateway) AddUDPRoute(route UDPRoute) error {
+	g.mu.RLock()
+	for _, r := range g.config.UDPRoutes {
+		if r.ID == route.ID {
+			g.mu.RUnlock()
+			return fmt.Errorf("UDP route with ID %s already exists", route.ID)
+		}
+	}
+	if _, ok := g.services[route.ServiceID]; !ok {
+		g.mu.RUnlock()
+		return fmt.Errorf("service %s not found", route.ServiceID)
+	}
+	cfgCopy := *g.config
+	cfgCopy.UDPRoutes = make([]UDPRoute, len(g.config.UDPRoutes)+1)
+	copy(cfgCopy.UDPRoutes, g.config.UDPRoutes)
+	cfgCopy.UDPRoutes[len(cfgCopy.UDPRoutes)-1] = route
+	g.mu.RUnlock()
+
+	return g.UpdateConfig(&cfgCopy)
+}
+
+// RemoveUDPRoute removes a UDP route by ID and restarts the gateway if running.
+func (g *Gateway) RemoveUDPRoute(routeID string) error {
+	g.mu.RLock()
+	for i, r := range g.config.UDPRoutes {
+		if r.ID == routeID {
+			cfgCopy := *g.config
+			cfgCopy.UDPRoutes = append(append([]UDPRoute{}, g.config.UDPRoutes[:i]...), g.config.UDPRoutes[i+1:]...)
+			g.mu.RUnlock()
+			return g.UpdateConfig(&cfgCopy)
+		}
+	}
+	g.mu.RUnlock()
+	return fmt.Errorf("UDP route with ID %s not found", routeID)
+}
+
+// ListTCPRoutes returns all TCP routes from the current config.
+func (g *Gateway) ListTCPRoutes() []TCPRoute {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil || len(g.config.TCPRoutes) == 0 {
+		return nil
+	}
+	out := make([]TCPRoute, len(g.config.TCPRoutes))
+	copy(out, g.config.TCPRoutes)
+	return out
+}
+
+// AddTCPRoute adds a new TCP route and restarts the gateway if running.
+func (g *Gateway) AddTCPRoute(route TCPRoute) error {
+	g.mu.RLock()
+	for _, r := range g.config.TCPRoutes {
+		if r.ID == route.ID {
+			g.mu.RUnlock()
+			return fmt.Errorf("TCP route with ID %s already exists", route.ID)
+		}
+	}
+	if _, ok := g.services[route.ServiceID]; !ok {
+		g.mu.RUnlock()
+		return fmt.Errorf("service %s not found", route.ServiceID)
+	}
+	cfgCopy := *g.config
+	cfgCopy.TCPRoutes = make([]TCPRoute, len(g.config.TCPRoutes)+1)
+	copy(cfgCopy.TCPRoutes, g.config.TCPRoutes)
+	cfgCopy.TCPRoutes[len(cfgCopy.TCPRoutes)-1] = route
+	g.mu.RUnlock()
+
+	return g.UpdateConfig(&cfgCopy)
+}
+
+// RemoveTCPRoute removes a TCP route by ID and restarts the gateway if running.
+func (g *Gateway) RemoveTCPRoute(routeID string) error {
+	g.mu.RLock()
+	for i, r := range g.config.TCPRoutes {
+		if r.ID == routeID {
+			cfgCopy := *g.config
+			cfgCopy.TCPRoutes = append(append([]TCPRoute{}, g.config.TCPRoutes[:i]...), g.config.TCPRoutes[i+1:]...)
+			g.mu.RUnlock()
+			return g.UpdateConfig(&cfgCopy)
+		}
+	}
+	g.mu.RUnlock()
+	return fmt.Errorf("TCP route with ID %s not found", routeID)
+}
+
 // refreshRoutes rebuilds and sorts the routes slice (must be called with lock held)
 func (g *Gateway) refreshRoutes() {
 	g.routes = make([]*Route, len(g.config.Routes))
@@ -1800,7 +2074,7 @@ func (g *Gateway) refreshRoutes() {
 
 // StartAll starts the gateway if configured to be enabled
 func (g *Gateway) StartAll() {
-	if g.config.Enabled && !g.running {
+	if !g.running {
 		if err := g.Start(); err != nil {
 			log.Printf("API Gateway: Failed to auto-start: %v", err)
 		}

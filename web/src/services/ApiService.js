@@ -4,6 +4,7 @@ import VueAxios from "vue-axios";
 const REDOCK_JWT_KEY = 'redock_jwt';
 const REDOCK_REFRESH_KEY = 'redock_refresh';
 const TUNNEL_TOKEN_KEY = 'tunnel_token';
+const TUNNEL_SERVER_TOKEN_KEY = 'tunnel_server_token';
 
 /**
  * @description service to call HTTP request via Axios
@@ -57,14 +58,46 @@ class ApiService {
     localStorage.removeItem(TUNNEL_TOKEN_KEY);
   }
 
+  static getTunnelServerToken() {
+    return localStorage.getItem(TUNNEL_SERVER_TOKEN_KEY) || '';
+  }
+
+  static setTunnelServerToken(token) {
+    if (token) localStorage.setItem(TUNNEL_SERVER_TOKEN_KEY, token);
+    else localStorage.removeItem(TUNNEL_SERVER_TOKEN_KEY);
+  }
+
+  static clearTunnelServerToken() {
+    localStorage.removeItem(TUNNEL_SERVER_TOKEN_KEY);
+  }
+
+  /** Federation: seçilen harici tünel sunucusu için baseURL + token (bu origin'e gitmesi gereken isteklerde kullanılmaz). */
+  static _tunnelServerContext = { baseURL: '', token: null };
+
+  static setTunnelServerContext(ctx) {
+    ApiService._tunnelServerContext = ctx || { baseURL: '', token: null };
+  }
+
+  static getTunnelServerContext() {
+    return ApiService._tunnelServerContext;
+  }
+
   static setupInterceptors() {
     ApiService.vueInstance.axios.interceptors.request.use((config) => {
+      const url = config.url || '';
       const jwt = ApiService.getJWT();
-      if (jwt) {
+      const tunnelToken = ApiService.getTunnelToken();
+      const tunnelServerToken = ApiService.getTunnelServerToken();
+      const isTunnelServerOrClient = url.includes('/tunnel/server/') || url.includes('/tunnel/client/');
+      // tunnel/server/* ve tunnel/client/* sadece Redock JWT ile
+      if (isTunnelServerOrClient && jwt) {
+        config.headers.Authorization = `Bearer ${jwt}`;
+      } else if (isTunnelServerOrClient && tunnelServerToken) {
+        config.headers.Authorization = `Bearer ${tunnelServerToken}`;
+      } else if (jwt) {
         config.headers.Authorization = `Bearer ${jwt}`;
       }
-      const tunnelToken = ApiService.getTunnelToken();
-      if (tunnelToken && (config.url || '').includes('/tunnel/')) {
+      if (tunnelToken && url.includes('/tunnel/') && !isTunnelServerOrClient) {
         config.headers['X-Tunnel-Token'] = tunnelToken;
       }
       return config;
@@ -76,8 +109,14 @@ class ApiService {
         if (!error.response || error.response.status !== 401) {
           return Promise.reject(error);
         }
-        const isTunnelRequest = (error.config?.url || '').includes('/tunnel/');
-        // Tunnel 401 = tunnel token yok; sayfada tunnel login gösterilir, Redock login'e atma.
+        const url = error.config?.url || '';
+        const isTunnelProxy = url.includes('/tunnel/client/proxy/');
+        // Internal proxy 401 = harici tünel token geçersiz; credential backend'de silindi, context temizle ki OAuth2 tekrar çalışsın
+        if (isTunnelProxy) {
+          ApiService.setTunnelServerContext(null);
+          return Promise.reject(error);
+        }
+        const isTunnelRequest = url.includes('/tunnel/');
         if (isTunnelRequest) {
           return Promise.reject(error);
         }
@@ -198,6 +237,10 @@ class ApiService {
     return await this.get('/api/v1/auth/me', { skipPrecheck: true });
   }
 
+  static async getMenus() {
+    return await this.get('/api/v1/menus');
+  }
+
   static async userInfo() {
     return await this.authMe();
   }
@@ -227,8 +270,28 @@ class ApiService {
     return await this.post('/api/v1/user/sign/in', parameters, { skipPrecheck: true });
   }
 
-  static async signUp(email, password, userRole = 'user') {
-    return await this.post('/api/v1/user/sign/up', { email, password, user_role: userRole }, { skipPrecheck: true });
+  static async signUp(email, password) {
+    return await this.post('/api/v1/user/sign/up', { email, password }, { skipPrecheck: true });
+  }
+
+  static async getUsers() {
+    return await this.get('/api/v1/users');
+  }
+
+  static async createUser(data) {
+    return await this.post('/api/v1/users', data);
+  }
+
+  static async updateUser(id, data) {
+    return await this.put(`/api/v1/users/${id}`, data);
+  }
+
+  static async deleteUser(id) {
+    return await this.delete(`/api/v1/users/${id}`);
+  }
+
+  static async getMenuOptions() {
+    return await this.get('/api/v1/users/menu-options');
   }
 
   static logout() {
@@ -359,50 +422,133 @@ class ApiService {
   }
 
   static async checkLogin() {
-    return await this.get('/api/v1/tunnel/check_login');
+    return await this.get('/api/v1/tunnel/client/check-login');
   }
 
-  static async tunnelLogin(username, password) {
-    return await this.post('/api/v1/tunnel/login', {
-      username: username,
-      password: password
+  static async tunnelLogin(email, password) {
+    return await this.post('/api/v1/tunnel/auth/login', {
+      email,
+      password
     }, { skipPrecheck: true });
   }
 
-  static async tunnelRegister(email, username, password) {
-    return await this.post('/api/v1/tunnel/register', {
-      email: email,
-      username: username,
-      password: password,
+  /** Harici tünel sunucusunda login (federation). Direkt axios, ApiService interceptor kullanılmaz. */
+  static async tunnelLoginExternal(baseURL, email, password) {
+    const base = (baseURL || '').replace(/\/$/, '');
+    return await axios.post(base + '/api/v1/tunnel/auth/login', { email, password }, {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+    });
+  }
+
+  /** Harici tünel sunucusunda kayıt (federation). Direkt axios, OAuth2 register → token alır. */
+  static async tunnelRegisterExternal(baseURL, email, password) {
+    const base = (baseURL || '').replace(/\/$/, '');
+    return await axios.post(base + '/api/v1/tunnel/auth/register', { email, password }, {
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+    });
+  }
+
+  static async tunnelRegister(email, password) {
+    return await this.post('/api/v1/tunnel/auth/register', {
+      email,
+      password
     }, { skipPrecheck: true });
   }
 
   static async tunnelLogout() {
-    return await this.get('/api/v1/tunnel/logout');
+    return await this.get('/api/v1/tunnel/client/logout');
   }
 
-  static async tunnelList() {
-    return await this.get('/api/v1/tunnel/list');
+  static async tunnelList(serverId) {
+    if (serverId) return this.get('/api/v1/tunnel/client/proxy/list', { params: { server_id: serverId } });
+    return this.get('/api/v1/tunnel/domains');
   }
 
-  static async tunnelDelete(data) {
-    return await this.post('/api/v1/tunnel/delete', data);
+  static async tunnelDelete(data, serverId) {
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/delete', { server_id: serverId, data });
+    return this.delete(`/api/v1/tunnel/domains/${data?.id ?? data?.ID}`);
   }
 
-  static async tunnelCreate(data) {
-    return await this.post('/api/v1/tunnel/add', data);
+  static async tunnelCreate(data, serverId) {
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/add', { server_id: serverId, data });
+    return this.post('/api/v1/tunnel/domains', { domain: data?.domain ?? data?.Domain, protocol: data?.protocol || 'http' });
   }
 
-  static async tunnelStart(data) {
-    return await this.post('/api/v1/tunnel/start', data);
+  // Tunnel server API (this redock as server): OAuth2 Bearer token
+  static async getCloudflareZones(accountId = null) {
+    const url = accountId
+      ? `/api/cloudflare/accounts/${accountId}/zones`
+      : '/api/cloudflare/zones';
+    return await this.get(url);
   }
 
-  static async tunnelStop(data) {
-    return await this.post('/api/v1/tunnel/stop', data);
+  static async tunnelServerGetConfig() {
+    return await this.get('/api/v1/tunnel/server/config');
   }
 
-  static async tunnelRenew(data) {
-    return await this.post('/api/v1/tunnel/renew', data);
+  static async tunnelServerUpdateConfig(data) {
+    return await this.patch('/api/v1/tunnel/server/config', data);
+  }
+
+  static async tunnelDomainsList(serverId) {
+    if (serverId) return this.get('/api/v1/tunnel/client/proxy/domains', { params: { server_id: serverId } });
+    return this.get('/api/v1/tunnel/domains');
+  }
+
+  static async tunnelDomainCreate(data, serverId) {
+    const payload = { protocol: data?.protocol || 'all' };
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/domains', { server_id: serverId, ...payload });
+    return this.post('/api/v1/tunnel/domains', payload);
+  }
+
+  static async tunnelDomainDelete(id, serverId) {
+    if (serverId) return this.delete(`/api/v1/tunnel/client/proxy/domains/${id}?server_id=${encodeURIComponent(serverId)}`);
+    return this.delete(`/api/v1/tunnel/domains/${id}`);
+  }
+
+  static async tunnelServersList() {
+    return await this.get('/api/v1/tunnel/client/servers');
+  }
+
+  static async tunnelServerCreate(data) {
+    return await this.post('/api/v1/tunnel/client/servers', data);
+  }
+
+  static async tunnelServerUpdate(id, data) {
+    return await this.patch(`/api/v1/tunnel/client/servers/${id}`, data);
+  }
+
+  static async tunnelServerDelete(id) {
+    return await this.delete(`/api/v1/tunnel/client/servers/${id}`);
+  }
+
+  static async tunnelCredentialsList(baseUrl = '') {
+    const url = baseUrl ? `/api/v1/tunnel/client/credentials?base_url=${encodeURIComponent(baseUrl)}` : '/api/v1/tunnel/client/credentials';
+    return await this.get(url);
+  }
+
+  static async tunnelCredentialSave(data) {
+    return await this.post('/api/v1/tunnel/client/credentials', data);
+  }
+
+  /** Backend callback URL alır; login sayfası token'ı bu URL'e yönlendirir, backend kaydedip proxy client'a redirect eder. */
+  static async tunnelAuthPrepare(serverId, clientRedirect) {
+    return await this.post('/api/v1/tunnel/client/auth/prepare', { server_id: serverId, client_redirect: clientRedirect });
+  }
+
+  static async tunnelStart(data, serverId) {
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/start', { server_id: serverId, data });
+    return this.post('/api/v1/tunnel/start', data);
+  }
+
+  static async tunnelStop(data, serverId) {
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/stop', { server_id: serverId, data });
+    return this.post('/api/v1/tunnel/stop', data);
+  }
+
+  static async tunnelRenew(data, serverId) {
+    if (serverId) return this.post('/api/v1/tunnel/client/proxy/renew', { server_id: serverId, data });
+    return this.post('/api/v1/tunnel/renew', data);
   }
 
   static async localProxyCreate(data) {
@@ -617,6 +763,27 @@ class ApiService {
 
   static async applyUpdate(version) {
     return await this.post('/api/updates/apply', { version });
+  }
+
+  // IP Alias (network interface alias management)
+  static async getNetworkInterfaces() {
+    return await this.get('/api/v1/network/interfaces');
+  }
+
+  static async getNetworkAddresses(interfaceName) {
+    return await this.get('/api/v1/network/addresses', { params: { interface: interfaceName } });
+  }
+
+  static async addNetworkAlias(data) {
+    return await this.post('/api/v1/network/alias/add', data);
+  }
+
+  static async removeNetworkAlias(data) {
+    return await this.post('/api/v1/network/alias/remove', data);
+  }
+
+  static async getNetworkClientCommand() {
+    return await this.get('/api/v1/network/client-command');
   }
 
 }

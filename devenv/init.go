@@ -1,11 +1,12 @@
 package devenv
 
 import (
-	"encoding/json"
 	"log"
-	"os"
-	docker_manager "redock/docker-manager"
 	"strconv"
+
+	docker_manager "redock/docker-manager"
+	"redock/platform/database"
+	"redock/platform/memory"
 
 	"github.com/onuragtas/command"
 )
@@ -31,28 +32,45 @@ func GetDevEnvManager() *DevEnvManager {
 	return &manager
 }
 
-func (t *DevEnvManager) DeleteDevEnv(username string) {
-	file, err := os.ReadFile(t.dockerEnvironmentManager.GetWorkDir() + "/devenv.json")
-	if err != nil {
-		log.Println(err)
+func (t *DevEnvManager) db() *memory.Database {
+	return database.GetMemoryDB()
+}
+
+// toDTO DevEnvEntity -> docker_manager.DevEnv (API/DTO)
+func toDTO(e *DevEnvEntity) docker_manager.DevEnv {
+	return docker_manager.DevEnv{
+		Username:   e.Username,
+		Password:   e.Password,
+		Port:       e.Port,
+		RedockPort: e.RedockPort,
 	}
+}
 
-	var devEnvList []docker_manager.DevEnv
-	json.Unmarshal(file, &devEnvList)
+// GetList memory DB'den tüm dev env listesini döner (API için).
+func (t *DevEnvManager) GetList() []docker_manager.DevEnv {
+	db := t.db()
+	if db == nil {
+		return nil
+	}
+	entities := memory.FindAll[*DevEnvEntity](db, "dev_envs")
+	out := make([]docker_manager.DevEnv, 0, len(entities))
+	for _, e := range entities {
+		out = append(out, toDTO(e))
+	}
+	return out
+}
 
-	for i, listItem := range devEnvList {
-		if listItem.Username == username {
-			devEnvList = append(devEnvList[:i], devEnvList[i+1:]...)
+func (t *DevEnvManager) DeleteDevEnv(username string) {
+	db := t.db()
+	if db == nil {
+		return
+	}
+	list := memory.Where[*DevEnvEntity](db, "dev_envs", "Username", username)
+	for _, e := range list {
+		if err := memory.Delete[*DevEnvEntity](db, "dev_envs", e.GetID()); err != nil {
+			log.Println("DeleteDevEnv:", err)
 		}
 	}
-	marshal, err := json.Marshal(devEnvList)
-
-	if err != nil {
-		log.Println(err)
-	}
-
-	os.WriteFile(t.dockerEnvironmentManager.GetWorkDir()+"/devenv.json", marshal, 0777)
-
 	go func() {
 		c := command.Command{}
 		c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "docker", "rm", username, "-f")
@@ -62,57 +80,45 @@ func (t *DevEnvManager) DeleteDevEnv(username string) {
 func (t *DevEnvManager) AddDevEnv(model *DevEnvModel) bool {
 	port, _ := strconv.Atoi(model.Port)
 	redockPort, _ := strconv.Atoi(model.RedockPort)
-
+	db := t.db()
+	if db == nil {
+		return false
+	}
 	manager := t.dockerEnvironmentManager
 
-	file, err := os.ReadFile(manager.GetWorkDir() + "/devenv.json")
-	if err != nil {
-		log.Println(err)
-	}
+	all := memory.FindAll[*DevEnvEntity](db, "dev_envs")
 
-	var devEnvList []docker_manager.DevEnv
-
-	json.Unmarshal(file, &devEnvList)
-
-	// Kullanıcı zaten var mı kontrol et
-	for _, listItem := range devEnvList {
-		if listItem.Username == model.Username {
+	for _, e := range all {
+		if e.Username == model.Username {
 			log.Println("User already exists:", model.Username)
 			return false
 		}
 	}
-
-	// Port zaten kullanılıyor mu kontrol et
-	for _, listItem := range devEnvList {
-		if listItem.Port == port {
+	for _, e := range all {
+		if e.Port == port {
 			log.Println("Port already in use:", port)
 			return false
 		}
 	}
-
-	// RedockPort zaten kullanılıyor mu kontrol et
 	if redockPort > 0 {
-		for _, listItem := range devEnvList {
-			if listItem.RedockPort == redockPort {
+		for _, e := range all {
+			if e.RedockPort == redockPort {
 				log.Println("RedockPort already in use:", redockPort)
 				return false
 			}
 		}
 	}
 
-	devEnvList = append(devEnvList, docker_manager.DevEnv{
+	entity := &DevEnvEntity{
 		Username:   model.Username,
 		Password:   model.Password,
 		Port:       port,
 		RedockPort: redockPort,
-	})
-
-	marshal, err := json.Marshal(devEnvList)
-	if err != nil {
-		log.Println(err)
 	}
-
-	os.WriteFile(manager.GetWorkDir()+"/devenv.json", marshal, 0777)
+	if err := memory.Create(db, "dev_envs", entity); err != nil {
+		log.Println("AddDevEnv:", err)
+		return false
+	}
 
 	go func() {
 		cmd := command.Command{}
@@ -125,70 +131,48 @@ func (t *DevEnvManager) AddDevEnv(model *DevEnvModel) bool {
 func (t *DevEnvManager) EditDevEnv(model *DevEnvModel) bool {
 	port, _ := strconv.Atoi(model.Port)
 	redockPort, _ := strconv.Atoi(model.RedockPort)
-
-	manager := t.dockerEnvironmentManager
-
-	file, err := os.ReadFile(manager.GetWorkDir() + "/devenv.json")
-	if err != nil {
-		log.Println(err)
+	db := t.db()
+	if db == nil {
 		return false
 	}
+	manager := t.dockerEnvironmentManager
 
-	var devEnvList []docker_manager.DevEnv
-	json.Unmarshal(file, &devEnvList)
-
-	// Kullanıcıyı bul
-	var userIndex = -1
-	for i, listItem := range devEnvList {
-		if listItem.Username == model.Username {
-			userIndex = i
-			break
-		}
-	}
-
-	if userIndex == -1 {
+	list := memory.Where[*DevEnvEntity](db, "dev_envs", "Username", model.Username)
+	if len(list) == 0 {
 		log.Println("User not found:", model.Username)
 		return false
 	}
+	entity := list[0]
+	all := memory.FindAll[*DevEnvEntity](db, "dev_envs")
 
-	// Port çakışması kontrol et (kendi dışında)
-	for i, listItem := range devEnvList {
-		if i != userIndex && listItem.Port == port {
+	for i, e := range all {
+		if e.GetID() != entity.GetID() && e.Port == port {
 			log.Println("Port already in use by another user:", port)
 			return false
 		}
+		_ = i
 	}
-
-	// RedockPort çakışması kontrol et (kendi dışında)
 	if redockPort > 0 {
-		for i, listItem := range devEnvList {
-			if i != userIndex && listItem.RedockPort == redockPort {
+		for _, e := range all {
+			if e.GetID() != entity.GetID() && e.RedockPort == redockPort {
 				log.Println("RedockPort already in use by another user:", redockPort)
 				return false
 			}
 		}
 	}
 
-	// Eski container'ı kaldır
 	go func() {
 		c := command.Command{}
 		c.RunCommand(manager.GetWorkDir(), "docker", "rm", model.Username, "-f")
 	}()
 
-	// Güncelle
-	devEnvList[userIndex].Password = model.Password
-	devEnvList[userIndex].Port = port
-	devEnvList[userIndex].RedockPort = redockPort
-
-	marshal, err := json.Marshal(devEnvList)
-	if err != nil {
-		log.Println(err)
+	entity.Password = model.Password
+	entity.Port = port
+	entity.RedockPort = redockPort
+	if err := memory.Update(db, "dev_envs", entity); err != nil {
 		return false
 	}
 
-	os.WriteFile(manager.GetWorkDir()+"/devenv.json", marshal, 0777)
-
-	// Yeni container'ı başlat
 	go func() {
 		cmd := command.Command{}
 		cmd.RunCommand(manager.GetWorkDir(), "bash", "serviceip.sh", model.Port, model.Username, model.Password, model.RedockPort)
@@ -198,13 +182,11 @@ func (t *DevEnvManager) EditDevEnv(model *DevEnvModel) bool {
 }
 
 func (t *DevEnvManager) Regenerate() {
-	file, err := os.ReadFile(t.dockerEnvironmentManager.GetWorkDir() + "/devenv.json")
-	if err != nil {
-		log.Println(err)
+	db := t.db()
+	if db == nil {
+		return
 	}
-
-	var devEnvList []docker_manager.DevEnv
-	json.Unmarshal(file, &devEnvList)
+	devEnvList := memory.FindAll[*DevEnvEntity](db, "dev_envs")
 
 	c := command.Command{}
 	c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "docker", "pull", "hakanbaysal/devenv:latest")

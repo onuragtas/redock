@@ -1,7 +1,6 @@
 package controllers
 
 import (
-	"encoding/json"
 	"log"
 	"os"
 	"redock/app/models"
@@ -375,31 +374,17 @@ func GetPhpServices(c *fiber.Ctx) error {
 	})
 }
 
-// GetDevEnv method to create a new user.
-// @Description Create a new user.
-// @Summary create a new user
-// @Tags User
-// @Accept json
+// GetDevEnv returns dev environment list from memory DB.
+// @Description Get dev environment list.
+// @Summary get dev env list
+// @Tags Docker
 // @Produce json
-// @Param email body string true "Email"
-// @Param password body string true "Password"
-// @Param user_role body string true "User role"
-// @Success 200 {object} models.User
-// @Router /v1/docker/env [get]
+// @Router /v1/docker/devenv [get]
 func GetDevEnv(c *fiber.Ctx) error {
-
-	manager := docker_manager.GetDockerManager()
-	file, err := os.ReadFile(manager.GetWorkDir() + "/devenv.json")
-	if err != nil {
-		log.Println(err)
-	}
-
-	var devEnvList []docker_manager.DevEnv
-	json.Unmarshal(file, &devEnvList)
-
+	devEnvList := devenv.GetDevEnvManager().GetList()
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": err != nil,
-		"msg":   err,
+		"error": false,
+		"msg":   nil,
 		"data":  devEnvList,
 	})
 }

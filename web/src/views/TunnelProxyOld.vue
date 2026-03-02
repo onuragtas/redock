@@ -34,7 +34,6 @@ export default {
       mainStore: useMainStore(),
       login: false,
       email: '',
-      username: '',
       password: '',
       isAddModalActive: false,
       isStartModalActive: false,
@@ -97,7 +96,7 @@ export default {
       })
     },
     loginSubmit() {
-      ApiService.tunnelLogin(this.username, this.password).then(value => {
+      ApiService.tunnelLogin(this.email, this.password).then(value => {
         this.login = value.data.data.login
         if (this.login) {
           this.tunnelList()
@@ -106,7 +105,7 @@ export default {
     },
 
     registerSubmit() {
-      ApiService.tunnelRegister(this.email, this.username, this.password).then(value => {
+      ApiService.tunnelRegister(this.email, this.password).then(value => {
         this.login = value.data.data.login
       })
     },
@@ -114,7 +113,7 @@ export default {
     logoutSubmit() {
       ApiService.tunnelLogout().then(value => {
         this.login = null
-        this.username = ''
+        this.email = ''
         this.password = ''
         this.proxies = []
         this.isAddModalActive = false
@@ -255,8 +254,8 @@ export default {
 
     <SectionMain v-if="!login && !isRegisterModalActive">
       <CardBox :class="cardClass" is-form @submit.prevent="loginSubmit">
-        <FormField label="Login" help="Please enter your login">
-          <FormControl v-model="username" name="login" />
+        <FormField label="Email" help="Please enter your email">
+          <FormControl v-model="email" type="email" name="email" />
         </FormField>
 
         <FormField label="Password" help="Please enter your password">
@@ -275,12 +274,8 @@ export default {
     
     <SectionMain v-if="!login && isRegisterModalActive">
       <CardBox :class="cardClass" is-form @submit.prevent="registerSubmit">
-        <FormField label="Register" help="Please enter your username">
-          <FormControl v-model="username" name="login"  />
-        </FormField>
-        
         <FormField label="Email" help="Please enter your email">
-          <FormControl v-model="email" name="email" />
+          <FormControl v-model="email" type="email" name="email" />
         </FormField>
 
         <FormField label="Password" help="Please enter your password">

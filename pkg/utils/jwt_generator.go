@@ -4,7 +4,6 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"os"
 	"strconv"
 	"time"
 
@@ -17,25 +16,17 @@ var (
 )
 
 func init() {
-	// Restart sonrası da refresh çalışsın diye secret sabit: env'den veya rastgele.
-	if s := os.Getenv("JWT_SECRET_KEY"); s != "" {
-		jwtSecretKey = s
-	} else {
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			panic("jwt: failed to generate secret: " + err.Error())
-		}
-		jwtSecretKey = hex.EncodeToString(b)
+	// Genel JWT secret: program ayağa kalktığında rastgele (env okunmaz). Redock access/refresh ve tunnel token imzası burada.
+	b := make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("jwt: failed to generate secret: " + err.Error())
 	}
-	if s := os.Getenv("JWT_REFRESH_SALT"); s != "" {
-		jwtRefreshSalt = s
-	} else {
-		b := make([]byte, 32)
-		if _, err := rand.Read(b); err != nil {
-			panic("jwt: failed to generate refresh salt: " + err.Error())
-		}
-		jwtRefreshSalt = hex.EncodeToString(b)
+	jwtSecretKey = hex.EncodeToString(b)
+	b = make([]byte, 32)
+	if _, err := rand.Read(b); err != nil {
+		panic("jwt: failed to generate refresh salt: " + err.Error())
 	}
+	jwtRefreshSalt = hex.EncodeToString(b)
 }
 
 // GetJWTSecretKey returns the in-memory JWT secret (same for sign + verify).
@@ -74,6 +65,7 @@ func generateNewAccessToken(id string, credentials []string) (string, error) {
 	const accessTokenExpire = 60 * time.Minute // 1 saat
 
 	claims := jwt.MapClaims{}
+	claims["iss"] = "redock"
 	claims["id"] = id
 	claims["exp"] = time.Now().Add(accessTokenExpire).Unix()
 	for _, credential := range credentials {

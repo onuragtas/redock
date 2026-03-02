@@ -3,7 +3,7 @@ import Home from '@/views/HomeView.vue'
 import { createRouter, createWebHashHistory } from 'vue-router'
 
 const routes = [
-  // Login sayfası - layout dışında
+  // Login page - outside main layout
   {
     meta: {
       title: 'Login'
@@ -12,7 +12,16 @@ const routes = [
     name: 'login',
     component: () => import('@/views/LoginView.vue')
   },
-  // Ana layout - tüm authenticated sayfalar burada
+  // Tunnel server sign-in/register — called with redirect_uri; after auth, token is sent to redirect
+  {
+    meta: {
+      title: 'Sign in to tunnel server'
+    },
+    path: '/tunnel-auth',
+    name: 'tunnel-auth',
+    component: () => import('@/views/TunnelAuthView.vue')
+  },
+  // Main layout - all authenticated pages
   {
     path: '/',
     component: LayoutAuthenticated,
@@ -108,19 +117,51 @@ const routes = [
       },
       {
         meta: {
-          title: 'Tunnel Proxy',
+          title: 'Tunnel Proxy Server',
         },
-        path: 'tunnel_proxy',
-        name: 'tunnel_proxy',
-        component: () => import('@/views/TunnelProxy.vue')
+        path: 'tunnel_proxy_server',
+        name: 'tunnel_proxy_server',
+        component: () => import('@/views/TunnelProxyServer.vue')
       },
       {
         meta: {
-          title: 'Tunnel Proxy',
+          title: 'Tunnel Proxy Server',
+        },
+        path: 'tunnel-proxy-server',
+        name: 'tunnel-proxy-server',
+        component: () => import('@/views/TunnelProxyServer.vue')
+      },
+      {
+        meta: {
+          title: 'Tunnel Proxy Client',
+        },
+        path: 'tunnel_proxy_client',
+        name: 'tunnel_proxy_client',
+        component: () => import('@/views/TunnelProxyClient.vue')
+      },
+      {
+        meta: {
+          title: 'Tunnel Proxy Client',
+        },
+        path: 'tunnel-proxy-client',
+        name: 'tunnel-proxy-client',
+        component: () => import('@/views/TunnelProxyClient.vue')
+      },
+      {
+        meta: {
+          title: 'Tunnel Proxy Client',
+        },
+        path: 'tunnel_proxy',
+        name: 'tunnel_proxy',
+        redirect: '/tunnel-proxy-client'
+      },
+      {
+        meta: {
+          title: 'Tunnel Proxy Client',
         },
         path: 'tunnel-proxy',
         name: 'tunnel-proxy',
-        component: () => import('@/views/TunnelProxy.vue')
+        redirect: '/tunnel-proxy-client'
       },
       {
         meta: {
@@ -212,6 +253,22 @@ const routes = [
       },
       {
         meta: {
+          title: 'IP Alias'
+        },
+        path: 'ip_alias',
+        name: 'ip_alias',
+        component: () => import('@/views/IPAlias.vue')
+      },
+      {
+        meta: {
+          title: 'IP Alias'
+        },
+        path: 'ip-alias',
+        name: 'ip-alias',
+        component: () => import('@/views/IPAlias.vue')
+      },
+      {
+        meta: {
           title: 'VPN Server'
         },
         path: 'vpn_server',
@@ -257,6 +314,15 @@ const routes = [
         path: 'updates',
         name: 'updates',
         component: () => import('@/views/Updates.vue')
+      },
+      {
+        meta: {
+          title: 'Users',
+          requiresAdmin: true
+        },
+        path: 'users',
+        name: 'users',
+        component: () => import('@/views/UsersView.vue')
       },
       {
         meta: {

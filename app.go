@@ -83,8 +83,10 @@ func app() {
 
 	// API routes first so /api/v1/* is not 404 from static filesystem.
 	routes.PublicRoutes(app)
+	routes.TunnelServerRoutes(app)
+	routes.TunnelClientRoutes(app)
+	routes.TunnelApiRoutes(app)
 	routes.PrivateRoutes(app)
-	routes.TunnelRoutes(app)
 	routes.LocalProxyRoutes(app)
 	routes.PHPXDebugAdapterRoutes(app)
 	routes.SavedCommandRoutes(app)
@@ -96,6 +98,7 @@ func app() {
 	routes.SetupVPNRoutes(app)
 	routes.CloudflareRoutes(app)
 	routes.EmailRoutes(app)
+	routes.NetworkRoutes(app)
 	routes.UpdateRoutes(app)
 	// Static SPA after routes.
 	app.Use("/", filesystem.New(filesystem.Config{

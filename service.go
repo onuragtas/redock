@@ -90,7 +90,7 @@ func handleAction(action string, s service.Service, logger service.Logger) {
 		err = s.Uninstall()
 		printResult("Service has been uninstalled", "The service couldn't be uninstalled", err, logger)
 	default:
-		fmt.Println("Geçersiz işlem. Kullanım: ./app --action [install|start|stop|uninstall]")
+		fmt.Println("Invalid operation. Usage: ./app --action [install|start|stop|uninstall]")
 		os.Exit(1)
 	}
 }

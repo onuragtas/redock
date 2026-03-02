@@ -1,13 +1,14 @@
 package php_debug_adapter
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	"os"
-	docker_manager "redock/docker-manager"
 	"strings"
+
+	docker_manager "redock/docker-manager"
+	"redock/platform/database"
+	"redock/platform/memory"
 
 	proxy2 "github.com/onuragtas/reverse-proxy/proxy"
 )
@@ -18,6 +19,7 @@ type PHPDebugAdapter struct {
 	closeCh        chan bool
 }
 
+// Data API ve proxy tarafında kullanılan DTO (memory'den doldurulur).
 type Data struct {
 	Listen   string    `json:"listen"`
 	Mappings []Mapping `json:"mappings"`
@@ -39,6 +41,33 @@ func Init(docker_manager *docker_manager.DockerEnvironmentManager) {
 
 func GetPHPDebugAdapter() *PHPDebugAdapter {
 	return adapter
+}
+
+func (t *PHPDebugAdapter) db() *memory.Database {
+	return database.GetMemoryDB()
+}
+
+func (t *PHPDebugAdapter) getList() *Data {
+	db := t.db()
+	if db == nil {
+		data = &Data{Listen: "0.0.0.0:10000", Mappings: []Mapping{}}
+		return data
+	}
+	settingsList := memory.FindAll[*PhpXDebugSettingsEntity](db, "php_xdebug_settings")
+	listen := "0.0.0.0:10000"
+	if len(settingsList) > 0 {
+		listen = settingsList[0].Listen
+		if listen == "" {
+			listen = "0.0.0.0:10000"
+		}
+	}
+	mappingEntities := memory.FindAll[*PhpXDebugMappingEntity](db, "php_xdebug_mappings")
+	mappings := make([]Mapping, 0, len(mappingEntities))
+	for _, e := range mappingEntities {
+		mappings = append(mappings, Mapping{Name: e.Name, Path: e.Path, URL: e.URL})
+	}
+	data = &Data{Listen: listen, Mappings: mappings}
+	return data
 }
 
 func (t *PHPDebugAdapter) Start() {
@@ -83,7 +112,6 @@ func (t *PHPDebugAdapter) Start() {
 			Src:        conn,
 			OnResponse: t.onResponse,
 			OnRequest:  t.onRequest,
-			//RequestHost: t.setDestination,
 			OnCloseSource: func(conn net.Conn) {
 				log.Println("Connection closed from", conn.RemoteAddr().String())
 			},
@@ -123,52 +151,36 @@ func (t *PHPDebugAdapter) onResponse(dstRemote, dstLocal, srcRemote, srcLocal st
 	log.Println(dstRemote, "->", dstLocal, "->", srcRemote, "->", srcLocal)
 }
 
-func (t *PHPDebugAdapter) getList() *Data {
-	bytes, _ := os.ReadFile(docker_manager.GetDockerManager().GetWorkDir() + "/data/settings.json")
-	err := json.Unmarshal(bytes, &data)
-	if err != nil {
-		data = &Data{
-			Listen:   "0.0.0.0:10000",
-			Mappings: []Mapping{},
-		}
-		t.save(data)
-	}
-	return data
-}
-
 func (t *PHPDebugAdapter) Add(model Mapping) {
-	data = t.getList()
-	for _, mapping := range data.Mappings {
-		if mapping.Path == model.Path {
-			return
-		}
+	db := t.db()
+	if db == nil {
+		return
 	}
-	data.Mappings = append(data.Mappings, model)
-
-	t.save(data)
+	list := memory.Where[*PhpXDebugMappingEntity](db, "php_xdebug_mappings", "Path", model.Path)
+	if len(list) > 0 {
+		return
+	}
+	entity := &PhpXDebugMappingEntity{Name: model.Name, Path: model.Path, URL: model.URL}
+	if err := memory.Create(db, "php_xdebug_mappings", entity); err != nil {
+		return
+	}
+	t.getList()
 }
 
 func (t *PHPDebugAdapter) Del(path string) {
-	data = t.getList()
-	for i, mapping := range data.Mappings {
-		if mapping.Path == path {
-			data.Mappings = append(data.Mappings[:i], data.Mappings[i+1:]...)
-		}
+	db := t.db()
+	if db == nil {
+		return
 	}
-	t.save(data)
+	list := memory.Where[*PhpXDebugMappingEntity](db, "php_xdebug_mappings", "Path", path)
+	for _, e := range list {
+		_ = memory.Delete[*PhpXDebugMappingEntity](db, "php_xdebug_mappings", e.GetID())
+	}
+	t.getList()
 }
 
 func (t *PHPDebugAdapter) Settings() *Data {
 	return t.getList()
-}
-
-func (t *PHPDebugAdapter) save(d *Data) {
-	marshal, err := json.Marshal(d)
-	if err != nil {
-		return
-	}
-
-	os.WriteFile(docker_manager.GetDockerManager().GetWorkDir()+"/data/settings.json", marshal, 777)
 }
 
 func (t *PHPDebugAdapter) Stop() {
@@ -179,7 +191,21 @@ func (t *PHPDebugAdapter) Stop() {
 }
 
 func (t *PHPDebugAdapter) Update(model *Data) {
-	data := t.getList()
-	data.Listen = model.Listen
-	t.save(data)
+	db := t.db()
+	if db == nil {
+		return
+	}
+	listen := model.Listen
+	if listen == "" {
+		listen = "0.0.0.0:10000"
+	}
+	settingsList := memory.FindAll[*PhpXDebugSettingsEntity](db, "php_xdebug_settings")
+	if len(settingsList) == 0 {
+		entity := &PhpXDebugSettingsEntity{Listen: listen}
+		_ = memory.Create(db, "php_xdebug_settings", entity)
+	} else {
+		settingsList[0].Listen = listen
+		_ = memory.Update(db, "php_xdebug_settings", settingsList[0])
+	}
+	t.getList()
 }

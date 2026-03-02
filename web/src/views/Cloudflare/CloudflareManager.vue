@@ -162,14 +162,14 @@ const formatDate = (date) => {
   <div>
     <SectionTitleLineWithButton :icon="mdiCloud" title="Cloudflare Management" main />
 
-    <!-- Tabs -->
-    <div class="mb-6 border-b border-gray-200 dark:border-gray-700">
-      <div class="flex space-x-8">
+    <!-- Tabs (responsive: horizontal scroll on small screens) -->
+    <div class="mb-6 overflow-x-auto pb-px -mx-1 px-1">
+      <div class="flex flex-nowrap gap-2 sm:gap-4 border-b border-gray-200 dark:border-gray-700">
         <button
           v-for="tab in tabs"
           :key="tab"
           :class="[
-            'px-4 py-2 font-medium transition-colors',
+            'shrink-0 whitespace-nowrap px-4 py-2 font-medium transition-colors',
             activeTab === tab
               ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
               : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'

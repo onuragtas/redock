@@ -2,6 +2,7 @@ package api_gateway
 
 import (
 	"bytes"
+	"context"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -21,6 +22,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/acme"
 )
 
 const (
@@ -157,11 +160,26 @@ func (r *CertificateRenewer) checkAndRenew() {
 		return
 	}
 
-	if config.LetsEncrypt.ExpiresAt == "" {
+	expiresAtStr := config.LetsEncrypt.ExpiresAt
+	if expiresAtStr == "" {
+		// Read expiry from cert file (e.g. after config load or restart)
+		certPath := config.TLSCertFile
+		if certPath != "" {
+			if data, err := os.ReadFile(certPath); err == nil {
+				block, _ := pem.Decode(data)
+				if block != nil {
+					if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
+						expiresAtStr = cert.NotAfter.Format(time.RFC3339)
+					}
+				}
+			}
+		}
+	}
+	if expiresAtStr == "" {
 		return
 	}
 
-	expiresAt, err := time.Parse(time.RFC3339, config.LetsEncrypt.ExpiresAt)
+	expiresAt, err := time.Parse(time.RFC3339, expiresAtStr)
 	if err != nil {
 		log.Printf("API Gateway: Failed to parse certificate expiry: %v", err)
 		return
@@ -296,55 +314,232 @@ func (c *ACMEClient) getNonce() (string, error) {
 	return resp.Header.Get("Replay-Nonce"), nil
 }
 
-// RequestCertificate requests a new certificate from Let's Encrypt
+// RequestCertificate requests a new certificate from Let's Encrypt (ACME HTTP-01).
+// It uses the current gateway config's LetsEncrypt domain list.
 func (g *Gateway) RequestCertificate() error {
 	config := g.GetConfig()
 	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
 		return errors.New("Let's Encrypt is not enabled")
 	}
+	return g.requestCertificateWithLEConfig(config.LetsEncrypt)
+}
 
-	if len(config.LetsEncrypt.Domains) == 0 {
+// RequestCertificateWithConfig requests a certificate using the given LetsEncrypt config (domain list).
+// Use this when you have just updated the domain list in memory so the ACME request uses the exact list provided.
+func (g *Gateway) RequestCertificateWithConfig(leConfig *LetsEncryptConfig) error {
+	if leConfig == nil || !leConfig.Enabled {
+		return errors.New("Let's Encrypt is not enabled")
+	}
+	return g.requestCertificateWithLEConfig(leConfig)
+}
+
+func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) error {
+	if len(leConfig.Domains) == 0 {
 		return errors.New("no domains configured for Let's Encrypt")
 	}
-
-	if config.LetsEncrypt.Email == "" {
+	if leConfig.Email == "" {
 		return errors.New("email is required for Let's Encrypt")
 	}
 
-	log.Printf("API Gateway: Requesting certificate for domains: %v", config.LetsEncrypt.Domains)
+	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v (production)", leConfig.Domains)
 
-	// For now, create a self-signed certificate as a placeholder
-	// Full ACME implementation would require external dependencies
 	certPath := filepath.Join(g.workDir, "data", "tls.crt")
 	keyPath := filepath.Join(g.workDir, "data", "tls.key")
 
-	if err := generateSelfSignedCert(config.LetsEncrypt.Domains, certPath, keyPath); err != nil {
-		return fmt.Errorf("failed to generate certificate: %w", err)
+	if err := obtainCertificateViaACME(g.workDir, leConfig, certPath, keyPath); err != nil {
+		return fmt.Errorf("Let's Encrypt: %w", err)
 	}
 
-	// Update config
+	expiresAt := time.Now().AddDate(0, 0, 90).Format(time.RFC3339)
+	if certData, err := os.ReadFile(certPath); err == nil {
+		if block, _ := pem.Decode(certData); block != nil {
+			if cert, err := x509.ParseCertificate(block.Bytes); err == nil {
+				expiresAt = cert.NotAfter.Format(time.RFC3339)
+			}
+		}
+	}
+
 	g.mu.Lock()
 	g.config.TLSCertFile = certPath
 	g.config.TLSKeyFile = keyPath
 	g.config.HTTPSEnabled = true
-	g.config.LetsEncrypt.CertificateReady = true
-	g.config.LetsEncrypt.LastRenewAt = time.Now().Format(time.RFC3339)
-	g.config.LetsEncrypt.ExpiresAt = time.Now().AddDate(0, 0, 90).Format(time.RFC3339) // 90 days validity
+	if g.config.LetsEncrypt != nil {
+		g.config.LetsEncrypt.CertificateReady = true
+		g.config.LetsEncrypt.LastRenewAt = time.Now().Format(time.RFC3339)
+		g.config.LetsEncrypt.ExpiresAt = expiresAt
+	}
 	g.mu.Unlock()
 
 	if err := g.SaveConfig(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
-	log.Println("API Gateway: Certificate generated successfully")
+	log.Println("API Gateway: Let's Encrypt certificate obtained successfully")
+	return nil
+}
 
-	// Reload HTTPS if running
-	if g.running && g.config.HTTPSEnabled {
-		// Restart to pick up new certificate
-		log.Println("API Gateway: Reloading with new certificate...")
+// obtainCertificateViaACME runs the ACME flow (HTTP-01) and writes cert and key to the given paths.
+// Always uses Let's Encrypt production; staging is no longer configurable.
+func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, keyPath string) error {
+	dirURL := acme.LetsEncryptURL
+
+	accountKey, err := loadOrCreateACMEAccountKey(workDir)
+	if err != nil {
+		return fmt.Errorf("account key: %w", err)
 	}
 
-	return nil
+	acmeClient := &acme.Client{
+		Key:          accountKey,
+		DirectoryURL: dirURL,
+		HTTPClient:   &http.Client{Timeout: 30 * time.Second},
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+
+	// Register account (ignore if already exists)
+	_, err = acmeClient.Register(ctx, &acme.Account{
+		Contact: []string{"mailto:" + strings.TrimSpace(cfg.Email)},
+	}, acme.AcceptTOS)
+	if err != nil && !errors.Is(err, acme.ErrAccountAlreadyExists) {
+		return fmt.Errorf("register: %w", err)
+	}
+
+	domains := make([]string, 0, len(cfg.Domains))
+	for _, d := range cfg.Domains {
+		d = strings.TrimSpace(d)
+		if d != "" && !strings.Contains(d, "*") {
+			domains = append(domains, d)
+		}
+	}
+	if len(domains) == 0 {
+		return errors.New("no valid non-wildcard domains (HTTP-01 does not support wildcards)")
+	}
+
+	// Create order
+	order, err := acmeClient.AuthorizeOrder(ctx, acme.DomainIDs(domains...))
+	if err != nil {
+		return fmt.Errorf("authorize order: %w", err)
+	}
+
+	// Fulfill HTTP-01 challenges for each authorization
+	for _, authURL := range order.AuthzURLs {
+		auth, err := acmeClient.GetAuthorization(ctx, authURL)
+		if err != nil {
+			return fmt.Errorf("get authorization: %w", err)
+		}
+		if auth.Status == acme.StatusValid {
+			continue
+		}
+		var http01 *acme.Challenge
+		for _, c := range auth.Challenges {
+			if c.Type == "http-01" {
+				http01 = c
+				break
+			}
+		}
+		if http01 == nil {
+			return fmt.Errorf("no http-01 challenge for %s", auth.Identifier.Value)
+		}
+		response, err := acmeClient.HTTP01ChallengeResponse(http01.Token)
+		if err != nil {
+			return fmt.Errorf("challenge response: %w", err)
+		}
+		SetACMEChallenge(http01.Token, response)
+		if _, err = acmeClient.Accept(ctx, http01); err != nil {
+			ClearACMEChallenge(http01.Token)
+			return fmt.Errorf("accept challenge: %w", err)
+		}
+		if _, err = acmeClient.WaitAuthorization(ctx, authURL); err != nil {
+			ClearACMEChallenge(http01.Token)
+			return fmt.Errorf("wait authorization %s: %w", auth.Identifier.Value, err)
+		}
+		ClearACMEChallenge(http01.Token)
+	}
+
+	// Wait for order to be ready
+	order, err = acmeClient.WaitOrder(ctx, order.URI)
+	if err != nil {
+		return fmt.Errorf("wait order: %w", err)
+	}
+
+	// Create CSR and certificate key
+	certKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return fmt.Errorf("generate cert key: %w", err)
+	}
+
+	csrTemplate := &x509.CertificateRequest{
+		Subject:  pkix.Name{CommonName: domains[0]},
+		DNSNames:  domains,
+		Signature: nil,
+	}
+	csrDER, err := x509.CreateCertificateRequest(rand.Reader, csrTemplate, certKey)
+	if err != nil {
+		return fmt.Errorf("create CSR: %w", err)
+	}
+
+	derChains, _, err := acmeClient.CreateOrderCert(ctx, order.FinalizeURL, csrDER, true)
+	if err != nil {
+		return fmt.Errorf("create order cert: %w", err)
+	}
+
+	// Write certificate chain (PEM)
+	os.MkdirAll(filepath.Dir(certPath), 0755)
+	certFile, err := os.Create(certPath)
+	if err != nil {
+		return fmt.Errorf("create cert file: %w", err)
+	}
+	for _, der := range derChains {
+		if err := pem.Encode(certFile, &pem.Block{Type: "CERTIFICATE", Bytes: der}); err != nil {
+			certFile.Close()
+			return fmt.Errorf("write cert: %w", err)
+		}
+	}
+	if err := certFile.Close(); err != nil {
+		return err
+	}
+
+	// Write private key (PEM)
+	keyBytes, err := x509.MarshalECPrivateKey(certKey)
+	if err != nil {
+		return fmt.Errorf("marshal key: %w", err)
+	}
+	keyFile, err := os.Create(keyPath)
+	if err != nil {
+		return fmt.Errorf("create key file: %w", err)
+	}
+	if err := pem.Encode(keyFile, &pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}); err != nil {
+		keyFile.Close()
+		return fmt.Errorf("write key: %w", err)
+	}
+	return keyFile.Close()
+}
+
+func loadOrCreateACMEAccountKey(workDir string) (crypto.Signer, error) {
+	keyPath := filepath.Join(workDir, "data", "acme_account.key")
+	if data, err := os.ReadFile(keyPath); err == nil {
+		block, _ := pem.Decode(data)
+		if block != nil {
+			key, err := x509.ParseECPrivateKey(block.Bytes)
+			if err == nil {
+				return key, nil
+			}
+		}
+	}
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		return nil, err
+	}
+	keyBytes, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
+	os.MkdirAll(filepath.Dir(keyPath), 0755)
+	if err := os.WriteFile(keyPath, pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyBytes}), 0600); err != nil {
+		return nil, err
+	}
+	return key, nil
 }
 
 // generateSelfSignedCert generates a self-signed certificate for the given domains
@@ -460,6 +655,10 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 				}
 			}
 		}
+	}
+	// If SAN was not set from cert file, show configured domains so UI stays in sync (e.g. after adding tunnel domain, before cert is re-issued)
+	if _, set := info["cert_dns_names"]; !set && config.LetsEncrypt != nil && len(config.LetsEncrypt.Domains) > 0 {
+		info["cert_dns_names"] = config.LetsEncrypt.Domains
 	}
 
 	return info

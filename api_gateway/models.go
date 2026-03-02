@@ -23,6 +23,12 @@ type Service struct {
 	Enabled     bool              `json:"enabled"`
 }
 
+// AuthHeader defines a required request header for auth type "header" (key must match value).
+type AuthHeader struct {
+	Key   string `json:"key"`
+	Value string `json:"value"`
+}
+
 // Route represents a routing rule that maps incoming requests to services
 type Route struct {
 	ID                   string            `json:"id"`
@@ -40,8 +46,11 @@ type Route struct {
 	RateLimitRequests    int               `json:"rate_limit_requests"` // requests per window
 	RateLimitWindow      int               `json:"rate_limit_window"`   // window in seconds
 	AuthRequired         bool              `json:"auth_required"`
-	AuthType             string            `json:"auth_type,omitempty"` // basic, jwt, api-key
+	AuthType             string            `json:"auth_type,omitempty"`     // basic, jwt, header
+	AuthHeaders          []AuthHeader      `json:"auth_headers,omitempty"`   // required header key-value pairs when auth_type=header
 	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
+	CORS                 *CORSConfig       `json:"cors,omitempty"`           // CORS response headers for this route (incl. WebSocket)
+	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route
 	Enabled              bool              `json:"enabled"`
 }
 
@@ -54,6 +63,35 @@ type HealthCheck struct {
 	UnhealthyThreshold int    `json:"unhealthy_threshold"` // number of failures before marking unhealthy
 }
 
+// UDPRoute maps a UDP listen port to a backend service (for UDP proxying).
+type UDPRoute struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	ListenPort int    `json:"listen_port"` // UDP port the gateway listens on
+	ServiceID  string `json:"service_id"`  // ID of the backend service (Host:Port, Protocol=udp)
+	Enabled    bool   `json:"enabled"`
+}
+
+// TCPRoute maps a TCP listen port to a backend service (raw TCP forwarding, e.g. for tunnel).
+type TCPRoute struct {
+	ID         string `json:"id"`
+	Name       string `json:"name,omitempty"`
+	ListenPort int    `json:"listen_port"` // TCP port the gateway listens on
+	ServiceID  string `json:"service_id"`  // ID of the backend service (Host:Port)
+	Enabled    bool   `json:"enabled"`
+}
+
+// CORSConfig holds CORS response header settings for the gateway
+type CORSConfig struct {
+	Enabled          bool     `json:"enabled"`
+	AllowOrigins     []string `json:"allow_origins,omitempty"`     // e.g. ["*"] or ["https://app.example.com"]
+	AllowMethods     []string `json:"allow_methods,omitempty"`     // e.g. ["GET","POST","PUT","DELETE","OPTIONS"]
+	AllowHeaders     []string `json:"allow_headers,omitempty"`     // e.g. ["Content-Type","Authorization"]
+	ExposeHeaders    []string `json:"expose_headers,omitempty"`   // headers exposed to the browser
+	AllowCredentials bool     `json:"allow_credentials"`         // Access-Control-Allow-Credentials
+	MaxAge           int      `json:"max_age"`                    // preflight cache in seconds (0 = no cache)
+}
+
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
 	HTTPPort         int                   `json:"http_port"`
@@ -64,6 +102,8 @@ type GatewayConfig struct {
 	LetsEncrypt      *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
 	Services         []Service             `json:"services"`
 	Routes           []Route               `json:"routes"`
+	UDPRoutes        []UDPRoute            `json:"udp_routes,omitempty"`
+	TCPRoutes        []TCPRoute            `json:"tcp_routes,omitempty"`
 	GlobalRateLimit  *RateLimitConfig      `json:"global_rate_limit,omitempty"`
 	LogLevel         string                `json:"log_level"`
 	AccessLogEnabled bool                  `json:"access_log_enabled"`

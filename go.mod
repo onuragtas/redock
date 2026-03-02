@@ -34,7 +34,11 @@ require (
 	gopkg.in/yaml.v2 v2.4.0
 )
 
-require github.com/onuragtas/go-requests v1.0.6 // indirect
+require (
+	github.com/onuragtas/go-requests v1.0.6 // indirect
+	github.com/vishvananda/netlink v1.3.0 // indirect
+	github.com/vishvananda/netns v0.0.4 // indirect
+)
 
 require (
 	github.com/cloudflare/cloudflare-go v0.116.0

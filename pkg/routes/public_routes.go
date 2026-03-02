@@ -18,4 +18,8 @@ func PublicRoutes(a *fiber.App) {
 	route.Post("/user/sign/in", controllers.UserSignIn) // auth, return Access & Refresh tokens
 	// Token renew: accepts expired access token in Authorization + refresh_token in body
 	route.Post("/token/renew", controllers.RenewTokens)
+	// Tünel auth (public): giriş, kayıt, OAuth callback — JWT yok
+	route.Post("/tunnel/auth/login", controllers.TunnelLogin)
+	route.Post("/tunnel/auth/register", controllers.TunnelRegister)
+	route.Get("/tunnel/auth/callback", controllers.TunnelAuthCallback)
 }

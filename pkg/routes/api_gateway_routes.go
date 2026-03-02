@@ -34,6 +34,11 @@ func APIGatewayRoutes(a *fiber.App) {
 	route.Put("/api_gateway/routes", controllers.APIGatewayUpdateRoute)
 	route.Delete("/api_gateway/routes", controllers.APIGatewayDeleteRoute)
 
+	// UDP routes management
+	route.Get("/api_gateway/udp_routes", controllers.APIGatewayListUDPRoutes)
+	route.Post("/api_gateway/udp_routes", controllers.APIGatewayAddUDPRoute)
+	route.Delete("/api_gateway/udp_routes/:id", controllers.APIGatewayRemoveUDPRoute)
+
 	// Testing and validation
 	route.Post("/api_gateway/test_upstream", controllers.APIGatewayTestUpstream)
 	route.Post("/api_gateway/health_check", controllers.APIGatewayHealthCheckNow)
