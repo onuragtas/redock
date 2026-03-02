@@ -13,8 +13,6 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 	"sync"
@@ -155,10 +153,6 @@ func (g *Gateway) db() *memory.Database {
 	return database.GetMemoryDB()
 }
 
-func (g *Gateway) blockListFilePath() string {
-	return filepath.Join(g.workDir, "data", "api_gateway_blocks.json")
-}
-
 func (g *Gateway) loadBlockList() {
 	db := g.db()
 	if db != nil {
@@ -288,22 +282,8 @@ func (g *Gateway) blockMapToSliceLocked() []BlockedClient {
 }
 
 func (g *Gateway) writeBlockList(entries []BlockedClient) {
-	if g.db() != nil {
-		return
-	}
-	path := g.blockListFilePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		log.Printf("API Gateway: failed to create block list directory: %v", err)
-		return
-	}
-	data, err := json.MarshalIndent(entries, "", "  ")
-	if err != nil {
-		log.Printf("API Gateway: failed to encode block list: %v", err)
-		return
-	}
-	if err := os.WriteFile(path, data, 0644); err != nil {
-		log.Printf("API Gateway: failed to write block list: %v", err)
-	}
+	// Block list is persisted only in memory DB (api_gateway_blocks table). No file write.
+	_ = entries
 }
 
 type cachedRoute struct {
@@ -351,7 +331,7 @@ func NewGateway(workDir string) *Gateway {
 	return g
 }
 
-// loadConfig loads the gateway configuration from memory DB or (fallback) file
+// loadConfig loads the gateway configuration from memory DB only
 func (g *Gateway) loadConfig() {
 	defaultConfig := func() {
 		g.config = &GatewayConfig{
@@ -369,6 +349,7 @@ func (g *Gateway) loadConfig() {
 		}
 		g.refreshClientSecurity()
 		g.loadBlockList()
+		g.refreshServicesAndRoutes()
 	}
 
 	db := g.db()
@@ -391,27 +372,11 @@ func (g *Gateway) loadConfig() {
 		return
 	}
 
-	configPath := g.workDir + "/data/api_gateway.json"
-	file, err := os.ReadFile(configPath)
-	if err != nil {
-		defaultConfig()
-		return
-	}
-
-	var config GatewayConfig
-	if err := json.Unmarshal(file, &config); err != nil {
-		log.Printf("API Gateway: Error parsing config: %v", err)
-		defaultConfig()
-		return
-	}
-
-	g.config = &config
-	g.refreshClientSecurity()
-	g.loadBlockList()
-	g.refreshServicesAndRoutes()
+	// No file fallback: config is only in memory DB
+	defaultConfig()
 }
 
-// SaveConfig saves the gateway configuration to file
+// SaveConfig saves the gateway configuration to memory DB
 func (g *Gateway) SaveConfig() error {
 	g.mu.RLock()
 	defer g.mu.RUnlock()
@@ -419,7 +384,7 @@ func (g *Gateway) SaveConfig() error {
 	return g.saveConfigLocked()
 }
 
-// saveConfigLocked saves the configuration to memory DB or (fallback) file
+// saveConfigLocked saves the configuration to memory DB only (no file).
 func (g *Gateway) saveConfigLocked() error {
 	data, err := json.Marshal(g.config)
 	if err != nil {
@@ -427,19 +392,16 @@ func (g *Gateway) saveConfigLocked() error {
 	}
 
 	db := g.db()
-	if db != nil {
-		list := memory.FindAll[*ApiGatewayConfigEntity](db, tableApiGatewayConfig)
-		if len(list) > 0 {
-			list[0].ConfigJSON = string(data)
-			return memory.Update(db, tableApiGatewayConfig, list[0])
-		}
-		entity := &ApiGatewayConfigEntity{ConfigJSON: string(data)}
-		return memory.Create(db, tableApiGatewayConfig, entity)
+	if db == nil {
+		return nil
 	}
-
-	configPath := g.workDir + "/data/api_gateway.json"
-	indented, _ := json.MarshalIndent(g.config, "", "  ")
-	return os.WriteFile(configPath, indented, 0644)
+	list := memory.FindAll[*ApiGatewayConfigEntity](db, tableApiGatewayConfig)
+	if len(list) > 0 {
+		list[0].ConfigJSON = string(data)
+		return memory.Update(db, tableApiGatewayConfig, list[0])
+	}
+	entity := &ApiGatewayConfigEntity{ConfigJSON: string(data)}
+	return memory.Create(db, tableApiGatewayConfig, entity)
 }
 
 // refreshServicesAndRoutes refreshes internal maps from config
