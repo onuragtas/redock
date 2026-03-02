@@ -176,9 +176,11 @@ const loginSubmit = async () => {
     ) {
       login.value = true;
       await tunnelList();
+    } else {
+      toast.error(response?.data?.msg || "Login failed. Check your credentials.");
     }
   } catch (error) {
-    console.error("Login failed:", error);
+    toast.error(error?.response?.data?.msg || error?.message || "Login failed.");
   }
 };
 
@@ -199,10 +201,11 @@ const registerSubmit = async () => {
       isRegisterModalActive.value = false;
       await tunnelList();
     } else {
+      toast.error(response?.data?.msg || "Registration failed.");
       isRegisterModalActive.value = false;
     }
   } catch (error) {
-    console.error("Registration failed:", error);
+    toast.error(error?.response?.data?.msg || error?.message || "Registration failed.");
   }
 };
 
@@ -484,6 +487,7 @@ const externalLoginSubmit = async () => {
   if (!selectedServer.value) return;
   const effectiveBaseUrl = getEffectiveBaseUrl(selectedServer.value);
   externalLoginLoading.value = true;
+  externalAuthError.value = "";
   try {
     let token;
     if (externalAuthMode.value === "register") {
@@ -501,28 +505,33 @@ const externalLoginSubmit = async () => {
       );
       token = res?.data?.data?.token;
     }
-    if (token) {
-      await ApiService.tunnelCredentialSave({
-        base_url: effectiveBaseUrl,
-        access_token: token
-      });
-      ApiService.setTunnelServerContext({
-        baseURL: effectiveBaseUrl,
-        token
-      });
-      isExternalLoginModalActive.value = false;
-      externalAuthMode.value = "login";
-      login.value = true;
-      await tunnelList();
+    if (!token) {
+      externalAuthError.value = "No token received. Check your credentials and try again.";
+      return;
     }
+    await ApiService.tunnelCredentialSave({
+      base_url: effectiveBaseUrl,
+      access_token: token
+    });
+    ApiService.setTunnelServerContext({
+      baseURL: effectiveBaseUrl,
+      token
+    });
+    isExternalLoginModalActive.value = false;
+    externalAuthMode.value = "login";
+    externalAuthError.value = "";
+    login.value = true;
+    await tunnelList();
   } catch (e) {
-    console.error("External auth failed:", e);
+    const msg = e.response?.data?.msg || e.message || "Authentication failed. Check your credentials.";
+    externalAuthError.value = msg;
   } finally {
     externalLoginLoading.value = false;
   }
 };
 
 const tunnelAuthPrepareLoading = ref(false);
+const externalAuthError = ref("");
 
 const goToTunnelAuth = async () => {
   const server = selectedServer.value;
@@ -549,7 +558,7 @@ const goToTunnelAuth = async () => {
     const authUrl = baseUrl.replace(/\/$/, "") + "/#/tunnel-auth?" + params.toString();
     window.location.href = authUrl;
   } catch (e) {
-    console.error("Tunnel auth prepare failed:", e);
+    toast.error(e?.response?.data?.msg || e?.message || "Failed to start authentication. Try again.");
   } finally {
     tunnelAuthPrepareLoading.value = false;
   }
@@ -1077,6 +1086,7 @@ onMounted(async () => {
     :cancel-disabled="externalLoginLoading"
     has-cancel
     @confirm="externalLoginSubmit"
+    @cancel="externalAuthError = ''"
   >
     <p class="text-slate-600 dark:text-slate-400 mb-4">
       Sign in or register with OAuth2 for {{ selectedServer?.name }} ({{ selectedServer?.base_url }}).
@@ -1086,7 +1096,7 @@ onMounted(async () => {
         type="button"
         :class="externalAuthMode === 'login' ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'"
         class="px-3 py-2 rounded-lg text-sm font-medium"
-        @click="externalAuthMode = 'login'"
+        @click="externalAuthMode = 'login'; externalAuthError = ''"
       >
         Sign in
       </button>
@@ -1094,7 +1104,7 @@ onMounted(async () => {
         type="button"
         :class="externalAuthMode === 'register' ? 'bg-indigo-600 text-white' : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'"
         class="px-3 py-2 rounded-lg text-sm font-medium"
-        @click="externalAuthMode = 'register'"
+        @click="externalAuthMode = 'register'; externalAuthError = ''"
       >
         Register
       </button>
@@ -1113,6 +1123,9 @@ onMounted(async () => {
         placeholder="••••••••"
       />
     </FormField>
+    <div v-if="externalAuthError" class="mt-4 rounded-lg bg-red-50 dark:bg-red-900/20 p-3">
+      <p class="text-sm text-red-700 dark:text-red-300">{{ externalAuthError }}</p>
+    </div>
   </CardBoxModal>
 
   <!-- Add Tunnel Server Modal (Federation) -->

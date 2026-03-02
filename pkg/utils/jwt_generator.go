@@ -1,37 +1,18 @@
 package utils
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"fmt"
 	"strconv"
 	"time"
 
+	"redock/platform/jwtsecrets"
+
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var (
-	jwtSecretKey   string
-	jwtRefreshSalt string
-)
-
-func init() {
-	// Genel JWT secret: program ayağa kalktığında rastgele (env okunmaz). Redock access/refresh ve tunnel token imzası burada.
-	b := make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("jwt: failed to generate secret: " + err.Error())
-	}
-	jwtSecretKey = hex.EncodeToString(b)
-	b = make([]byte, 32)
-	if _, err := rand.Read(b); err != nil {
-		panic("jwt: failed to generate refresh salt: " + err.Error())
-	}
-	jwtRefreshSalt = hex.EncodeToString(b)
-}
-
-// GetJWTSecretKey returns the in-memory JWT secret (same for sign + verify).
+// GetJWTSecretKey returns the JWT secret from memory DB (persisted in jwt_secrets table).
 func GetJWTSecretKey() []byte {
-	return []byte(jwtSecretKey)
+	return jwtsecrets.GetJWTSecretKey()
 }
 
 // Tokens struct to describe tokens object.
@@ -73,7 +54,7 @@ func generateNewAccessToken(id string, credentials []string) (string, error) {
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	t, err := token.SignedString([]byte(jwtSecretKey))
+	t, err := token.SignedString(jwtsecrets.GetJWTSecretKey())
 	if err != nil {
 		return "", err
 	}
@@ -88,14 +69,14 @@ func generateNewRefreshToken(userID string) (string, error) {
 	claims["exp"] = time.Now().Add(refreshTokenExpire).Unix()
 
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(jwtRefreshSalt))
+	return token.SignedString(jwtsecrets.GetRefreshSalt())
 }
 
 // ParseRefreshToken verifies refresh token JWT (signature + exp), returns user ID.
 // Önemli olan refresh token'ın expire olmaması ve kullanıcıya bağlı olması; renew sadece buna bakar.
 func ParseRefreshToken(refreshToken string) (userID int, err error) {
 	token, err := jwt.Parse(refreshToken, func(t *jwt.Token) (interface{}, error) {
-		return []byte(jwtRefreshSalt), nil
+		return jwtsecrets.GetRefreshSalt(), nil
 	})
 	if err != nil {
 		return 0, err
