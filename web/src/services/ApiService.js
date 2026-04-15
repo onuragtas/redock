@@ -432,19 +432,21 @@ class ApiService {
     }, { skipPrecheck: true });
   }
 
-  /** Harici tünel sunucusunda login (federation). Direkt axios, ApiService interceptor kullanılmaz. */
+  /** Harici tünel sunucusunda login (federation). skipPrecheck: JWT yoksa login'e yönlendirme. */
   static async tunnelLoginExternal(baseURL, email, password) {
     const base = (baseURL || '').replace(/\/$/, '');
     return await axios.post(base + '/api/v1/tunnel/auth/login', { email, password }, {
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      skipPrecheck: true,
     });
   }
 
-  /** Harici tünel sunucusunda kayıt (federation). Direkt axios, OAuth2 register → token alır. */
+  /** Harici tünel sunucusunda kayıt (federation). skipPrecheck: JWT yoksa login'e yönlendirme. */
   static async tunnelRegisterExternal(baseURL, email, password) {
     const base = (baseURL || '').replace(/\/$/, '');
     return await axios.post(base + '/api/v1/tunnel/auth/register', { email, password }, {
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json' }
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+      skipPrecheck: true,
     });
   }
 
