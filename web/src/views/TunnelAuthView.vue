@@ -52,6 +52,16 @@ const isValid = computed(() => {
 });
 
 const goBack = () => {
+  const origin = redirectOrigin.value;
+  const sid = serverId.value;
+  if (origin) {
+    const target =
+      origin.replace(/\/$/, "") +
+      "/#/tunnel-proxy-client" +
+      (sid ? "?server=" + encodeURIComponent(String(sid)) : "");
+    window.location.href = target;
+    return;
+  }
   router.push("/tunnel-proxy-client");
 };
 
@@ -149,7 +159,7 @@ onMounted(() => {
                   : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
               "
               class="flex-1 px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-              @click="mode = 'login'"
+              @click="mode = 'login'; errorMsg = ''"
             >
               <BaseIcon :path="mdiLogin" size="18" />
               Sign in
@@ -162,7 +172,7 @@ onMounted(() => {
                   : 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-400'
               "
               class="flex-1 px-4 py-2 rounded-lg text-sm font-medium flex items-center justify-center gap-2"
-              @click="mode = 'register'"
+              @click="mode = 'register'; errorMsg = ''"
             >
               <BaseIcon :path="mdiAccountPlus" size="18" />
               Register

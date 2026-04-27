@@ -16,6 +16,7 @@ import (
 	"redock/php_debug_adapter"
 	"redock/pkg/network"
 	"redock/platform/database"
+	"redock/platform/jwtsecrets"
 	"redock/platform/memory"
 	"redock/platform/migrations"
 	"redock/saved_commands"
@@ -69,6 +70,9 @@ func initialize() {
 	if err := registerEntities(db); err != nil {
 		log.Fatalf("Failed to register entities: %v", err)
 	}
+
+	// Load or create JWT secret and refresh salt in memory DB (persisted across restarts)
+	jwtsecrets.Ensure(db)
 
 	// Run memory DB migrations (one-time data migrations)
 	if err := database.RunMemoryMigrations(db, dataDir, migrations.MemoryMigrations()); err != nil {
@@ -160,6 +164,7 @@ func registerEntities(db *memory.Database) error {
 		{"php_xdebug_mappings", func() error { return memory.Register[*php_debug_adapter.PhpXDebugMappingEntity](db, "php_xdebug_mappings") }},
 		{"api_gateway_config", func() error { return memory.Register[*api_gateway.ApiGatewayConfigEntity](db, "api_gateway_config") }},
 		{"api_gateway_blocks", func() error { return memory.Register[*api_gateway.ApiGatewayBlockEntity](db, "api_gateway_blocks") }},
+		{"jwt_secrets", func() error { return memory.Register[*jwtsecrets.JWTSecretsEntity](db, jwtsecrets.TableName) }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
 		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},
