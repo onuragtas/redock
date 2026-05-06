@@ -102,6 +102,7 @@ const newRoute = ref({
   preserve_host: false,
   host_rewrite: '',
   priority: 0,
+  timeout: 0,
   rate_limit_enabled: false,
   rate_limit_requests: 100,
   rate_limit_window: 60,
@@ -181,6 +182,20 @@ const createDefaultClientSecurityConfig = () => ({
   manual_blocks: []
 })
 
+const createDefaultTimeoutsConfig = () => ({
+  server_read_seconds: 30,
+  server_write_seconds: 30,
+  server_idle_seconds: 60,
+  shutdown_seconds: 10,
+  request_timeout_seconds: 0,
+  upstream_dial_seconds: 30,
+  upstream_keep_alive_seconds: 30,
+  upstream_idle_conn_seconds: 90,
+  tls_handshake_seconds: 10,
+  expect_continue_seconds: 1,
+  health_check_seconds: 5
+})
+
 const normalizeObservabilityConfig = (cfg = {}) => {
   const base = createDefaultObservabilityConfig()
   return {
@@ -223,7 +238,8 @@ const gatewayConfig = ref({
   https_port: 443,
   https_enabled: false,
   access_log_enabled: true,
-  client_security: createDefaultClientSecurityConfig()
+  client_security: createDefaultClientSecurityConfig(),
+  timeouts: createDefaultTimeoutsConfig()
 })
 
 const isSuccessfulResponse = (response) => {
@@ -399,6 +415,7 @@ const openAddRouteModal = () => {
     preserve_host: false,
     host_rewrite: '',
     priority: 0,
+    timeout: 0,
     rate_limit_enabled: false,
     rate_limit_requests: 100,
     rate_limit_window: 60,
@@ -634,7 +651,8 @@ const openConfigModal = async () => {
       https_port: cfg.https_port || 443,
       https_enabled: cfg.https_enabled || false,
       access_log_enabled: cfg.access_log_enabled !== false,
-      client_security: clientSecurity
+      client_security: clientSecurity,
+      timeouts: { ...createDefaultTimeoutsConfig(), ...(cfg.timeouts || {}) }
     }
     isConfigModalActive.value = true
   } catch (error) {
@@ -652,10 +670,19 @@ const saveConfig = async () => {
     const rawLimit = Number(clientSecurityPayload.top_client_limit)
     const boundedLimit = Math.min(1000, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 1000))
     clientSecurityPayload.top_client_limit = Math.round(boundedLimit)
+    const timeoutsPayload = {
+      ...(currentConfig.timeouts || {}),
+      ...((gatewayConfig.value && gatewayConfig.value.timeouts) || {})
+    }
+    Object.keys(timeoutsPayload).forEach(k => {
+      const n = Number(timeoutsPayload[k])
+      timeoutsPayload[k] = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0
+    })
     const updatedConfig = {
       ...currentConfig,
       ...gatewayConfig.value,
-      client_security: clientSecurityPayload
+      client_security: clientSecurityPayload,
+      timeouts: timeoutsPayload
     }
     await ApiService.apiGatewayUpdateConfig(updatedConfig)
     isConfigModalActive.value = false
@@ -1544,8 +1571,8 @@ onUnmounted(() => {
           <FormField label="Protocol">
             <FormControl v-model="newService.protocol" :options="['http', 'https']" />
           </FormField>
-          <FormField label="Timeout (seconds)">
-            <FormControl v-model="newService.timeout" type="number" placeholder="30" />
+          <FormField label="Request Timeout (seconds, 0 = global default)">
+            <FormControl v-model.number="newService.timeout" type="number" min="0" placeholder="0" />
           </FormField>
         </div>
         <FormField label="Base Path (optional)">
@@ -1585,6 +1612,9 @@ onUnmounted(() => {
         <FormField label="Methods (comma-separated, optional)">
           <FormControl v-model="newRoute.methods" placeholder="GET, POST, PUT" />
         </FormField>
+        <FormField label="Request Timeout (seconds, optional)">
+          <FormControl v-model.number="newRoute.timeout" type="number" min="0" placeholder="0 = inherit from service / global" />
+        </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
             <FormCheckRadio v-model="newRoute.strip_path" label="Strip Path" name="strip_path" />
@@ -1614,9 +1644,9 @@ onUnmounted(() => {
             <div v-for="(entry, idx) in newRoute.auth_headers" :key="'ah-' + idx" class="flex gap-2 items-end mb-2">
               <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
               <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
-              <BaseButton label="" color="danger" small @click="newRoute.auth_headers.splice(idx, 1)" :icon="mdiDelete" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.auth_headers.splice(idx, 1)" />
             </div>
-            <BaseButton label="Add header" color="info" small @click="newRoute.auth_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+            <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.auth_headers.push({ key: '', value: '' })" />
           </div>
         </template>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
@@ -1661,9 +1691,9 @@ onUnmounted(() => {
           <div v-for="(entry, idx) in newRoute.response_headers" :key="'rh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
             <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
-            <BaseButton label="" color="danger" small @click="newRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+            <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.response_headers.splice(idx, 1)" />
           </div>
-          <BaseButton label="Add header" color="info" small @click="newRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.response_headers.push({ key: '', value: '' })" />
         </div>
       </div>
     </CardBoxModal>
@@ -1743,6 +1773,48 @@ onUnmounted(() => {
             Controls how many clients are stored for analytics and manual blocking (up to 1000).
           </p>
         </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Timeouts (seconds)</h4>
+          <p class="text-xs text-slate-500 mb-3">
+            Global defaults. Per-route timeout overrides per-service, which overrides the request timeout below.
+            Server Write must be ≥ the longest expected request, otherwise it caps everything.
+          </p>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <FormField label="Request Timeout (overall)">
+              <FormControl v-model.number="gatewayConfig.timeouts.request_timeout_seconds" type="number" min="0" placeholder="0 = disabled" />
+            </FormField>
+            <FormField label="Server Read">
+              <FormControl v-model.number="gatewayConfig.timeouts.server_read_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Server Write">
+              <FormControl v-model.number="gatewayConfig.timeouts.server_write_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Server Idle">
+              <FormControl v-model.number="gatewayConfig.timeouts.server_idle_seconds" type="number" min="0" placeholder="60" />
+            </FormField>
+            <FormField label="Shutdown">
+              <FormControl v-model.number="gatewayConfig.timeouts.shutdown_seconds" type="number" min="0" placeholder="10" />
+            </FormField>
+            <FormField label="Health Check">
+              <FormControl v-model.number="gatewayConfig.timeouts.health_check_seconds" type="number" min="0" placeholder="5" />
+            </FormField>
+            <FormField label="Upstream Dial">
+              <FormControl v-model.number="gatewayConfig.timeouts.upstream_dial_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Upstream Keep-Alive">
+              <FormControl v-model.number="gatewayConfig.timeouts.upstream_keep_alive_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Upstream Idle Conn">
+              <FormControl v-model.number="gatewayConfig.timeouts.upstream_idle_conn_seconds" type="number" min="0" placeholder="90" />
+            </FormField>
+            <FormField label="TLS Handshake">
+              <FormControl v-model.number="gatewayConfig.timeouts.tls_handshake_seconds" type="number" min="0" placeholder="10" />
+            </FormField>
+            <FormField label="Expect-Continue">
+              <FormControl v-model.number="gatewayConfig.timeouts.expect_continue_seconds" type="number" min="0" placeholder="1" />
+            </FormField>
+          </div>
+        </div>
       </div>
     </CardBoxModal>
 
@@ -1771,8 +1843,8 @@ onUnmounted(() => {
           <FormField label="Protocol">
             <FormControl v-model="editingService.protocol" :options="['http', 'https']" />
           </FormField>
-          <FormField label="Timeout (seconds)">
-            <FormControl v-model="editingService.timeout" type="number" placeholder="30" />
+          <FormField label="Request Timeout (seconds, 0 = global default)">
+            <FormControl v-model.number="editingService.timeout" type="number" min="0" placeholder="0" />
           </FormField>
         </div>
         <FormField label="Base Path (optional)">
@@ -1815,6 +1887,9 @@ onUnmounted(() => {
         <FormField label="Methods (comma-separated, optional)">
           <FormControl v-model="editingRoute.methods" placeholder="GET, POST, PUT" />
         </FormField>
+        <FormField label="Request Timeout (seconds, optional)">
+          <FormControl v-model.number="editingRoute.timeout" type="number" min="0" placeholder="0 = inherit from service / global" />
+        </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
             <FormCheckRadio v-model="editingRoute.strip_path" label="Strip Path" name="edit_strip_path" />
@@ -1847,9 +1922,9 @@ onUnmounted(() => {
             <div v-for="(entry, idx) in (editingRoute.auth_headers || [])" :key="'eah-' + idx" class="flex gap-2 items-end mb-2">
               <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
               <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
-              <BaseButton label="" color="danger" small @click="(editingRoute.auth_headers || []).splice(idx, 1)" :icon="mdiDelete" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="(editingRoute.auth_headers || []).splice(idx, 1)" />
             </div>
-            <BaseButton label="Add header" color="info" small @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" :icon="mdiPlus" />
+            <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" />
           </div>
         </template>
         <div v-if="editingRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
@@ -1894,9 +1969,9 @@ onUnmounted(() => {
           <div v-for="(entry, idx) in editingRoute.response_headers" :key="'erh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
             <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
-            <BaseButton label="" color="danger" small @click="editingRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+            <BaseButton label="" color="danger" small :icon="mdiDelete" @click="editingRoute.response_headers.splice(idx, 1)" />
           </div>
-          <BaseButton label="Add header" color="info" small @click="editingRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="editingRoute.response_headers.push({ key: '', value: '' })" />
         </div>
       </div>
     </CardBoxModal>

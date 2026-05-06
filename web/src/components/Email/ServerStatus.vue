@@ -82,7 +82,7 @@
       </div>
     </div>
 
-    <button @click="$emit('refresh')" class="btn-refresh">
+    <button class="btn-refresh" @click="$emit('refresh')">
       🔄 Refresh Status
     </button>
   </div>

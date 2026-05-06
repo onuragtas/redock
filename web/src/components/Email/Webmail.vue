@@ -2,13 +2,13 @@
   <div class="webmail">
     <!-- Mailbox Selector -->
     <div class="mailbox-selector">
-      <select v-model="selectedMailboxId" @change="loadEmails" class="mailbox-select">
+      <select v-model="selectedMailboxId" class="mailbox-select" @change="loadEmails">
         <option value="">Select Mailbox</option>
         <option v-for="mailbox in mailboxes" :key="mailbox.ID" :value="mailbox.ID">
           {{ mailbox.email }}
         </option>
       </select>
-      <button @click="showComposer = true" class="btn-compose" :disabled="!selectedMailboxId">
+      <button class="btn-compose" :disabled="!selectedMailboxId" @click="showComposer = true">
         ✏️ Compose
       </button>
     </div>
@@ -36,7 +36,7 @@
       <div class="email-list">
         <div class="list-header">
           <h3>{{ getCurrentFolderName() }}</h3>
-          <button @click="loadEmails" class="btn-refresh">🔄</button>
+          <button class="btn-refresh" @click="loadEmails">🔄</button>
         </div>
 
         <div v-if="loading" class="loading-state">
@@ -63,12 +63,12 @@
       </div>
 
       <!-- Email Viewer -->
-      <div class="email-viewer" v-if="selectedEmail">
+      <div v-if="selectedEmail" class="email-viewer">
         <div class="viewer-header">
           <h2>{{ selectedEmail.subject || '(No Subject)' }}</h2>
           <div class="viewer-actions">
-            <button @click="replyEmail" class="btn-action">↩️ Reply</button>
-            <button @click="deleteEmail" class="btn-action btn-delete">🗑️ Delete</button>
+            <button class="btn-action" @click="replyEmail">↩️ Reply</button>
+            <button class="btn-action btn-delete" @click="deleteEmail">🗑️ Delete</button>
           </div>
         </div>
 
@@ -92,7 +92,7 @@
         </div>
 
         <div class="viewer-body">
-          <div v-if="selectedEmail.body_html" v-html="selectedEmail.body_html" class="email-html"></div>
+          <div v-if="selectedEmail.body_html" class="email-html" v-html="selectedEmail.body_html"></div>
           <pre v-else class="email-plain">{{ selectedEmail.body_plain }}</pre>
         </div>
 
@@ -112,10 +112,10 @@
       <div class="composer">
         <div class="composer-header">
           <h3>✏️ New Message</h3>
-          <button @click="showComposer = false" class="btn-close">✕</button>
+          <button class="btn-close" @click="showComposer = false">✕</button>
         </div>
 
-        <form @submit.prevent="handleSend" class="composer-form">
+        <form class="composer-form" @submit.prevent="handleSend">
           <input
             v-model="newEmail.to"
             type="email"
@@ -142,7 +142,7 @@
             <button type="submit" class="btn-send" :disabled="sending">
               {{ sending ? '📤 Sending...' : '📤 Send' }}
             </button>
-            <button type="button" @click="showComposer = false" class="btn-cancel">
+            <button type="button" class="btn-cancel" @click="showComposer = false">
               Cancel
             </button>
           </div>

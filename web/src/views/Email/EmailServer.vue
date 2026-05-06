@@ -1059,7 +1059,8 @@ onMounted(() => {
                 <p v-if="domain.description" class="text-sm text-gray-500">{{ domain.description }}</p>
               </div>
               <div class="flex items-center gap-3">
-                <span :class="[
+                <span
+:class="[
                   'px-3 py-1 rounded-full text-sm font-medium',
                   domain.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                 ]">
@@ -1377,7 +1378,7 @@ onMounted(() => {
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div class="flex items-start justify-between mb-2">
                 <h2 class="text-xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || '(No subject)' }}</h2>
-                <button @click="showEmailDetail = false" class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300">
+                <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" @click="showEmailDetail = false">
                   <BaseIcon :path="mdiArrowLeft" w="w-6" h="h-6" />
                 </button>
               </div>
@@ -1407,7 +1408,7 @@ onMounted(() => {
                     </div>
                   </div>
                   <div class="email-body-content text-sm">
-                    <div v-html="selectedEmail.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
+                    <div class="prose prose-sm dark:prose-invert max-w-none email-quoted" v-html="selectedEmail.body_html"></div>
                   </div>
                 </CardBox>
                 <!-- Plain gövde: "On ... wrote:" bloklarına göre her biri ayrı CardBox, hep açık -->
@@ -1428,7 +1429,7 @@ onMounted(() => {
                       </div>
                     </div>
                     <div class="email-body-content text-sm pt-3 border-t border-gray-200 dark:border-gray-600">
-                      <div v-if="seg.content" v-html="plainTextToHtml(seg.content)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
+                      <div v-if="seg.content" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted" v-html="plainTextToHtml(seg.content)"></div>
                       <p v-else class="text-gray-500 dark:text-gray-400">No content</p>
                     </div>
                   </CardBox>
@@ -1450,9 +1451,9 @@ onMounted(() => {
                     </div>
                   </div>
                   <div class="email-body-content text-sm pt-3 border-t border-gray-200 dark:border-gray-600">
-                    <div v-if="msg.body_html" v-html="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted"></div>
+                    <div v-if="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted" v-html="msg.body_html"></div>
                     <template v-else>
-                      <div v-if="msg.body_plain" v-html="plainTextToHtml(msg.body_plain)" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted"></div>
+                      <div v-if="msg.body_plain" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted" v-html="plainTextToHtml(msg.body_plain)"></div>
                       <p v-else class="text-gray-500 dark:text-gray-400">No content</p>
                     </template>
                   </div>

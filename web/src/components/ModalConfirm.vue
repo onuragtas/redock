@@ -121,8 +121,8 @@ const getConfirmButtonColor = () => {
       >
         <!-- Close Button -->
         <button
-          @click="cancel"
           class="absolute top-4 right-4 p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-slate-700 transition-colors"
+          @click="cancel"
         >
           <BaseIcon :path="mdiClose" w="w-5" h="h-5" class="text-gray-500 dark:text-gray-400" />
         </button>

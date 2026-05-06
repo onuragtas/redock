@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -36,7 +37,78 @@ const (
 	defaultTopClientLimit    = 1000
 	defaultNoRouteThreshold  = 5
 	defaultAutoBlockDuration = 5 * time.Minute
+
+	defaultServerReadTimeout       = 30 * time.Second
+	defaultServerWriteTimeout      = 30 * time.Second
+	defaultServerIdleTimeout       = 60 * time.Second
+	defaultShutdownTimeout         = 10 * time.Second
+	defaultRequestTimeout          = 0 // 0 = no overall request timeout (only Server.WriteTimeout caps)
+	defaultUpstreamDialTimeout     = 30 * time.Second
+	defaultUpstreamKeepAlive       = 30 * time.Second
+	defaultUpstreamIdleConnTimeout = 90 * time.Second
+	defaultTLSHandshakeTimeout     = 10 * time.Second
+	defaultExpectContinueTimeout   = 1 * time.Second
+	defaultHealthCheckTimeout      = 5 * time.Second
 )
+
+type resolvedTimeouts struct {
+	serverRead        time.Duration
+	serverWrite       time.Duration
+	serverIdle        time.Duration
+	shutdown          time.Duration
+	request           time.Duration
+	upstreamDial      time.Duration
+	upstreamKeepAlive time.Duration
+	upstreamIdleConn  time.Duration
+	tlsHandshake      time.Duration
+	expectContinue    time.Duration
+	healthCheck       time.Duration
+}
+
+func (g *Gateway) resolveTimeouts() resolvedTimeouts {
+	var t *TimeoutsConfig
+	if g.config != nil {
+		t = g.config.Timeouts
+	}
+	if t == nil {
+		t = &TimeoutsConfig{}
+	}
+	pick := func(sec int, def time.Duration) time.Duration {
+		if sec <= 0 {
+			return def
+		}
+		return time.Duration(sec) * time.Second
+	}
+	return resolvedTimeouts{
+		serverRead:        pick(t.ServerReadSec, defaultServerReadTimeout),
+		serverWrite:       pick(t.ServerWriteSec, defaultServerWriteTimeout),
+		serverIdle:        pick(t.ServerIdleSec, defaultServerIdleTimeout),
+		shutdown:          pick(t.ShutdownSec, defaultShutdownTimeout),
+		request:           pick(t.RequestTimeoutSec, defaultRequestTimeout),
+		upstreamDial:      pick(t.UpstreamDialSec, defaultUpstreamDialTimeout),
+		upstreamKeepAlive: pick(t.UpstreamKeepAliveSec, defaultUpstreamKeepAlive),
+		upstreamIdleConn:  pick(t.UpstreamIdleConnSec, defaultUpstreamIdleConnTimeout),
+		tlsHandshake:      pick(t.TLSHandshakeSec, defaultTLSHandshakeTimeout),
+		expectContinue:    pick(t.ExpectContinueSec, defaultExpectContinueTimeout),
+		healthCheck:       pick(t.HealthCheckSec, defaultHealthCheckTimeout),
+	}
+}
+
+func (g *Gateway) buildHTTPClient() {
+	to := g.resolveTimeouts()
+	clientTimeout := to.request
+	if clientTimeout <= 0 {
+		clientTimeout = to.upstreamDial
+	}
+	g.httpClient = &http.Client{
+		Timeout: clientTimeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     to.upstreamIdleConn,
+		},
+	}
+}
 
 func defaultClientSecurityConfig() *ClientSecurityConfig {
 	return &ClientSecurityConfig{
@@ -308,14 +380,6 @@ func NewGateway(workDir string) *Gateway {
 		serviceHealth: make(map[string]*ServiceHealth),
 		stopChan:      make(chan struct{}),
 		workDir:       workDir,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		},
 		stats: &gatewayStatsTracker{
 			startTime:    time.Now(),
 			serviceStats: make(map[string]*serviceStatsTracker),
@@ -328,6 +392,7 @@ func NewGateway(workDir string) *Gateway {
 		persistentBlocks: make(map[string]BlockedClient),
 	}
 	g.loadConfig()
+	g.buildHTTPClient()
 	return g
 }
 
@@ -482,6 +547,7 @@ func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 	g.config = config
 	g.mu.Unlock()
 
+	g.buildHTTPClient()
 	g.refreshServicesAndRoutes()
 	g.refreshClientSecurity()
 
@@ -515,15 +581,17 @@ func (g *Gateway) startLocked() error {
 	g.refreshClientSecurity()
 	g.stopChan = make(chan struct{})
 
+	to := g.resolveTimeouts()
+
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", g.handleRequest)
 
 	g.httpServer = &http.Server{
 		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  to.serverRead,
+		WriteTimeout: to.serverWrite,
+		IdleTimeout:  to.serverIdle,
 	}
 
 	// Start HTTP listener
@@ -565,9 +633,9 @@ func (g *Gateway) startLocked() error {
 		g.httpsServer = &http.Server{
 			Handler:      mux,
 			TLSConfig:    g.tlsConfig,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  60 * time.Second,
+			ReadTimeout:  to.serverRead,
+			WriteTimeout: to.serverWrite,
+			IdleTimeout:  to.serverIdle,
 		}
 
 		httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
@@ -626,7 +694,7 @@ func (g *Gateway) stopLocked() error {
 
 	close(g.stopChan)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), g.resolveTimeouts().shutdown)
 	defer cancel()
 
 	if g.httpServer != nil {
@@ -1127,20 +1195,33 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	// Create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
-	// Configure transport with default timeout if not specified
-	dialTimeout := time.Duration(service.Timeout) * time.Second
-	if dialTimeout <= 0 {
-		dialTimeout = 30 * time.Second
-	}
+	to := g.resolveTimeouts()
 	proxy.Transport = &http.Transport{
 		DialContext: (&net.Dialer{
-			Timeout:   dialTimeout,
-			KeepAlive: 30 * time.Second,
+			Timeout:   to.upstreamDial,
+			KeepAlive: to.upstreamKeepAlive,
 		}).DialContext,
 		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		IdleConnTimeout:       to.upstreamIdleConn,
+		TLSHandshakeTimeout:   to.tlsHandshake,
+		ExpectContinueTimeout: to.expectContinue,
+	}
+
+	// Resolve effective request timeout: route → service → global default.
+	// Skip for protocol upgrades (e.g. WebSocket) since those are long-lived.
+	requestTimeout := time.Duration(0)
+	switch {
+	case route.Timeout > 0:
+		requestTimeout = time.Duration(route.Timeout) * time.Second
+	case service.Timeout > 0:
+		requestTimeout = time.Duration(service.Timeout) * time.Second
+	default:
+		requestTimeout = to.request
+	}
+	if requestTimeout > 0 && !strings.EqualFold(r.Header.Get("Connection"), "upgrade") {
+		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+		defer cancel()
+		r = r.WithContext(ctx)
 	}
 
 	// Determine the incoming protocol
@@ -1201,6 +1282,10 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	var proxyErr error
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		proxyErr = fmt.Errorf("proxy error: %w", err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+			return
+		}
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	}
 
@@ -1332,7 +1417,7 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 
 	timeout := time.Duration(service.HealthCheck.Timeout) * time.Second
 	if timeout == 0 {
-		timeout = 5 * time.Second
+		timeout = g.resolveTimeouts().healthCheck
 	}
 
 	client := &http.Client{Timeout: timeout}

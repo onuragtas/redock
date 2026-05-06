@@ -513,13 +513,13 @@ onUnmounted(() => {
         <button
           v-for="t in ['overview', 'servers', 'users', 'statistics']"
           :key="t"
-          @click="activeTab = t"
           :class="[
             'shrink-0 whitespace-nowrap px-4 py-2 font-medium text-sm transition-colors',
             activeTab === t
               ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
               : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
           ]"
+          @click="activeTab = t"
         >
           {{ t.charAt(0).toUpperCase() + t.slice(1) }}
         </button>

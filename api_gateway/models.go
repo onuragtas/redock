@@ -17,7 +17,7 @@ type Service struct {
 	Protocol    string            `json:"protocol"` // http, https, grpc
 	Path        string            `json:"path"`     // base path for the service
 	Retries     int               `json:"retries"`
-	Timeout     int               `json:"timeout"` // in seconds
+	Timeout     int               `json:"timeout"` // overall upstream request timeout in seconds; 0 = inherit from global
 	HealthCheck *HealthCheck      `json:"health_check,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"` // headers to add to requests
 	Enabled     bool              `json:"enabled"`
@@ -49,8 +49,9 @@ type Route struct {
 	AuthType             string            `json:"auth_type,omitempty"`     // basic, jwt, header
 	AuthHeaders          []AuthHeader      `json:"auth_headers,omitempty"`   // required header key-value pairs when auth_type=header
 	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
-	CORS                 *CORSConfig       `json:"cors,omitempty"`           // CORS response headers for this route (incl. WebSocket)
+	CORS                 *CORSConfig       `json:"cors,omitempty"`             // CORS response headers for this route (incl. WebSocket)
 	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route
+	Timeout              int               `json:"timeout,omitempty"`          // overall upstream request timeout in seconds; 0 = inherit from service then global
 	Enabled              bool              `json:"enabled"`
 }
 
@@ -109,7 +110,25 @@ type GatewayConfig struct {
 	AccessLogEnabled bool                  `json:"access_log_enabled"`
 	Observability    *ObservabilityConfig  `json:"observability,omitempty"`
 	ClientSecurity   *ClientSecurityConfig `json:"client_security,omitempty"`
+	Timeouts         *TimeoutsConfig       `json:"timeouts,omitempty"`
 	Enabled          bool                  `json:"enabled"`
+}
+
+// TimeoutsConfig holds global default timeouts. Per-service / per-route
+// timeouts override RequestTimeoutSec; the rest are transport/server level.
+// Values are in seconds; 0 falls back to the built-in default.
+type TimeoutsConfig struct {
+	ServerReadSec        int `json:"server_read_seconds"`
+	ServerWriteSec       int `json:"server_write_seconds"`
+	ServerIdleSec        int `json:"server_idle_seconds"`
+	ShutdownSec          int `json:"shutdown_seconds"`
+	RequestTimeoutSec    int `json:"request_timeout_seconds"`
+	UpstreamDialSec      int `json:"upstream_dial_seconds"`
+	UpstreamKeepAliveSec int `json:"upstream_keep_alive_seconds"`
+	UpstreamIdleConnSec  int `json:"upstream_idle_conn_seconds"`
+	TLSHandshakeSec      int `json:"tls_handshake_seconds"`
+	ExpectContinueSec    int `json:"expect_continue_seconds"`
+	HealthCheckSec       int `json:"health_check_seconds"`
 }
 
 // ClientSecurityConfig toggles request tracking and auto-blocking behaviour

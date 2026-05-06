@@ -13,11 +13,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ```bash
 # Build
 go build -o redock
-make build           # runs critic + security + lint + tests, outputs to ./build/
+# Note: `make build` is currently broken — the target references main.go,
+# but the entry point in this repo is service.go. Use `go build -o redock` directly.
 
 # Run (requires root)
 sudo ./redock
 SKIP_UPDATE_CHECK=1 sudo ./redock   # skip version check during dev
+sudo ./redock --devenv              # dev mode: skips local-IP regeneration loop
 
 # Service management
 sudo redock --action install
@@ -25,9 +27,13 @@ sudo redock --action start
 sudo redock --action stop
 sudo redock --action uninstall
 
-# Test
+# Test (full suite)
 go test -v -timeout 30s -coverprofile=cover.out -cover ./...
 go tool cover -func=cover.out
+
+# Run a single package / test
+go test -v ./api_gateway/...
+go test -v -run TestRouteMatch ./api_gateway/
 
 # Lint / static analysis
 golangci-lint run ./...
@@ -59,10 +65,12 @@ npm run format   # Prettier
 | File | Role |
 |---|---|
 | `service.go` | `main()` — permission check, flag parsing, systemd/Windows service wrapper |
-| `init.go` | `initialize()` — in order: self-update check → Docker manager → in-memory DB → entity registration → all service `Init()` calls |
+| `init.go` | `initialize()` — self-update check → Docker manager → SQLite auto-migration → in-memory DB → entity registration → JWT secret bootstrap (`jwtsecrets.Ensure`) → memory DB migrations → all service `Init()` calls |
 | `app.go` | `app()` — Fiber setup, middleware, route registration, SSH server goroutine, serve embedded Vue `dist/` on `/` |
 
 Services are initialized in `init.go` in this order: `devenv` → `tunnel_server` → `localproxy` → `php_debug_adapter` → `saved_commands` → `deployment` → `api_gateway` → `dns_server` → `vpn_server` → `cloudflare` → `email_server`.
+
+When adding a new memory-DB-backed entity, register it inside `registerEntities()` in `init.go` *before* the service `Init()` calls. JWT signing secret and refresh salt are persisted as a `jwt_secrets` entity in the memory DB, so they survive restarts; do not regenerate them on each boot.
 
 ### Core Subsystems
 

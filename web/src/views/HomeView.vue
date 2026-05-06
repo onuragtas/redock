@@ -406,13 +406,13 @@ onUnmounted(() => {
             </div>
           </div>
           <button
-            @click="goToUpdatesPage"
             :class="[
               'ml-4 px-4 py-2 rounded-lg font-medium flex items-center space-x-2 transition-all duration-200 hover:shadow-lg',
               hasCriticalUpdate
                 ? 'bg-red-600 hover:bg-red-700 text-white'
                 : 'bg-blue-600 hover:bg-blue-700 text-white'
             ]"
+            @click="goToUpdatesPage"
           >
             <span>View Updates</span>
             <BaseIcon :path="mdiArrowRight" size="18" />
