@@ -20,6 +20,7 @@ import (
 	"time"
 
 	dockermanager "redock/docker-manager"
+	"redock/pkg/pathutil"
 	"redock/platform/database"
 	"redock/platform/memory"
 )
@@ -428,6 +429,11 @@ func (g *Gateway) loadConfig() {
 				return
 			}
 			g.config = &config
+			if g.normalizeStoredPaths() {
+				if err := g.saveConfigLocked(); err != nil {
+					log.Printf("API Gateway: failed to persist normalized paths: %v", err)
+				}
+			}
 			g.refreshClientSecurity()
 			g.loadBlockList()
 			g.refreshServicesAndRoutes()
@@ -439,6 +445,27 @@ func (g *Gateway) loadConfig() {
 
 	// No file fallback: config is only in memory DB
 	defaultConfig()
+}
+
+// normalizeStoredPaths rewrites any in-config absolute paths whose
+// docker-environment prefix points at a different host's home (e.g. after a
+// cross-machine restore) so they resolve against the running user's
+// workDir. Returns true if any field was changed; the caller is expected
+// to persist the config in that case.
+func (g *Gateway) normalizeStoredPaths() bool {
+	if g.config == nil {
+		return false
+	}
+	changed := false
+	if v := pathutil.NormalizeWorkDirPath(g.config.TLSCertFile, g.workDir); v != g.config.TLSCertFile {
+		g.config.TLSCertFile = v
+		changed = true
+	}
+	if v := pathutil.NormalizeWorkDirPath(g.config.TLSKeyFile, g.workDir); v != g.config.TLSKeyFile {
+		g.config.TLSKeyFile = v
+		changed = true
+	}
+	return changed
 }
 
 // SaveConfig saves the gateway configuration to memory DB

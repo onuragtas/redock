@@ -18,7 +18,8 @@ func FiberConfig() fiber.Config {
 	return fiber.Config{
 		ReadTimeout: time.Second * time.Duration(readTimeoutSecondsCount),
 		// Default is 4 MiB; bumped so backup upload (full data dir, can be
-		// hundreds of MB) and other large multipart uploads succeed.
-		BodyLimit: 2 * 1024 * 1024 * 1024, // 2 GiB
+		// hundreds of MB) and other large multipart uploads succeed. Stays
+		// safely under int32 max so 32-bit ARM builds don't overflow.
+		BodyLimit: 1024 * 1024 * 1024, // 1 GiB
 	}
 }
