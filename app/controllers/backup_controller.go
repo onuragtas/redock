@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"log"
 	"redock/backup"
 	dockermanager "redock/docker-manager"
 	"redock/pkg/utils"
@@ -220,16 +221,27 @@ func BackupRestore(c *fiber.Ctx) error {
 
 	dm := dockermanager.GetDockerManager()
 	id := body.ID
-	if utils.RequestGracefulShutdown != nil {
-		utils.RequestGracefulShutdown(func() {
-			if err := backup.Restore(id, dm.GetWorkDir(), currentVersion); err != nil {
-				// We have already shut down; log and bail. Operator will see
-				// the failure and can restart manually.
-				return
-			}
-			_ = selfupdate.RestartProcess()
+	if utils.RequestGracefulShutdown == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "graceful shutdown unavailable; restore would corrupt running state",
 		})
 	}
+	utils.RequestGracefulShutdown(func() {
+		log.Printf("backup: restoring %s into %s", id, dm.GetWorkDir())
+		if err := backup.Restore(id, dm.GetWorkDir(), currentVersion); err != nil {
+			// We have already shut down; the server is dead in the water.
+			// Log loudly so the operator can see the failure in journalctl /
+			// terminal output and intervene (e.g. extract by hand or undo
+			// from the .pre-restore safety snapshot).
+			log.Printf("❌ backup: restore %s failed: %v", id, err)
+			return
+		}
+		log.Printf("backup: restore %s succeeded; restarting process", id)
+		if err := selfupdate.RestartProcess(); err != nil {
+			log.Printf("❌ backup: restart after restore failed: %v -- redock must be started manually", err)
+		}
+	})
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,

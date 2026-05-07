@@ -141,6 +141,25 @@ func Create(workDir, version, reason string) (*Info, error) {
 	}, nil
 }
 
+// writeZeros writes n zero bytes to w in 4 KiB chunks. Used to pad a tar
+// entry whose source file shrank after WriteHeader committed to a Size.
+func writeZeros(w io.Writer, n int64) error {
+	const chunk = 4096
+	var buf [chunk]byte
+	for n > 0 {
+		c := int64(chunk)
+		if c > n {
+			c = n
+		}
+		m, err := w.Write(buf[:c])
+		if err != nil {
+			return err
+		}
+		n -= int64(m)
+	}
+	return nil
+}
+
 // writeArchive walks src and writes a .tar.gz at out, plus the manifest.json
 // entry at the archive root. Returns file count, uncompressed bytes, and a
 // stable content hash (of "path|size|mtime" tuples).
@@ -217,22 +236,35 @@ func writeArchive(out, src string, manifest *Manifest) (int, int64, string, erro
 			return err
 		}
 		defer fileR.Close()
+		size := info.Size()
 		hdr := &tar.Header{
 			Name:    "data/" + rel,
 			Mode:    int64(info.Mode().Perm()),
-			Size:    info.Size(),
+			Size:    size,
 			ModTime: info.ModTime(),
 		}
 		if err := tw.WriteHeader(hdr); err != nil {
 			return err
 		}
-		n, err := io.Copy(tw, fileR)
+		// LimitReader caps reads at the declared header size, so a file that
+		// grew between filepath.Walk's stat and our io.Copy (e.g. an active
+		// log being written by another goroutine during shutdown) won't
+		// overflow the tar entry and trip "archive/tar: write too long".
+		n, err := io.Copy(tw, io.LimitReader(fileR, size))
 		if err != nil {
 			return err
 		}
+		// File shrank between stat and read: pad with zeros so the data
+		// section length matches the declared Size; otherwise tar.Writer
+		// rejects the next header with "wrote too few bytes".
+		if n < size {
+			if err := writeZeros(tw, size-n); err != nil {
+				return err
+			}
+		}
 		count++
-		totalBytes += n
-		fmt.Fprintf(hasher, "%s|%d|%d\n", rel, info.Size(), info.ModTime().UnixNano())
+		totalBytes += size
+		fmt.Fprintf(hasher, "%s|%d|%d\n", rel, size, info.ModTime().UnixNano())
 		return nil
 	})
 	if walkErr != nil {
