@@ -484,28 +484,20 @@ func Delete(id string) error {
 	return os.Remove(path)
 }
 
-// Restore extracts a backup over $workDir/data/. Before extraction, the
-// current data/ is itself snapshotted as "<id>_pre-restore" so the operation
-// is reversible. The data dir is wiped and rewritten from the archive.
+// Restore extracts a backup over $workDir/data/. The data dir is wiped and
+// rewritten from the archive.
 //
 // Restore is atomic only at the directory-rename level: we extract into a
 // temp sibling dir, then swap. If anything goes wrong before the swap, the
-// existing data/ is untouched.
-func Restore(id, workDir, currentVersion string) error {
+// existing data/ is untouched. If the user wants a snapshot of the current
+// state before discarding it, they should take a manual backup first.
+func Restore(id, workDir string) error {
 	src, err := Path(id)
 	if err != nil {
 		return err
 	}
 
 	dataDir := SourceDataDir(workDir)
-	if _, err := os.Stat(dataDir); err == nil {
-		// Best-effort safety snapshot. If this fails we abort — better to
-		// refuse the restore than risk losing the current state.
-		if _, err := Create(workDir, currentVersion, "pre-restore"); err != nil {
-			return fmt.Errorf("safety snapshot before restore failed: %w", err)
-		}
-	}
-
 	stagingDir, err := os.MkdirTemp(filepath.Dir(dataDir), ".redock_restore_*")
 	if err != nil {
 		return fmt.Errorf("create staging dir: %w", err)

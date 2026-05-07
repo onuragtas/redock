@@ -229,11 +229,11 @@ func BackupRestore(c *fiber.Ctx) error {
 	}
 	utils.RequestGracefulShutdown(func() {
 		log.Printf("backup: restoring %s into %s", id, dm.GetWorkDir())
-		if err := backup.Restore(id, dm.GetWorkDir(), currentVersion); err != nil {
+		if err := backup.Restore(id, dm.GetWorkDir()); err != nil {
 			// We have already shut down; the server is dead in the water.
 			// Log loudly so the operator can see the failure in journalctl /
-			// terminal output and intervene (e.g. extract by hand or undo
-			// from the .pre-restore safety snapshot).
+			// terminal output and intervene (e.g. extract the archive by
+			// hand into the data dir).
 			log.Printf("❌ backup: restore %s failed: %v", id, err)
 			return
 		}

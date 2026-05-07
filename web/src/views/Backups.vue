@@ -226,7 +226,7 @@ onMounted(fetchBackups)
         <strong>{{ restoreTarget?.id }}</strong> and restarts the server.
       </p>
       <p class="text-sm text-slate-500">
-        A safety snapshot of the current state will be taken automatically before extraction.
+        The current state will be discarded. If you want to keep it, take a manual backup first.
         You will need to log in again after the restart.
       </p>
     </CardBoxModal>

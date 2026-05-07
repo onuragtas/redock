@@ -75,7 +75,7 @@ func TestCreateMissingSourceFails(t *testing.T) {
 
 func TestRoundTripRestore(t *testing.T) {
 	// Create a backup, mutate the live data, restore, and verify the original
-	// state is back. Also check that a pre-restore safety snapshot was created.
+	// state is back.
 	withTempHome(t)
 	workDir := seedDataDir(t)
 
@@ -92,7 +92,7 @@ func TestRoundTripRestore(t *testing.T) {
 	junk := filepath.Join(workDir, "data", "junk.json")
 	assert.NoError(t, os.WriteFile(junk, []byte(`{"junk":true}`), 0o644))
 
-	assert.NoError(t, Restore(created.ID, workDir, "v1"))
+	assert.NoError(t, Restore(created.ID, workDir))
 
 	// Original file is back.
 	got, err := os.ReadFile(mutPath)
@@ -102,18 +102,6 @@ func TestRoundTripRestore(t *testing.T) {
 	// Junk file is gone.
 	_, err = os.Stat(junk)
 	assert.True(t, os.IsNotExist(err), "post-backup files must be wiped on restore")
-
-	// A pre-restore safety snapshot was made.
-	list, err := List()
-	assert.NoError(t, err)
-	preRestoreFound := false
-	for _, b := range list {
-		if b.TriggerReason == "pre-restore" {
-			preRestoreFound = true
-			break
-		}
-	}
-	assert.True(t, preRestoreFound, "pre-restore safety snapshot must exist after Restore")
 }
 
 func TestDelete(t *testing.T) {
