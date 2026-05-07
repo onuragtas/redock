@@ -28,6 +28,7 @@ var AllMenuItems = []MenuItem{
 	{Path: "/cloudflare", Name: "Cloudflare", Icon: "mdiCloud"},
 	{Path: "/tunnel-proxy-server", Name: "Tunnel Proxy Server", Icon: "mdiServerNetwork"},
 	{Path: "/users", Name: "Users", Icon: "mdiAccountGroup"},
+	{Path: "/backups", Name: "Backups", Icon: "mdiArchive"},
 	{Path: "/updates", Name: "Updates", Icon: "mdiDownload"},
 }
 
@@ -37,7 +38,7 @@ var AllMenuPaths = []string{
 	"/api-gateway", "/dns-server", "/vpn-server", "/email-server", "/cloudflare",
 	"/local-proxy", "/exec", "/tunnel-proxy-server", "/tunnel-proxy-client",
 	"/virtual-hosts", "/saved-commands", "/php-xdebug-adapter", "/updates",
-	"/users", "/ip_alias",
+	"/users", "/ip_alias", "/backups",
 }
 
 // DefaultUserMenuPaths user rolü için varsayılan menüler (AllowedMenus boşsa).

@@ -224,9 +224,11 @@ class ApiService {
     return ApiService.vueInstance.axios.patch(url, data, ApiService.mergeOptions(options, skipPrecheck));
   }
 
-  static delete(resource, { options = {}, skipPrecheck = false } = {}) {
+  static delete(resource, { data, options = {}, skipPrecheck = false } = {}) {
     let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
-    return ApiService.vueInstance.axios.delete(url, ApiService.mergeOptions(options, skipPrecheck));
+    const config = ApiService.mergeOptions(options, skipPrecheck);
+    if (data !== undefined) config.data = data;
+    return ApiService.vueInstance.axios.delete(url, config);
   }
 
   static async getAuthSetup() {
@@ -786,6 +788,48 @@ class ApiService {
 
   static async getNetworkClientCommand() {
     return await this.get('/api/v1/network/client-command');
+  }
+
+  // Backups
+  static async listBackups() {
+    return await this.get('/api/v1/backups');
+  }
+
+  static async createBackup(reason) {
+    return await this.post('/api/v1/backups', { reason: reason || 'manual' });
+  }
+
+  static async deleteBackup(id) {
+    return await this.delete('/api/v1/backups', { data: { id } });
+  }
+
+  static async restoreBackup(id) {
+    return await this.post('/api/v1/backups/restore', { id });
+  }
+
+  // Streams the backup as a Blob so the browser can save it. JWT goes
+  // through the axios default headers; <a href="..."> would skip auth.
+  static async downloadBackup(id) {
+    return await this.get('/api/v1/backups/download', {
+      params: { id },
+      options: { responseType: 'blob' }
+    });
+  }
+
+  static async uploadBackup(file) {
+    const form = new FormData();
+    form.append('file', file);
+    return await this.post('/api/v1/backups/upload', form, {
+      options: { headers: { 'Content-Type': 'multipart/form-data' } }
+    });
+  }
+
+  static async getBackupConfig() {
+    return await this.get('/api/v1/backups/config');
+  }
+
+  static async updateBackupConfig(data) {
+    return await this.put('/api/v1/backups/config', data);
   }
 
 }

@@ -317,6 +317,14 @@ const routes = [
       },
       {
         meta: {
+          title: 'Backups'
+        },
+        path: 'backups',
+        name: 'backups',
+        component: () => import('@/views/Backups.vue')
+      },
+      {
+        meta: {
           title: 'Users',
           requiresAdmin: true
         },
