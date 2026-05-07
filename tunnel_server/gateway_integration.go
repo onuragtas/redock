@@ -12,6 +12,7 @@ import (
 
 const (
 	gatewayServicePrefix    = "tunnel-s-"
+	gatewayUpstreamPrefix   = "tunnel-up-"
 	gatewayRoutePrefix      = "tunnel-r-"
 	gatewayUDPServicePrefix = "tunnel-su-"
 	gatewayUDPRoutePrefix   = "tunnel-u-"
@@ -40,6 +41,9 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	if cfg.Services == nil {
 		cfg.Services = []api_gateway.Service{}
 	}
+	if cfg.Upstreams == nil {
+		cfg.Upstreams = []api_gateway.Upstream{}
+	}
 	if cfg.Routes == nil {
 		cfg.Routes = []api_gateway.Route{}
 	}
@@ -52,7 +56,7 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	// Gateway must be enabled so UpdateConfig restarts it and StartAll() actually starts listeners.
 	cfg.Enabled = true
 
-	// HTTP/HTTPS: Service + Route (backend 127.0.0.1:internalHttpPort; 0.0.0.0:d.Port gateway TCP/UDP için serbest, PORTS.md)
+	// HTTP/HTTPS: Service + Upstream (single target) + Route (backend 127.0.0.1:internalHttpPort; 0.0.0.0:d.Port gateway TCP/UDP için serbest, PORTS.md)
 	if needHTTP {
 		svc := api_gateway.Service{
 			ID:       gatewayServicePrefix + idStr,
@@ -62,19 +66,28 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 			Protocol: "http",
 			Enabled:  true,
 		}
+		upstream := api_gateway.Upstream{
+			ID:       gatewayUpstreamPrefix + idStr,
+			Name:     "tunnel:" + d.FullDomain,
+			Strategy: api_gateway.StrategyRoundRobin,
+			Targets:  []api_gateway.UpstreamTarget{{ServiceID: svc.ID, Weight: 1}},
+			Enabled:  true,
+		}
 		route := api_gateway.Route{
-			ID:        gatewayRoutePrefix + idStr,
-			Name:      "tunnel:" + d.FullDomain,
-			ServiceID: svc.ID,
-			Hosts:     []string{d.FullDomain},
-			Paths:     []string{"/"},
-			Priority:  100,
-			StripPath: false,
-			Enabled:   true,
+			ID:         gatewayRoutePrefix + idStr,
+			Name:       "tunnel:" + d.FullDomain,
+			UpstreamID: upstream.ID,
+			Hosts:      []string{d.FullDomain},
+			Paths:      []string{"/"},
+			Priority:   100,
+			StripPath:  false,
+			Enabled:    true,
 		}
 		cfg.Services = append(cfg.Services, svc)
+		cfg.Upstreams = append(cfg.Upstreams, upstream)
 		cfg.Routes = append(cfg.Routes, route)
 		d.GatewayServiceID = svc.ID
+		d.GatewayUpstreamID = upstream.ID
 		d.GatewayRouteID = route.ID
 	}
 
@@ -320,6 +333,19 @@ func RemoveTunnelDomainFromGateway(d *TunnelDomain) error {
 		if err := gw.DeleteRoute(d.GatewayRouteID); err != nil {
 			log.Printf("tunnel_server: DeleteRoute %s: %v", d.GatewayRouteID, err)
 			errs = append(errs, err)
+		}
+	}
+	// Pre-migration domains stored only GatewayServiceID; their HTTP route was
+	// auto-bound to "auto-<serviceID>" during config migration. Try to delete
+	// that derived upstream too so we don't leak orphans.
+	upstreamToDelete := d.GatewayUpstreamID
+	if upstreamToDelete == "" && d.GatewayServiceID != "" && d.GatewayRouteID != "" {
+		upstreamToDelete = "auto-" + d.GatewayServiceID
+	}
+	if upstreamToDelete != "" {
+		if err := gw.DeleteUpstream(upstreamToDelete); err != nil {
+			// Non-fatal: upstream may have been removed manually or never existed.
+			log.Printf("tunnel_server: DeleteUpstream %s: %v", upstreamToDelete, err)
 		}
 	}
 	if d.GatewayServiceID != "" {

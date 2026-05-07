@@ -34,7 +34,8 @@ type TunnelDomain struct {
 	CloudflareRecordID string    `json:"cloudflare_record_id"`  // A record ID for delete
 	LastUsedAt         *time.Time `json:"last_used_at"`         // last time tunnel was started (BIND); nil = never
 	GatewayServiceID    string   `json:"gateway_service_id"`    // api_gateway Service ID (HTTP/TCP backend)
-	GatewayRouteID      string   `json:"gateway_route_id"`      // api_gateway Route ID (Host → Service)
+	GatewayUpstreamID   string   `json:"gateway_upstream_id"`   // api_gateway Upstream ID wrapping the HTTP service
+	GatewayRouteID      string   `json:"gateway_route_id"`      // api_gateway Route ID (Host → Upstream)
 	GatewayUDPServiceID   string `json:"gateway_udp_service_id"`   // api_gateway Service ID (UDP backend, udp/tcp+udp)
 	GatewayUDPRouteID     string `json:"gateway_udp_route_id"`    // api_gateway UDPRoute ID
 	GatewayTCPServiceID   string `json:"gateway_tcp_service_id"`   // api_gateway Service ID (raw TCP backend, tcp/tcp+udp)

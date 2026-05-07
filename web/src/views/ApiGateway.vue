@@ -19,6 +19,7 @@ import {
   mdiHeart,
   mdiHeartPulse,
   mdiLock,
+  mdiMagnify,
   mdiMessageText,
   mdiPencil,
   mdiPlay,
@@ -27,6 +28,7 @@ import {
   mdiRouter,
   mdiServer,
   mdiShield,
+  mdiSourceBranch,
   mdiSpeedometer,
   mdiStop,
   mdiSync,
@@ -50,7 +52,14 @@ const config = ref({
   enabled: false
 })
 const services = ref([])
+const upstreams = ref([])
 const routes = ref([])
+const routeSearch = ref('')
+const routeStatusFilter = ref('all') // all | enabled | disabled
+const serviceSearch = ref('')
+const serviceStatusFilter = ref('all')
+const upstreamSearch = ref('')
+const upstreamStatusFilter = ref('all')
 const serviceHealth = ref([])
 const certificateInfo = ref({})
 const renewerStatus = ref({ running: false })
@@ -66,6 +75,8 @@ const isAddServiceModalActive = ref(false)
 const isEditServiceModalActive = ref(false)
 const isAddRouteModalActive = ref(false)
 const isEditRouteModalActive = ref(false)
+const isAddUpstreamModalActive = ref(false)
+const isEditUpstreamModalActive = ref(false)
 const isDeleteModalActive = ref(false)
 const isLetsEncryptModalActive = ref(false)
 const isConfigModalActive = ref(false)
@@ -73,6 +84,47 @@ const isObservabilityModalActive = ref(false)
 const deleteTarget = ref({ type: '', item: null })
 const editingService = ref(null)
 const editingRoute = ref(null)
+const editingUpstream = ref(null)
+
+// FormControl select stores the WHOLE option object as v-model value (see
+// FormControl.vue :value="option"), so dropdown-bound fields are kept as
+// {value,label} pairs in form state and unwrapped to plain strings in
+// buildUpstreamPayload.
+const strategyOptions = [
+  { value: 'round_robin', label: 'Round Robin' },
+  { value: 'weighted',    label: 'Weighted' },
+  { value: 'random',      label: 'Random' },
+  { value: 'least_conn',  label: 'Least Connections' }
+]
+const stickyModeOptions = [
+  { value: 'ip_hash', label: 'IP hash' },
+  { value: 'cookie',  label: 'Cookie' },
+  { value: 'header',  label: 'Header' }
+]
+const findOption = (opts, val) => opts.find(o => o.value === val) || opts[0]
+// Wrap a service ID into the {value,label} option shape FormControl expects;
+// falls back to the raw id if the service isn't (yet) in the loaded list.
+const findServiceOption = (id) => {
+  if (!id) return ''
+  const s = services.value.find(x => x.id === id)
+  return s ? { value: s.id, label: s.name || s.id } : { value: id, label: id }
+}
+
+const createDefaultUpstream = () => ({
+  name: '',
+  strategy: findOption(strategyOptions, 'round_robin'),
+  enabled: true,
+  sticky_enabled: false,
+  sticky: {
+    mode: findOption(stickyModeOptions, 'ip_hash'),
+    cookie_name: 'redock_lb',
+    header_name: '',
+    ttl_seconds: 0
+  },
+  targets: [{ service_id: '', weight: 1 }]
+})
+
+const newUpstream = ref(createDefaultUpstream())
 
 // Form data
 const newService = ref({
@@ -94,7 +146,7 @@ const newService = ref({
 
 const newRoute = ref({
   name: '',
-  service_id: '',
+  upstream_id: '',
   paths: '',
   methods: '',
   hosts: '',
@@ -284,6 +336,73 @@ const routeMap = computed(() => {
   })
   return map
 })
+// Single source of truth for the upstream dropdown's options. Both the
+// add-route and edit-route modals bind to it so that the v-model object
+// reference is preserved across init/update — Vue's <select> v-model does
+// strict equality, so a freshly-built {value,label} pair would never match
+// the array's entries even if they encode the same upstream.
+const upstreamOptions = computed(() =>
+  upstreams.value.map(u => ({
+    value: u.id,
+    label: (u.name || u.id) + ' — ' + (u.strategy || 'round_robin')
+  }))
+)
+const findUpstreamOption = (id) => {
+  if (!id) return null
+  return upstreamOptions.value.find(o => o.value === id) || { value: id, label: id }
+}
+
+// Same shape as filteredRoutes/filteredServices: `enabled` boolean +
+// substring match across the visible columns. Kept as a single helper so
+// search semantics stay consistent across the three tabs.
+const matchStatus = (enabled, status) => {
+  if (status === 'enabled') return enabled !== false
+  if (status === 'disabled') return enabled === false
+  return true
+}
+const matchSubstring = (q, parts) => {
+  if (!q) return true
+  return parts.filter(Boolean).join(' ').toLowerCase().includes(q.trim().toLowerCase())
+}
+
+const filteredServices = computed(() =>
+  services.value.filter(s =>
+    matchStatus(s.enabled, serviceStatusFilter.value) &&
+    matchSubstring(serviceSearch.value, [s.name, s.host, String(s.port || ''), s.protocol, s.id])
+  )
+)
+
+const filteredUpstreams = computed(() =>
+  upstreams.value.filter(u =>
+    matchStatus(u.enabled, upstreamStatusFilter.value) &&
+    matchSubstring(upstreamSearch.value, [
+      u.name, u.id, u.strategy,
+      ...(Array.isArray(u.targets) ? u.targets.map(t => getServiceName(t.service_id)) : [])
+    ])
+  )
+)
+
+// Filtered + sorted route list driven by the routes-tab search box and
+// status chips. Matches against name, paths, hosts, and the resolved
+// upstream name (so users can search by backend pool too).
+const filteredRoutes = computed(() => {
+  const q = routeSearch.value.trim().toLowerCase()
+  const status = routeStatusFilter.value
+  return routes.value.filter(r => {
+    if (status === 'enabled' && !r.enabled) return false
+    if (status === 'disabled' && r.enabled) return false
+    if (!q) return true
+    const haystack = [
+      r.name || '',
+      ...(Array.isArray(r.paths) ? r.paths : []),
+      ...(Array.isArray(r.hosts) ? r.hosts : []),
+      r.host_rewrite || '',
+      getUpstreamName(r.upstream_id)
+    ].join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
+})
+
 const topClientDisplayOptions = [10, 20, 50, 100, 250, 500, 1000]
 const topClientDisplayLimit = ref(10)
 const allTopClients = computed(() => stats.value.top_clients || [])
@@ -304,10 +423,11 @@ const formatUptime = (seconds) => {
 const loadData = async () => {
   loading.value = true
   try {
-    const [statusRes, statsRes, servicesRes, routesRes, healthRes, certRes, renewerRes] = await Promise.all([
+    const [statusRes, statsRes, servicesRes, upstreamsRes, routesRes, healthRes, certRes, renewerRes] = await Promise.all([
       ApiService.apiGatewayStatus().catch(() => ({ data: { data: {} } })),
       ApiService.apiGatewayStats().catch(() => ({ data: { data: {} } })),
       ApiService.apiGatewayListServices().catch(() => ({ data: { data: [] } })),
+      ApiService.apiGatewayListUpstreams().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayListRoutes().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayHealth().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayCertificateInfo().catch(() => ({ data: { data: {} } })),
@@ -317,6 +437,7 @@ const loadData = async () => {
     status.value = statusRes.data.data || {}
     stats.value = statsRes.data.data || {}
     services.value = servicesRes.data.data || []
+    upstreams.value = upstreamsRes.data.data || []
     routes.value = routesRes.data.data || []
     serviceHealth.value = healthRes.data.data || []
     certificateInfo.value = certRes.data.data || {}
@@ -407,7 +528,7 @@ const updateService = async () => {
 const openAddRouteModal = () => {
   newRoute.value = {
     name: '',
-    service_id: null,
+    upstream_id: null,
     paths: '',
     methods: '',
     hosts: '',
@@ -485,7 +606,7 @@ const addRoute = async () => {
       paths: newRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: newRoute.value.methods ? newRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: newRoute.value.service_id?.value || newRoute.value.service_id,
+      upstream_id: newRoute.value.upstream_id?.value || newRoute.value.upstream_id,
       auth_type: authType,
       cors: buildCorsPayload(newRoute.value.cors),
       response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
@@ -502,8 +623,7 @@ const addRoute = async () => {
 }
 
 const openEditRouteModal = (route) => {
-  const serviceId = route.service_id?.value || route.service_id
-  const serviceMatch = services.value.find(s => s.id === serviceId)
+  const upstreamId = route.upstream_id?.value || route.upstream_id
   const cors = route.cors
   const responseHeaders = route.response_headers && typeof route.response_headers === 'object'
     ? Object.entries(route.response_headers).map(([key, value]) => ({ key, value }))
@@ -520,11 +640,7 @@ const openEditRouteModal = (route) => {
     host_rewrite: route.host_rewrite || '',
     preserve_host: route.preserve_host === true,
     observability_enabled: route.observability_enabled !== false,
-    service_id: serviceMatch
-      ? { value: serviceMatch.id, label: serviceMatch.name }
-      : serviceId
-        ? { value: serviceId, label: route.service_name || serviceId }
-        : null,
+    upstream_id: findUpstreamOption(upstreamId),
     cors: cors ? {
       enabled: !!cors.enabled,
       allow_origins: Array.isArray(cors.allow_origins) ? cors.allow_origins.join(', ') : (cors.allow_origins || ''),
@@ -548,7 +664,7 @@ const updateRoute = async () => {
       paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id,
+      upstream_id: editingRoute.value.upstream_id?.value || editingRoute.value.upstream_id,
       auth_type: authType,
       cors: buildCorsPayload(editingRoute.value.cors),
       response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
@@ -575,12 +691,107 @@ const deleteItem = async () => {
       await ApiService.apiGatewayDeleteService({ id: deleteTarget.value.item.id })
     } else if (deleteTarget.value.type === 'route') {
       await ApiService.apiGatewayDeleteRoute({ id: deleteTarget.value.item.id })
+    } else if (deleteTarget.value.type === 'upstream') {
+      await ApiService.apiGatewayDeleteUpstream({ id: deleteTarget.value.item.id })
     }
     isDeleteModalActive.value = false
     await loadData()
   } catch (error) {
     console.error('Failed to delete:', error)
   }
+}
+
+const buildUpstreamPayload = (form) => {
+  // FormControl wraps select values as {value,label}; unwrap to the plain
+  // string the backend expects.
+  const unwrap = (v) => (v && typeof v === 'object' && 'value' in v) ? v.value : v
+  const payload = {
+    id: form.id,
+    name: form.name,
+    strategy: unwrap(form.strategy) || 'round_robin',
+    enabled: form.enabled !== false,
+    targets: (form.targets || [])
+      .map(t => ({
+        service_id: unwrap(t.service_id) || '',
+        weight: Number.isFinite(Number(t.weight)) && Number(t.weight) > 0 ? Math.round(Number(t.weight)) : 1
+      }))
+      .filter(t => t.service_id)
+  }
+  if (form.sticky_enabled && form.sticky?.mode) {
+    payload.sticky = {
+      mode: unwrap(form.sticky.mode),
+      cookie_name: form.sticky.cookie_name || '',
+      header_name: form.sticky.header_name || '',
+      ttl_seconds: Number.isFinite(Number(form.sticky.ttl_seconds)) ? Math.max(0, Math.round(Number(form.sticky.ttl_seconds))) : 0
+    }
+  }
+  return payload
+}
+
+const openAddUpstreamModal = () => {
+  newUpstream.value = createDefaultUpstream()
+  isAddUpstreamModalActive.value = true
+}
+
+const addUpstream = async () => {
+  try {
+    const response = await ApiService.apiGatewayAddUpstream(buildUpstreamPayload(newUpstream.value))
+    if (isSuccessfulResponse(response)) {
+      isAddUpstreamModalActive.value = false
+      await loadData()
+    }
+  } catch (error) {
+    console.error('Failed to add upstream:', error)
+  }
+}
+
+const openEditUpstreamModal = (upstream) => {
+  editingUpstream.value = {
+    id: upstream.id,
+    name: upstream.name || '',
+    strategy: findOption(strategyOptions, upstream.strategy || 'round_robin'),
+    enabled: upstream.enabled !== false,
+    sticky_enabled: !!upstream.sticky,
+    sticky: upstream.sticky
+      ? {
+          mode: findOption(stickyModeOptions, upstream.sticky.mode || 'ip_hash'),
+          cookie_name: upstream.sticky.cookie_name || 'redock_lb',
+          header_name: upstream.sticky.header_name || '',
+          ttl_seconds: upstream.sticky.ttl_seconds || 0
+        }
+      : {
+          mode: findOption(stickyModeOptions, 'ip_hash'),
+          cookie_name: 'redock_lb',
+          header_name: '',
+          ttl_seconds: 0
+        },
+    targets: Array.isArray(upstream.targets) && upstream.targets.length
+      ? upstream.targets.map(t => ({ service_id: findServiceOption(t.service_id), weight: t.weight || 1 }))
+      : [{ service_id: '', weight: 1 }]
+  }
+  isEditUpstreamModalActive.value = true
+}
+
+const updateUpstream = async () => {
+  try {
+    const response = await ApiService.apiGatewayUpdateUpstream(buildUpstreamPayload(editingUpstream.value))
+    if (isSuccessfulResponse(response)) {
+      isEditUpstreamModalActive.value = false
+      await loadData()
+    }
+  } catch (error) {
+    console.error('Failed to update upstream:', error)
+  }
+}
+
+const addUpstreamTarget = (form) => {
+  if (!Array.isArray(form.targets)) form.targets = []
+  form.targets.push({ service_id: '', weight: 1 })
+}
+
+const removeUpstreamTarget = (form, idx) => {
+  form.targets.splice(idx, 1)
+  if (form.targets.length === 0) form.targets.push({ service_id: '', weight: 1 })
 }
 
 const openLetsEncryptModal = () => {
@@ -732,7 +943,13 @@ const getRouteName = (routeId) => {
 const getRouteServiceName = (routeId) => {
   const route = routeMap.value[routeId]
   if (!route) return '-'
-  return getServiceName(route.service_id)
+  return getUpstreamName(route.upstream_id)
+}
+
+const getUpstreamName = (upstreamId) => {
+  if (!upstreamId) return 'Unknown Upstream'
+  const u = upstreams.value.find(x => x.id === upstreamId)
+  return u ? (u.name || u.id) : upstreamId
 }
 
 const getHealthColor = (healthy) => {
@@ -918,7 +1135,7 @@ onUnmounted(() => {
     <div class="overflow-x-auto pb-px -mx-1 px-1">
       <div class="flex flex-nowrap gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-700">
         <button
-          v-for="tab in ['overview', 'services', 'routes', 'clients', 'certificates', 'observability']"
+          v-for="tab in ['overview', 'services', 'upstreams', 'routes', 'clients', 'certificates', 'observability']"
           :key="tab"
           :class="[
             'shrink-0 whitespace-nowrap px-4 sm:px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
@@ -1001,15 +1218,48 @@ onUnmounted(() => {
         />
       </SectionTitleLineWithButton>
 
+      <div v-if="services.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <FormControl
+            v-model="serviceSearch"
+            placeholder="Search by name, host, port, protocol…"
+            :icon="mdiMagnify"
+          />
+        </div>
+        <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
+          <button
+            v-for="opt in [
+              { value: 'all',      label: 'All' },
+              { value: 'enabled',  label: 'Active' },
+              { value: 'disabled', label: 'Disabled' }
+            ]"
+            :key="opt.value"
+            type="button"
+            class="px-3 py-1.5 transition-colors"
+            :class="serviceStatusFilter === opt.value
+              ? 'bg-blue-500 text-white'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
+            @click="serviceStatusFilter = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500">{{ filteredServices.length }} / {{ services.length }}</span>
+      </div>
+
       <div v-if="services.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiServer" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500 mb-4">No services configured</p>
         <BaseButton label="Add Your First Service" :icon="mdiPlus" color="info" @click="openAddServiceModal" />
       </div>
 
+      <div v-else-if="filteredServices.length === 0" class="text-center py-12 text-slate-500">
+        No services match the current filter.
+      </div>
+
       <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div
-          v-for="service in services"
+          v-for="service in filteredServices"
           :key="service.id"
           class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
         >
@@ -1038,6 +1288,105 @@ onUnmounted(() => {
               <BaseButton :icon="mdiPencil" color="info" small @click="openEditServiceModal(service)" />
               <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('service', service)" />
             </div>
+          </div>
+        </div>
+      </div>
+    </CardBox>
+
+    <!-- Upstreams Tab -->
+    <CardBox v-if="activeTab === 'upstreams'">
+      <SectionTitleLineWithButton :icon="mdiSourceBranch" title="Upstream Pools" main>
+        <BaseButton
+          label="Add Upstream"
+          :icon="mdiPlus"
+          color="info"
+          small
+          @click="openAddUpstreamModal"
+        />
+      </SectionTitleLineWithButton>
+
+      <p class="text-xs text-slate-500 mt-2">
+        An upstream is a pool of one or more services with a load-balancing strategy and optional session affinity.
+        Routes forward to upstreams.
+      </p>
+
+      <div v-if="upstreams.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <FormControl
+            v-model="upstreamSearch"
+            placeholder="Search by name, strategy, or target service…"
+            :icon="mdiMagnify"
+          />
+        </div>
+        <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
+          <button
+            v-for="opt in [
+              { value: 'all',      label: 'All' },
+              { value: 'enabled',  label: 'Active' },
+              { value: 'disabled', label: 'Disabled' }
+            ]"
+            :key="opt.value"
+            type="button"
+            class="px-3 py-1.5 transition-colors"
+            :class="upstreamStatusFilter === opt.value
+              ? 'bg-blue-500 text-white'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
+            @click="upstreamStatusFilter = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500">{{ filteredUpstreams.length }} / {{ upstreams.length }}</span>
+      </div>
+
+      <div v-if="upstreams.length === 0" class="text-center py-12">
+        <BaseIcon :path="mdiSourceBranch" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
+        <p class="text-slate-500 mb-4">No upstream pools configured</p>
+        <BaseButton label="Add Your First Upstream" :icon="mdiPlus" color="info" @click="openAddUpstreamModal" />
+      </div>
+
+      <div v-else-if="filteredUpstreams.length === 0" class="text-center py-12 text-slate-500">
+        No upstreams match the current filter.
+      </div>
+
+      <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div
+          v-for="upstream in filteredUpstreams"
+          :key="upstream.id"
+          class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
+        >
+          <div class="flex items-start justify-between">
+            <div>
+              <h3 class="font-semibold">{{ upstream.name || upstream.id }}</h3>
+              <p class="text-xs text-slate-500 break-all">{{ upstream.id }}</p>
+            </div>
+            <span
+              class="px-2 py-0.5 text-xs rounded"
+              :class="upstream.enabled
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-500'"
+            >
+              {{ upstream.enabled ? 'enabled' : 'disabled' }}
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3 text-xs">
+            <span class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{{ upstream.strategy || 'round_robin' }}</span>
+            <span v-if="upstream.sticky" class="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
+              sticky: {{ upstream.sticky.mode }}
+            </span>
+            <span class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">
+              {{ (upstream.targets || []).length }} target{{ (upstream.targets || []).length === 1 ? '' : 's' }}
+            </span>
+          </div>
+          <div class="mt-3 text-xs text-slate-600 dark:text-slate-400 space-y-1">
+            <div v-for="t in (upstream.targets || [])" :key="t.service_id" class="flex justify-between">
+              <span>{{ getServiceName(t.service_id) }}</span>
+              <span class="text-slate-400">weight {{ t.weight || 1 }}</span>
+            </div>
+          </div>
+          <div class="mt-3 flex justify-end gap-2">
+            <BaseButton :icon="mdiPencil" color="info" small @click="openEditUpstreamModal(upstream)" />
+            <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('upstream', upstream)" />
           </div>
         </div>
       </div>
@@ -1255,37 +1604,78 @@ onUnmounted(() => {
         />
       </SectionTitleLineWithButton>
 
+      <!-- Filter bar -->
+      <div v-if="routes.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <FormControl
+            v-model="routeSearch"
+            placeholder="Search by name, path, host, or upstream…"
+            :icon="mdiMagnify"
+          />
+        </div>
+        <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
+          <button
+            v-for="opt in [
+              { value: 'all',      label: 'All' },
+              { value: 'enabled',  label: 'Active' },
+              { value: 'disabled', label: 'Disabled' }
+            ]"
+            :key="opt.value"
+            type="button"
+            class="px-3 py-1.5 transition-colors"
+            :class="routeStatusFilter === opt.value
+              ? 'bg-blue-500 text-white'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
+            @click="routeStatusFilter = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500">
+          {{ filteredRoutes.length }} / {{ routes.length }}
+        </span>
+      </div>
+
       <div v-if="routes.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500 mb-4">No routes configured</p>
         <BaseButton label="Add Your First Route" :icon="mdiPlus" color="info" @click="openAddRouteModal" />
       </div>
 
-      <div v-else class="space-y-4 mt-4">
+      <div v-else-if="filteredRoutes.length === 0" class="text-center py-12 text-slate-500">
+        No routes match the current filter.
+      </div>
+
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
         <div
-          v-for="route in routes"
+          v-for="route in filteredRoutes"
           :key="route.id"
-          class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
+          class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex flex-col"
         >
-          <div class="flex items-start justify-between">
-            <div>
-              <h3 class="font-semibold flex items-center gap-2">
-                {{ route.name }}
-                <span 
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <h3 class="font-semibold flex items-center gap-2 flex-wrap">
+                <span class="truncate">{{ route.name || route.id }}</span>
+                <span
                   :class="[
-                    'px-2 py-0.5 text-xs rounded',
-                    route.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                    'px-2 py-0.5 text-xs rounded shrink-0',
+                    route.enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
                   ]"
                 >
                   {{ route.enabled ? 'Active' : 'Disabled' }}
                 </span>
               </h3>
-              <p class="text-sm text-slate-500 mt-1">
+              <p class="text-sm text-slate-500 mt-1 break-all">
                 <span class="font-mono">{{ route.paths?.join(', ') }}</span>
-                → {{ getServiceName(route.service_id) }}
+              </p>
+              <p class="text-xs text-slate-400 mt-1 truncate">
+                → {{ getUpstreamName(route.upstream_id) }}
+              </p>
+              <p v-if="route.hosts?.length" class="text-xs text-slate-400 mt-1 truncate">
+                hosts: {{ route.hosts.join(', ') }}
               </p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-2 shrink-0">
               <BaseButton :icon="mdiPencil" color="info" small @click="openEditRouteModal(route)" />
               <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('route', route)" />
             </div>
@@ -1299,6 +1689,9 @@ onUnmounted(() => {
             </span>
             <span v-if="route.strip_path" class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded">
               Strip Path
+            </span>
+            <span v-if="route.timeout > 0" class="px-2 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs rounded">
+              Timeout {{ route.timeout }}s
             </span>
           </div>
         </div>
@@ -1584,6 +1977,124 @@ onUnmounted(() => {
       </div>
     </CardBoxModal>
 
+    <!-- Add Upstream Modal -->
+    <CardBoxModal
+      v-model="isAddUpstreamModalActive"
+      title="Add Upstream"
+      button="success"
+      button-label="Add Upstream"
+      has-cancel
+      @confirm="addUpstream"
+    >
+      <div class="space-y-4">
+        <FormField label="Name">
+          <FormControl v-model="newUpstream.name" placeholder="my-pool" />
+        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Distribution Strategy">
+            <FormControl v-model="newUpstream.strategy" :options="strategyOptions" />
+          </FormField>
+          <FormField>
+            <FormCheckRadio v-model="newUpstream.enabled" label="Enabled" name="new_upstream_enabled" />
+          </FormField>
+        </div>
+        <div class="border-t pt-4">
+          <FormField>
+            <FormCheckRadio v-model="newUpstream.sticky_enabled" label="Enable session affinity (sticky)" name="new_upstream_sticky" />
+          </FormField>
+          <p class="text-xs text-slate-500 mb-2">Stickiness pins a client to one backend across requests. ip_hash and header are stateless; cookie sets a Set-Cookie header.</p>
+          <template v-if="newUpstream.sticky_enabled">
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Sticky Mode">
+                <FormControl v-model="newUpstream.sticky.mode" :options="stickyModeOptions" />
+              </FormField>
+              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" label="Cookie Name">
+                <FormControl v-model="newUpstream.sticky.cookie_name" placeholder="redock_lb" />
+              </FormField>
+              <FormField v-if="newUpstream.sticky.mode?.value === 'header'" label="Header Name">
+                <FormControl v-model="newUpstream.sticky.header_name" placeholder="X-Session-Id" />
+              </FormField>
+              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" label="Cookie TTL (seconds, 0 = session)">
+                <FormControl v-model.number="newUpstream.sticky.ttl_seconds" type="number" min="0" placeholder="0" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4">
+          <h4 class="font-semibold mb-2">Targets</h4>
+          <p class="text-xs text-slate-500 mb-2">Pick services to receive traffic. Weights only matter for the Weighted strategy (and weight-aware sticky modes).</p>
+          <div v-for="(t, idx) in newUpstream.targets" :key="'nu-t-' + idx" class="flex gap-2 items-end mb-2">
+            <FormField label="Service" class="flex-1">
+              <FormControl v-model="t.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
+            </FormField>
+            <FormField label="Weight" class="w-24">
+              <FormControl v-model.number="t.weight" type="number" min="1" placeholder="1" />
+            </FormField>
+            <BaseButton :icon="mdiDelete" color="danger" small @click="removeUpstreamTarget(newUpstream, idx)" />
+          </div>
+          <BaseButton label="Add target" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(newUpstream)" />
+        </div>
+      </div>
+    </CardBoxModal>
+
+    <!-- Edit Upstream Modal -->
+    <CardBoxModal
+      v-model="isEditUpstreamModalActive"
+      title="Edit Upstream"
+      button="success"
+      button-label="Update Upstream"
+      has-cancel
+      @confirm="updateUpstream"
+    >
+      <div v-if="editingUpstream" class="space-y-4">
+        <FormField label="Name">
+          <FormControl v-model="editingUpstream.name" placeholder="my-pool" />
+        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Distribution Strategy">
+            <FormControl v-model="editingUpstream.strategy" :options="strategyOptions" />
+          </FormField>
+          <FormField>
+            <FormCheckRadio v-model="editingUpstream.enabled" label="Enabled" name="edit_upstream_enabled" />
+          </FormField>
+        </div>
+        <div class="border-t pt-4">
+          <FormField>
+            <FormCheckRadio v-model="editingUpstream.sticky_enabled" label="Enable session affinity (sticky)" name="edit_upstream_sticky" />
+          </FormField>
+          <template v-if="editingUpstream.sticky_enabled">
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Sticky Mode">
+                <FormControl v-model="editingUpstream.sticky.mode" :options="stickyModeOptions" />
+              </FormField>
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" label="Cookie Name">
+                <FormControl v-model="editingUpstream.sticky.cookie_name" placeholder="redock_lb" />
+              </FormField>
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'header'" label="Header Name">
+                <FormControl v-model="editingUpstream.sticky.header_name" placeholder="X-Session-Id" />
+              </FormField>
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" label="Cookie TTL (seconds, 0 = session)">
+                <FormControl v-model.number="editingUpstream.sticky.ttl_seconds" type="number" min="0" placeholder="0" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4">
+          <h4 class="font-semibold mb-2">Targets</h4>
+          <div v-for="(t, idx) in editingUpstream.targets" :key="'eu-t-' + idx" class="flex gap-2 items-end mb-2">
+            <FormField label="Service" class="flex-1">
+              <FormControl v-model="t.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
+            </FormField>
+            <FormField label="Weight" class="w-24">
+              <FormControl v-model.number="t.weight" type="number" min="1" placeholder="1" />
+            </FormField>
+            <BaseButton :icon="mdiDelete" color="danger" small @click="removeUpstreamTarget(editingUpstream, idx)" />
+          </div>
+          <BaseButton label="Add target" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(editingUpstream)" />
+        </div>
+      </div>
+    </CardBoxModal>
+
     <!-- Add Route Modal -->
     <CardBoxModal 
       v-model="isAddRouteModalActive" 
@@ -1597,8 +2108,8 @@ onUnmounted(() => {
         <FormField label="Route Name">
           <FormControl v-model="newRoute.name" placeholder="my-route" />
         </FormField>
-        <FormField label="Service">
-          <FormControl v-model="newRoute.service_id" :options="services.length ? services.map(s => ({ value: s.id, label: s.name })) : []" />
+        <FormField label="Upstream (backend pool)">
+          <FormControl v-model="newRoute.upstream_id" :options="upstreamOptions" />
         </FormField>
         <FormField label="Paths (comma-separated)">
           <FormControl v-model="newRoute.paths" placeholder="/api, /api/*" />
@@ -1872,8 +2383,8 @@ onUnmounted(() => {
         <FormField label="Route Name">
           <FormControl v-model="editingRoute.name" placeholder="my-route" />
         </FormField>
-        <FormField label="Service">
-          <FormControl v-model="editingRoute.service_id" :options="services.length ? services.map(s => ({ value: s.id, label: s.name })) : []" />
+        <FormField label="Upstream (backend pool)">
+          <FormControl v-model="editingRoute.upstream_id" :options="upstreamOptions" />
         </FormField>
         <FormField label="Paths (comma-separated)">
           <FormControl v-model="editingRoute.paths" placeholder="/api, /api/*" />

@@ -130,7 +130,7 @@ func TestGatewayMatchRoute(t *testing.T) {
 			{
 				ID:        "route1",
 				Name:      "API Route",
-				ServiceID: "svc1",
+				UpstreamID: "up1",
 				Paths:     []string{"/api"},
 				Methods:   []string{"GET", "POST"},
 				Enabled:   true,
@@ -139,7 +139,7 @@ func TestGatewayMatchRoute(t *testing.T) {
 			{
 				ID:        "route2",
 				Name:      "Observability Route",
-				ServiceID: "svc2",
+				UpstreamID: "up2",
 				Paths:     []string{"/observability"},
 				Hosts:     []string{"metrics.example.com"},
 				Enabled:   true,
@@ -148,7 +148,7 @@ func TestGatewayMatchRoute(t *testing.T) {
 			{
 				ID:        "route3",
 				Name:      "Disabled Route",
-				ServiceID: "svc3",
+				UpstreamID: "up3",
 				Paths:     []string{"/disabled"},
 				Enabled:   false,
 				Priority:  200,
@@ -346,11 +346,14 @@ func TestGatewayAddDeleteRoute(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	g := &Gateway{
-		services:      make(map[string]*Service),
-		serviceHealth: make(map[string]*ServiceHealth),
+		services:         make(map[string]*Service),
+		upstreams:        map[string]*Upstream{"up1": {ID: "up1", Enabled: true, Targets: []UpstreamTarget{{ServiceID: "svc1", Weight: 1}}}},
+		upstreamRuntimes: make(map[string]*upstreamRuntime),
+		serviceHealth:    make(map[string]*ServiceHealth),
 		config: &GatewayConfig{
-			Services: []Service{},
-			Routes:   []Route{},
+			Services:  []Service{},
+			Upstreams: []Upstream{{ID: "up1", Enabled: true, Targets: []UpstreamTarget{{ServiceID: "svc1", Weight: 1}}}},
+			Routes:    []Route{},
 		},
 		routes:  make([]*Route, 0),
 		workDir: tmpDir,
@@ -361,11 +364,11 @@ func TestGatewayAddDeleteRoute(t *testing.T) {
 
 	// Add a route
 	route := Route{
-		ID:        "route1",
-		Name:      "Test Route",
-		ServiceID: "svc1",
-		Paths:     []string{"/api"},
-		Enabled:   true,
+		ID:         "route1",
+		Name:       "Test Route",
+		UpstreamID: "up1",
+		Paths:      []string{"/api"},
+		Enabled:    true,
 	}
 
 	err := g.AddRoute(route)
@@ -440,12 +443,21 @@ func TestProxyIntegration(t *testing.T) {
 				Enabled:  true,
 			},
 		},
+		upstreams: map[string]*Upstream{
+			"up-backend": {
+				ID:       "up-backend",
+				Strategy: StrategyRoundRobin,
+				Enabled:  true,
+				Targets:  []UpstreamTarget{{ServiceID: "backend", Weight: 1}},
+			},
+		},
+		upstreamRuntimes: make(map[string]*upstreamRuntime),
 		routes: []*Route{
 			{
-				ID:        "test-route",
-				ServiceID: "backend",
-				Paths:     []string{"/api"},
-				Enabled:   true,
+				ID:         "test-route",
+				UpstreamID: "up-backend",
+				Paths:      []string{"/api"},
+				Enabled:    true,
 			},
 		},
 		serviceHealth: make(map[string]*ServiceHealth),

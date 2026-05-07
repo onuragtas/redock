@@ -34,6 +34,12 @@ func APIGatewayRoutes(a *fiber.App) {
 	route.Put("/api_gateway/routes", controllers.APIGatewayUpdateRoute)
 	route.Delete("/api_gateway/routes", controllers.APIGatewayDeleteRoute)
 
+	// Upstreams (load-balanced backend pools)
+	route.Get("/api_gateway/upstreams", controllers.APIGatewayListUpstreams)
+	route.Post("/api_gateway/upstreams", controllers.APIGatewayAddUpstream)
+	route.Put("/api_gateway/upstreams", controllers.APIGatewayUpdateUpstream)
+	route.Delete("/api_gateway/upstreams", controllers.APIGatewayDeleteUpstream)
+
 	// UDP routes management
 	route.Get("/api_gateway/udp_routes", controllers.APIGatewayListUDPRoutes)
 	route.Post("/api_gateway/udp_routes", controllers.APIGatewayAddUDPRoute)

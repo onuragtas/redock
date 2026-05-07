@@ -628,6 +628,125 @@ func APIGatewayDeleteRoute(c *fiber.Ctx) error {
 	})
 }
 
+// APIGatewayListUpstreams returns all configured upstream pools.
+func APIGatewayListUpstreams(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"data":  gw.ListUpstreams(),
+	})
+}
+
+// APIGatewayAddUpstream adds a new upstream pool.
+func APIGatewayAddUpstream(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	upstream := &api_gateway.Upstream{}
+	if err := c.BodyParser(upstream); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	if upstream.ID == "" {
+		upstream.ID = uuid.New().String()
+	}
+	if err := gw.AddUpstream(*upstream); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Upstream added successfully",
+		"data":  upstream,
+	})
+}
+
+// APIGatewayUpdateUpstream replaces an existing upstream pool.
+func APIGatewayUpdateUpstream(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	upstream := &api_gateway.Upstream{}
+	if err := c.BodyParser(upstream); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	if upstream.ID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Upstream ID is required",
+		})
+	}
+	if err := gw.UpdateUpstream(*upstream); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Upstream updated successfully",
+		"data":  upstream,
+	})
+}
+
+// APIGatewayDeleteUpstream removes an upstream pool.
+func APIGatewayDeleteUpstream(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	type req struct {
+		ID string `json:"id"`
+	}
+	body := &req{}
+	if err := c.BodyParser(body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	if body.ID == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Upstream ID is required",
+		})
+	}
+	if err := gw.DeleteUpstream(body.ID); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Upstream deleted successfully",
+	})
+}
+
 // APIGatewayListUDPRoutes returns all UDP routes
 func APIGatewayListUDPRoutes(c *fiber.Ctx) error {
 	gw := api_gateway.GetGateway()

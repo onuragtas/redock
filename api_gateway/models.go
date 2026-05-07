@@ -29,11 +29,11 @@ type AuthHeader struct {
 	Value string `json:"value"`
 }
 
-// Route represents a routing rule that maps incoming requests to services
+// Route represents a routing rule that maps incoming requests to an upstream pool
 type Route struct {
 	ID                   string            `json:"id"`
 	Name                 string            `json:"name"`
-	ServiceID            string            `json:"service_id"`
+	UpstreamID           string            `json:"upstream_id"`            // ID of the upstream pool to forward to
 	Paths                []string          `json:"paths"`                  // URL paths to match
 	Methods              []string          `json:"methods,omitempty"`      // HTTP methods to match (empty = all)
 	Hosts                []string          `json:"hosts,omitempty"`        // Host headers to match (empty = all)
@@ -95,6 +95,7 @@ type CORSConfig struct {
 
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
+	ConfigVersion    int                   `json:"config_version"` // schema version; auto-migrated on load
 	HTTPPort         int                   `json:"http_port"`
 	HTTPSPort        int                   `json:"https_port"`
 	HTTPSEnabled     bool                  `json:"https_enabled"`
@@ -102,6 +103,7 @@ type GatewayConfig struct {
 	TLSKeyFile       string                `json:"tls_key_file,omitempty"`
 	LetsEncrypt      *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
 	Services         []Service             `json:"services"`
+	Upstreams        []Upstream            `json:"upstreams,omitempty"`
 	Routes           []Route               `json:"routes"`
 	UDPRoutes        []UDPRoute            `json:"udp_routes,omitempty"`
 	TCPRoutes        []TCPRoute            `json:"tcp_routes,omitempty"`
@@ -112,6 +114,42 @@ type GatewayConfig struct {
 	ClientSecurity   *ClientSecurityConfig `json:"client_security,omitempty"`
 	Timeouts         *TimeoutsConfig       `json:"timeouts,omitempty"`
 	Enabled          bool                  `json:"enabled"`
+}
+
+// Upstream is a pool of backend services with a load balancing strategy and
+// optional session affinity. Routes forward to an Upstream rather than a
+// single Service, which lets one route distribute traffic across many
+// backends.
+type Upstream struct {
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Strategy string           `json:"strategy"`           // round_robin (default) | weighted | random | least_conn
+	Sticky   *StickyConfig    `json:"sticky,omitempty"`   // nil = no session affinity
+	Targets  []UpstreamTarget `json:"targets"`
+	Enabled  bool             `json:"enabled"`
+}
+
+// UpstreamTarget references a Service with an optional weight (default 1).
+type UpstreamTarget struct {
+	ServiceID string `json:"service_id"`
+	Weight    int    `json:"weight,omitempty"` // > 0; defaults to 1 if missing
+}
+
+// StickyConfig pins a client to one target across requests.
+//
+// Modes:
+//   - "ip_hash": stateless, hashes client IP (Rendezvous/HRW). Honors weights when Strategy=weighted.
+//   - "cookie":  stateless cookie holds selected service ID; first request distributes via Strategy and sets cookie.
+//   - "header":  stateless, hashes a header value just like ip_hash but using the given header.
+//
+// When Strategy is "weighted" combined with a hash-based sticky mode the
+// distribution honors weights via weighted HRW; for any other strategy the
+// hash distributes uniformly across healthy targets.
+type StickyConfig struct {
+	Mode       string `json:"mode"`                  // ip_hash | cookie | header
+	CookieName string `json:"cookie_name,omitempty"` // for cookie mode (default: "redock_lb")
+	HeaderName string `json:"header_name,omitempty"` // for header mode (e.g. "X-Session-Id")
+	TTLSeconds int    `json:"ttl_seconds,omitempty"` // cookie max-age; 0 = session cookie
 }
 
 // TimeoutsConfig holds global default timeouts. Per-service / per-route
@@ -236,6 +274,7 @@ type RequestLog struct {
 	RemoteAddr            string    `json:"remote_addr"`
 	RouteID               string    `json:"route_id"`
 	RouteName             string    `json:"route_name,omitempty"`
+	UpstreamID            string    `json:"upstream_id,omitempty"`
 	ServiceID             string    `json:"service_id"`
 	ServiceName           string    `json:"service_name,omitempty"`
 	StatusCode            int       `json:"status_code"`
@@ -318,33 +357,36 @@ type clientRateLimit struct {
 
 // Gateway represents the API gateway server
 type Gateway struct {
-	config           *GatewayConfig
-	httpServer       *http.Server
-	httpsServer      *http.Server
-	httpListener     net.Listener
-	httpsListener    net.Listener
-	services         map[string]*Service
-	routes           []*Route
-	serviceHealth    map[string]*ServiceHealth
-	rateLimiter      *rateLimiter
-	globalLimiter    *rateLimiter
-	stats            *gatewayStatsTracker
-	mu               sync.RWMutex
-	running          bool
-	stopChan         chan struct{}
-	workDir          string
-	httpClient       *http.Client
-	tlsConfig        *tls.Config
-	routeCache       map[string]*cachedRoute
-	routeCacheOrder  []string
-	routeCacheLimit  int
-	routeCacheTTL    time.Duration
-	routeCacheMu     sync.RWMutex
-	clientStats      map[string]*clientStatsTracker
-	clientStatsLimit int
-	clientStatsMu    sync.RWMutex
-	persistentBlocks map[string]BlockedClient
-	blockListMu      sync.Mutex
+	config            *GatewayConfig
+	httpServer        *http.Server
+	httpsServer       *http.Server
+	httpListener      net.Listener
+	httpsListener     net.Listener
+	services          map[string]*Service
+	upstreams         map[string]*Upstream
+	upstreamRuntimes  map[string]*upstreamRuntime
+	upstreamRuntimeMu sync.Mutex
+	routes            []*Route
+	serviceHealth     map[string]*ServiceHealth
+	rateLimiter       *rateLimiter
+	globalLimiter     *rateLimiter
+	stats             *gatewayStatsTracker
+	mu                sync.RWMutex
+	running           bool
+	stopChan          chan struct{}
+	workDir           string
+	httpClient        *http.Client
+	tlsConfig         *tls.Config
+	routeCache        map[string]*cachedRoute
+	routeCacheOrder   []string
+	routeCacheLimit   int
+	routeCacheTTL     time.Duration
+	routeCacheMu      sync.RWMutex
+	clientStats       map[string]*clientStatsTracker
+	clientStatsLimit  int
+	clientStatsMu     sync.RWMutex
+	persistentBlocks  map[string]BlockedClient
+	blockListMu       sync.Mutex
 }
 
 // gatewayStatsTracker tracks gateway statistics

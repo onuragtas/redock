@@ -711,6 +711,23 @@ class ApiService {
     return ApiService.vueInstance.axios.delete(url, { data });
   }
 
+  static async apiGatewayListUpstreams() {
+    return await this.get('/api/v1/api_gateway/upstreams');
+  }
+
+  static async apiGatewayAddUpstream(data) {
+    return await this.post('/api/v1/api_gateway/upstreams', data);
+  }
+
+  static async apiGatewayUpdateUpstream(data) {
+    return await this.put('/api/v1/api_gateway/upstreams', data);
+  }
+
+  static async apiGatewayDeleteUpstream(data) {
+    let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + '/api/v1/api_gateway/upstreams';
+    return ApiService.vueInstance.axios.delete(url, { data });
+  }
+
   static async apiGatewayTestUpstream(data) {
     return await this.post('/api/v1/api_gateway/test_upstream', data);
   }
