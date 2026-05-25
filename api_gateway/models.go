@@ -29,6 +29,21 @@ type AuthHeader struct {
 	Value string `json:"value"`
 }
 
+// BasicAuthUser is one credential allowed for auth_type=basic.
+// Password is write-only: controllers hash it into PasswordHash and clear Password before persistence.
+type BasicAuthUser struct {
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`      // plaintext input from API; never persisted
+	PasswordHash string `json:"password_hash,omitempty"` // bcrypt hash, stored
+}
+
+// JWTConfig configures HS256 bearer-token verification for auth_type=jwt.
+type JWTConfig struct {
+	Secret   string `json:"secret,omitempty"`   // HS256 shared secret
+	Issuer   string `json:"issuer,omitempty"`   // optional: required "iss" claim
+	Audience string `json:"audience,omitempty"` // optional: required "aud" claim
+}
+
 // Route represents a routing rule that maps incoming requests to an upstream pool
 type Route struct {
 	ID                   string            `json:"id"`
@@ -46,8 +61,11 @@ type Route struct {
 	RateLimitRequests    int               `json:"rate_limit_requests"` // requests per window
 	RateLimitWindow      int               `json:"rate_limit_window"`   // window in seconds
 	AuthRequired         bool              `json:"auth_required"`
-	AuthType             string            `json:"auth_type,omitempty"`     // basic, jwt, header
+	AuthType             string            `json:"auth_type,omitempty"`      // basic, jwt, header
 	AuthHeaders          []AuthHeader      `json:"auth_headers,omitempty"`   // required header key-value pairs when auth_type=header
+	BasicAuthUsers       []BasicAuthUser   `json:"basic_auth_users,omitempty"` // credentials for auth_type=basic
+	BasicAuthRealm       string            `json:"basic_auth_realm,omitempty"` // WWW-Authenticate realm; default "Restricted"
+	JWT                  *JWTConfig        `json:"jwt,omitempty"`              // HS256 config for auth_type=jwt
 	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
 	CORS                 *CORSConfig       `json:"cors,omitempty"`             // CORS response headers for this route (incl. WebSocket)
 	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route

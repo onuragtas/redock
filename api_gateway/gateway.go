@@ -23,6 +23,9 @@ import (
 	"redock/pkg/pathutil"
 	"redock/platform/database"
 	"redock/platform/memory"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -988,9 +991,13 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Check authentication if required
 	if route.AuthRequired {
-		if !g.checkAuth(r, route) {
+		allowed, challenge := g.checkAuth(r, route)
+		if !allowed {
 			g.recordError()
 			statusCode = http.StatusUnauthorized
+			if challenge != "" {
+				lw.Header().Set("WWW-Authenticate", challenge)
+			}
 			http.Error(lw, "Unauthorized", statusCode)
 			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
 			return
@@ -1465,30 +1472,76 @@ func (g *Gateway) checkRateLimit(limiter *rateLimiter, clientIP string) bool {
 	return true
 }
 
-// checkAuth verifies authentication for the request
-func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
+// checkAuth verifies authentication for the request.
+// Returns (allowed, wwwAuthenticate) — when allowed=false, wwwAuthenticate (if non-empty)
+// should be set on the 401 response so browsers prompt natively for basic auth.
+func (g *Gateway) checkAuth(r *http.Request, route *Route) (bool, string) {
 	switch route.AuthType {
 	case "basic":
-		username, password, ok := r.BasicAuth()
-		if !ok {
-			return false
+		realm := route.BasicAuthRealm
+		if realm == "" {
+			realm = "Restricted"
 		}
-		return username != "" && password != ""
+		challenge := fmt.Sprintf(`Basic realm=%q, charset="UTF-8"`, realm)
+
+		if len(route.BasicAuthUsers) == 0 {
+			return false, challenge
+		}
+		username, password, ok := r.BasicAuth()
+		if !ok || username == "" || password == "" {
+			return false, challenge
+		}
+		for _, u := range route.BasicAuthUsers {
+			if subtleConstEq(u.Username, username) && u.PasswordHash != "" {
+				if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil {
+					return true, ""
+				}
+			}
+		}
+		return false, challenge
 
 	case "jwt":
+		challenge := `Bearer realm="api"`
+		if route.JWT == nil || route.JWT.Secret == "" {
+			return false, `Bearer error="invalid_request", error_description="jwt not configured"`
+		}
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			return false
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			return false, challenge
 		}
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			return false
+		raw := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		if raw == "" {
+			return false, challenge
 		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		return token != ""
+		secret := []byte(route.JWT.Secret)
+		parsed, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return secret, nil
+		}, jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}))
+		if err != nil || parsed == nil || !parsed.Valid {
+			return false, `Bearer error="invalid_token"`
+		}
+		claims, ok := parsed.Claims.(jwt.MapClaims)
+		if !ok {
+			return false, `Bearer error="invalid_token"`
+		}
+		if iss := strings.TrimSpace(route.JWT.Issuer); iss != "" {
+			if got, _ := claims["iss"].(string); got != iss {
+				return false, `Bearer error="invalid_token", error_description="issuer mismatch"`
+			}
+		}
+		if aud := strings.TrimSpace(route.JWT.Audience); aud != "" {
+			if !claimAudMatches(claims["aud"], aud) {
+				return false, `Bearer error="invalid_token", error_description="audience mismatch"`
+			}
+		}
+		return true, ""
 
 	case "header":
 		if len(route.AuthHeaders) == 0 {
-			return false
+			return false, ""
 		}
 		for _, h := range route.AuthHeaders {
 			key := strings.TrimSpace(h.Key)
@@ -1498,19 +1551,46 @@ func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
 			got := r.Header.Get(key)
 			if h.Value == "" {
 				if got == "" {
-					return false
+					return false, ""
 				}
 				continue
 			}
 			if got != h.Value {
-				return false
+				return false, ""
 			}
 		}
-		return true
+		return true, ""
 
 	default:
-		return true
+		return true, ""
 	}
+}
+
+// subtleConstEq compares two strings in constant time to avoid leaking length-prefix info via timing.
+func subtleConstEq(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var v byte
+	for i := 0; i < len(a); i++ {
+		v |= a[i] ^ b[i]
+	}
+	return v == 0
+}
+
+// claimAudMatches checks whether the JWT "aud" claim (string or []string) contains the expected value.
+func claimAudMatches(raw interface{}, expected string) bool {
+	switch v := raw.(type) {
+	case string:
+		return v == expected
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s == expected {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // runHealthChecks runs periodic health checks on services
@@ -2115,6 +2195,9 @@ func (g *Gateway) AddRoute(route Route) error {
 			return fmt.Errorf("route with ID %s already exists", route.ID)
 		}
 	}
+	if err := prepareRouteAuth(&route, nil); err != nil {
+		return err
+	}
 
 	g.config.Routes = append(g.config.Routes, route)
 	g.refreshRoutes()
@@ -2135,6 +2218,10 @@ func (g *Gateway) UpdateRoute(route Route) error {
 	}
 	for i, r := range g.config.Routes {
 		if r.ID == route.ID {
+			existing := g.config.Routes[i]
+			if err := prepareRouteAuth(&route, &existing); err != nil {
+				return err
+			}
 			g.config.Routes[i] = route
 			g.refreshRoutes()
 			g.clearRouteCache()
@@ -2143,6 +2230,91 @@ func (g *Gateway) UpdateRoute(route Route) error {
 	}
 
 	return fmt.Errorf("route with ID %s not found", route.ID)
+}
+
+// prepareRouteAuth normalizes and validates auth fields before persistence.
+// - basic: hashes any plaintext passwords; preserves an unchanged password by
+//   reusing the matching existing user's hash when both Password and PasswordHash
+//   are empty on input. Drops users that end up without a hash.
+// - jwt: rejects routes with no secret configured.
+// - header: rejects routes with no headers configured.
+// When prev is nil (new route), unchanged-password preservation is skipped.
+func prepareRouteAuth(route *Route, prev *Route) error {
+	if !route.AuthRequired {
+		// still wipe any incidental plaintext on auth users to be safe
+		for i := range route.BasicAuthUsers {
+			route.BasicAuthUsers[i].Password = ""
+		}
+		return nil
+	}
+
+	switch route.AuthType {
+	case "basic":
+		var prevUsers []BasicAuthUser
+		if prev != nil {
+			prevUsers = prev.BasicAuthUsers
+		}
+		cleaned := make([]BasicAuthUser, 0, len(route.BasicAuthUsers))
+		for _, u := range route.BasicAuthUsers {
+			u.Username = strings.TrimSpace(u.Username)
+			if u.Username == "" {
+				continue
+			}
+			switch {
+			case u.Password != "":
+				hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
+				if err != nil {
+					return fmt.Errorf("hash password for %s: %w", u.Username, err)
+				}
+				u.PasswordHash = string(hash)
+			case u.PasswordHash == "":
+				// no new password and no incoming hash — try to preserve existing
+				for _, pu := range prevUsers {
+					if pu.Username == u.Username && pu.PasswordHash != "" {
+						u.PasswordHash = pu.PasswordHash
+						break
+					}
+				}
+			}
+			u.Password = ""
+			if u.PasswordHash == "" {
+				// no credential at all — skip rather than store a useless entry
+				continue
+			}
+			cleaned = append(cleaned, u)
+		}
+		if len(cleaned) == 0 {
+			return fmt.Errorf("basic auth requires at least one user with a password")
+		}
+		route.BasicAuthUsers = cleaned
+		route.JWT = nil
+		route.AuthHeaders = nil
+
+	case "jwt":
+		if route.JWT == nil || strings.TrimSpace(route.JWT.Secret) == "" {
+			return fmt.Errorf("jwt auth requires a non-empty secret")
+		}
+		route.BasicAuthUsers = nil
+		route.AuthHeaders = nil
+
+	case "header":
+		hasOne := false
+		for _, h := range route.AuthHeaders {
+			if strings.TrimSpace(h.Key) != "" {
+				hasOne = true
+				break
+			}
+		}
+		if !hasOne {
+			return fmt.Errorf("header auth requires at least one header key")
+		}
+		route.BasicAuthUsers = nil
+		route.JWT = nil
+
+	default:
+		return fmt.Errorf("unsupported auth_type %q (expected basic, jwt, or header)", route.AuthType)
+	}
+	return nil
 }
 
 // ListUpstreams returns a copy of all upstream pools.

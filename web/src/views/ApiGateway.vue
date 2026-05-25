@@ -161,6 +161,9 @@ const newRoute = ref({
   auth_required: false,
   auth_type: '',
   auth_headers: [],
+  basic_auth_users: [],
+  basic_auth_realm: 'Restricted',
+  jwt: { secret: '', issuer: '', audience: '' },
   observability_enabled: true,
   enabled: true,
   cors: {
@@ -543,6 +546,9 @@ const openAddRouteModal = () => {
     auth_required: false,
     auth_type: '',
     auth_headers: [],
+    basic_auth_users: [],
+    basic_auth_realm: 'Restricted',
+    jwt: { secret: '', issuer: '', audience: '' },
     observability_enabled: true,
     enabled: true,
     cors: {
@@ -591,6 +597,32 @@ function buildAuthHeadersPayload(arr) {
   return out.length ? out : undefined
 }
 
+function buildBasicAuthUsersPayload(arr) {
+  if (!Array.isArray(arr)) return undefined
+  const out = []
+  for (const u of arr) {
+    const username = (u?.username != null ? String(u.username) : '').trim()
+    if (!username) continue
+    const password = u?.password != null ? String(u.password) : ''
+    const hash = u?.password_hash != null ? String(u.password_hash) : ''
+    const entry = { username }
+    if (password) entry.password = password
+    else if (hash) entry.password_hash = hash
+    out.push(entry)
+  }
+  return out.length ? out : undefined
+}
+
+function buildJWTPayload(j) {
+  if (!j) return undefined
+  const secret = j.secret != null ? String(j.secret).trim() : ''
+  if (!secret) return undefined
+  const out = { secret }
+  if (j.issuer && String(j.issuer).trim()) out.issuer = String(j.issuer).trim()
+  if (j.audience && String(j.audience).trim()) out.audience = String(j.audience).trim()
+  return out
+}
+
 function normalizeAuthType(v) {
   if (v == null) return ''
   if (typeof v === 'string') return v
@@ -610,7 +642,10 @@ const addRoute = async () => {
       auth_type: authType,
       cors: buildCorsPayload(newRoute.value.cors),
       response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
-      auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined,
+      basic_auth_users: authType === 'basic' ? buildBasicAuthUsersPayload(newRoute.value.basic_auth_users) : undefined,
+      basic_auth_realm: authType === 'basic' ? (newRoute.value.basic_auth_realm || 'Restricted') : undefined,
+      jwt: authType === 'jwt' ? buildJWTPayload(newRoute.value.jwt) : undefined
     }
     const response = await ApiService.apiGatewayAddRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -631,6 +666,16 @@ const openEditRouteModal = (route) => {
   const authHeaders = Array.isArray(route.auth_headers)
     ? route.auth_headers.map(h => ({ key: h.key || h.Key || '', value: h.value != null ? String(h.value) : (h.Value != null ? String(h.Value) : '') }))
     : []
+  const basicUsers = Array.isArray(route.basic_auth_users)
+    ? route.basic_auth_users.map(u => ({
+        username: u.username || '',
+        password: '', // never round-trip; blank means "keep existing hash"
+        password_hash: u.password_hash || ''
+      }))
+    : []
+  const jwtCfg = route.jwt && typeof route.jwt === 'object'
+    ? { secret: route.jwt.secret || '', issuer: route.jwt.issuer || '', audience: route.jwt.audience || '' }
+    : { secret: '', issuer: '', audience: '' }
 
   editingRoute.value = {
     ...route,
@@ -651,7 +696,10 @@ const openEditRouteModal = (route) => {
       max_age: parseInt(cors.max_age, 10) || 0
     } : { enabled: false, allow_origins: '', allow_methods: '', allow_headers: '', expose_headers: '', allow_credentials: false, max_age: 0 },
     response_headers: responseHeaders,
-    auth_headers: authHeaders
+    auth_headers: authHeaders,
+    basic_auth_users: basicUsers,
+    basic_auth_realm: route.basic_auth_realm || 'Restricted',
+    jwt: jwtCfg
   }
   isEditRouteModalActive.value = true
 }
@@ -668,7 +716,10 @@ const updateRoute = async () => {
       auth_type: authType,
       cors: buildCorsPayload(editingRoute.value.cors),
       response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
-      auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined,
+      basic_auth_users: authType === 'basic' ? buildBasicAuthUsersPayload(editingRoute.value.basic_auth_users) : undefined,
+      basic_auth_realm: authType === 'basic' ? (editingRoute.value.basic_auth_realm || 'Restricted') : undefined,
+      jwt: authType === 'jwt' ? buildJWTPayload(editingRoute.value.jwt) : undefined
     }
     const response = await ApiService.apiGatewayUpdateRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -2160,6 +2211,38 @@ onUnmounted(() => {
             <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.auth_headers.push({ key: '', value: '' })" />
           </div>
         </template>
+        <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'basic'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Basic auth users</h4>
+            <p class="text-xs text-slate-500 mb-2">Browser will show a native login prompt. Passwords are stored as bcrypt hashes.</p>
+            <FormField label="Realm">
+              <FormControl v-model="newRoute.basic_auth_realm" placeholder="Restricted" />
+            </FormField>
+            <div v-for="(u, idx) in newRoute.basic_auth_users" :key="'bu-' + idx" class="flex gap-2 items-end mb-2 mt-2">
+              <FormControl v-model="u.username" placeholder="Username" class="flex-1" />
+              <FormControl v-model="u.password" type="password" placeholder="Password" class="flex-1" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.basic_auth_users.splice(idx, 1)" />
+            </div>
+            <BaseButton label="Add user" color="info" small :icon="mdiPlus" @click="newRoute.basic_auth_users.push({ username: '', password: '', password_hash: '' })" />
+          </div>
+        </template>
+        <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'jwt'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">JWT (HS256)</h4>
+            <p class="text-xs text-slate-500 mb-2">Tokens must be signed with the shared secret using HS256/HS384/HS512. Issuer and audience are optional but checked if set.</p>
+            <FormField label="Secret">
+              <FormControl v-model="newRoute.jwt.secret" type="password" placeholder="Shared HMAC secret" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Issuer (optional)">
+                <FormControl v-model="newRoute.jwt.issuer" placeholder="iss claim" />
+              </FormField>
+              <FormField label="Audience (optional)">
+                <FormControl v-model="newRoute.jwt.audience" placeholder="aud claim" />
+              </FormField>
+            </div>
+          </div>
+        </template>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
           <FormField label="Requests">
             <FormControl v-model="newRoute.rate_limit_requests" type="number" placeholder="100" />
@@ -2426,6 +2509,38 @@ onUnmounted(() => {
         <FormField v-if="editingRoute.auth_required" label="Auth Type">
           <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
         </FormField>
+        <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'basic'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Basic auth users</h4>
+            <p class="text-xs text-slate-500 mb-2">Leave password blank to keep the existing one. Browser shows a native login prompt.</p>
+            <FormField label="Realm">
+              <FormControl v-model="editingRoute.basic_auth_realm" placeholder="Restricted" />
+            </FormField>
+            <div v-for="(u, idx) in (editingRoute.basic_auth_users || [])" :key="'ebu-' + idx" class="flex gap-2 items-end mb-2 mt-2">
+              <FormControl v-model="u.username" placeholder="Username" class="flex-1" />
+              <FormControl v-model="u.password" type="password" :placeholder="u.password_hash ? '••• (unchanged)' : 'Password'" class="flex-1" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="(editingRoute.basic_auth_users || []).splice(idx, 1)" />
+            </div>
+            <BaseButton label="Add user" color="info" small :icon="mdiPlus" @click="(editingRoute.basic_auth_users = editingRoute.basic_auth_users || []).push({ username: '', password: '', password_hash: '' })" />
+          </div>
+        </template>
+        <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'jwt'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">JWT (HS256)</h4>
+            <p class="text-xs text-slate-500 mb-2">Tokens must be signed with the shared secret using HS256/HS384/HS512. Issuer and audience are optional but checked if set.</p>
+            <FormField label="Secret">
+              <FormControl v-model="editingRoute.jwt.secret" type="password" placeholder="Shared HMAC secret" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Issuer (optional)">
+                <FormControl v-model="editingRoute.jwt.issuer" placeholder="iss claim" />
+              </FormField>
+              <FormField label="Audience (optional)">
+                <FormControl v-model="editingRoute.jwt.audience" placeholder="aud claim" />
+              </FormField>
+            </div>
+          </div>
+        </template>
         <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'header'">
           <div class="border-t pt-4 mt-4">
             <h4 class="font-semibold mb-3">Required headers</h4>
