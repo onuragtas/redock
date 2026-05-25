@@ -17,7 +17,8 @@ import {
   mdiDns,
   mdiSync,
   mdiCheck,
-  mdiAlert
+  mdiAlert,
+  mdiPencil
 } from '@mdi/js';
 import { computed, onMounted, ref } from "vue";
 import { useToast } from 'vue-toastification';
@@ -34,8 +35,13 @@ const activeTab = ref('accounts');
 // Modals
 const isAddAccountModalActive = ref(false);
 const isAddZoneModalActive = ref(false);
+const isRecordModalActive = ref(false);
+const isDeleteRecordModalActive = ref(false);
+const recordModalMode = ref('create'); // 'create' | 'edit'
+const recordSaving = ref(false);
 const selectedAccount = ref(null);
 const selectedZone = ref(null);
+const recordToDelete = ref(null);
 
 // Forms
 const newAccount = ref({
@@ -48,6 +54,40 @@ const newZone = ref({
   account_id: '',
   domain: ''
 });
+
+const RECORD_TYPES = ['A', 'AAAA', 'CNAME', 'MX', 'TXT', 'NS', 'SRV', 'CAA'];
+const PROXYABLE_TYPES = ['A', 'AAAA', 'CNAME'];
+
+const blankRecord = () => ({
+  id: null,
+  record_id: '',
+  type: 'A',
+  name: '',
+  content: '',
+  ttl: 1,
+  priority: 10,
+  proxied: false,
+  comment: ''
+});
+
+const recordForm = ref(blankRecord());
+
+const typeSupportsProxy = computed(() => PROXYABLE_TYPES.includes(recordForm.value.type));
+const typeNeedsPriority = computed(() => recordForm.value.type === 'MX' || recordForm.value.type === 'SRV');
+
+const ttlOptions = [
+  { id: 1, label: 'Auto' },
+  { id: 60, label: '1 minute' },
+  { id: 300, label: '5 minutes' },
+  { id: 1800, label: '30 minutes' },
+  { id: 3600, label: '1 hour' },
+  { id: 86400, label: '1 day' }
+];
+
+const ttlLabel = (ttl) => {
+  const opt = ttlOptions.find(o => o.id === ttl);
+  return opt ? opt.label : `${ttl}s`;
+};
 
 // Tabs
 const tabs = ['accounts', 'zones', 'dns'];
@@ -155,6 +195,104 @@ const syncZones = async (accountId) => {
 const formatDate = (date) => {
   if (!date) return 'Never';
   return new Date(date).toLocaleString();
+};
+
+const openCreateRecord = () => {
+  if (!selectedZone.value) return;
+  recordModalMode.value = 'create';
+  recordForm.value = blankRecord();
+  isRecordModalActive.value = true;
+};
+
+const openEditRecord = (record) => {
+  recordModalMode.value = 'edit';
+  recordForm.value = {
+    id: record.id,
+    record_id: record.record_id,
+    type: record.type,
+    name: record.name,
+    content: record.content,
+    ttl: record.ttl || 1,
+    priority: record.priority || 10,
+    proxied: !!record.proxied,
+    comment: record.comment || ''
+  };
+  isRecordModalActive.value = true;
+};
+
+const buildRecordPayload = () => {
+  const f = recordForm.value;
+  const payload = {
+    type: f.type,
+    name: f.name.trim(),
+    content: f.content.trim(),
+    ttl: Number(f.ttl) || 1,
+    comment: f.comment || ''
+  };
+  if (PROXYABLE_TYPES.includes(f.type)) {
+    payload.proxied = !!f.proxied;
+  }
+  if (f.type === 'MX' || f.type === 'SRV') {
+    payload.priority = Number(f.priority) || 0;
+  }
+  return payload;
+};
+
+const saveRecord = async () => {
+  if (!selectedZone.value) {
+    toast.error('No zone selected');
+    return;
+  }
+  const f = recordForm.value;
+  if (!f.type || !f.name || !f.content) {
+    toast.error('Type, name and content are required');
+    return;
+  }
+  recordSaving.value = true;
+  try {
+    const payload = buildRecordPayload();
+    const url = recordModalMode.value === 'edit'
+      ? `/api/cloudflare/zones/${selectedZone.value.id}/dns/${f.record_id}`
+      : `/api/cloudflare/zones/${selectedZone.value.id}/dns`;
+    const response = recordModalMode.value === 'edit'
+      ? await ApiService.put(url, payload)
+      : await ApiService.post(url, payload);
+    if (!response.data.error) {
+      toast.success(recordModalMode.value === 'edit' ? '✅ Record updated' : '✅ Record created');
+      isRecordModalActive.value = false;
+      await loadDNSRecords(selectedZone.value.id);
+    } else {
+      toast.error('❌ ' + response.data.msg);
+    }
+  } catch (error) {
+    toast.error('❌ Error: ' + (error.response?.data?.msg || error.message));
+  } finally {
+    recordSaving.value = false;
+  }
+};
+
+const askDeleteRecord = (record) => {
+  recordToDelete.value = record;
+  isDeleteRecordModalActive.value = true;
+};
+
+const confirmDeleteRecord = async () => {
+  if (!selectedZone.value || !recordToDelete.value) return;
+  try {
+    const response = await ApiService.delete(
+      `/api/cloudflare/zones/${selectedZone.value.id}/dns/${recordToDelete.value.record_id}`
+    );
+    if (!response.data.error) {
+      toast.success('✅ Record deleted');
+      isDeleteRecordModalActive.value = false;
+      recordToDelete.value = null;
+      await loadDNSRecords(selectedZone.value.id);
+    } else {
+      toast.error('❌ ' + response.data.msg);
+    }
+  } catch (error) {
+    toast.error('❌ Error: ' + (error.response?.data?.msg || error.message));
+  }
 };
 </script>
 
@@ -289,14 +427,24 @@ const formatDate = (date) => {
               <h3 class="text-xl font-semibold">DNS Records</h3>
               <p v-if="selectedZone" class="text-sm text-gray-500">{{ selectedZone.name }}</p>
             </div>
-            <BaseButton
-              :icon="mdiRefresh"
-              color="info"
-              label="Refresh"
-              small
-              :disabled="!selectedZone"
-              @click="loadDNSRecords(selectedZone?.id)"
-            />
+            <div class="flex items-center gap-2">
+              <BaseButton
+                :icon="mdiPlus"
+                color="success"
+                label="Add Record"
+                small
+                :disabled="!selectedZone"
+                @click="openCreateRecord"
+              />
+              <BaseButton
+                :icon="mdiRefresh"
+                color="info"
+                label="Refresh"
+                small
+                :disabled="!selectedZone"
+                @click="loadDNSRecords(selectedZone?.id)"
+              />
+            </div>
           </div>
           <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-3">
             <p class="text-sm text-blue-800 dark:text-blue-200">
@@ -329,27 +477,46 @@ const formatDate = (date) => {
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Content</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">TTL</th>
                 <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Proxied</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
-              <tr v-for="record in dnsRecords" :key="record.id">
+              <tr v-for="record in dnsRecords" :key="record.record_id || record.id">
                 <td class="px-6 py-4 whitespace-nowrap">
                   <span class="px-2 py-1 text-xs font-semibold rounded bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
                     {{ record.type }}
                   </span>
                 </td>
                 <td class="px-6 py-4 text-sm">{{ record.name }}</td>
-                <td class="px-6 py-4 text-sm font-mono text-gray-600 dark:text-gray-400 max-w-md truncate">
+                <td class="px-6 py-4 text-sm font-mono text-gray-600 dark:text-gray-400 max-w-md truncate" :title="record.content">
                   {{ record.content }}
                 </td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm">{{ record.ttl }}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">{{ ttlLabel(record.ttl) }}</td>
                 <td class="px-6 py-4 whitespace-nowrap">
                   <BaseIcon
+                    v-if="PROXYABLE_TYPES.includes(record.type)"
                     :path="record.proxied ? mdiCheck : mdiAlert"
                     :class="record.proxied ? 'text-orange-500' : 'text-gray-400'"
                     w="w-5"
                     h="h-5"
                   />
+                  <span v-else class="text-xs text-gray-400">—</span>
+                </td>
+                <td class="px-6 py-4 whitespace-nowrap text-right">
+                  <div class="inline-flex items-center gap-2">
+                    <BaseButton
+                      :icon="mdiPencil"
+                      color="info"
+                      small
+                      @click="openEditRecord(record)"
+                    />
+                    <BaseButton
+                      :icon="mdiDelete"
+                      color="danger"
+                      small
+                      @click="askDeleteRecord(record)"
+                    />
+                  </div>
                 </td>
               </tr>
             </tbody>
@@ -357,6 +524,76 @@ const formatDate = (date) => {
         </div>
       </CardBox>
     </div>
+
+    <!-- DNS Record Create/Edit Modal -->
+    <CardBoxModal
+      v-model="isRecordModalActive"
+      :title="recordModalMode === 'edit' ? 'Edit DNS Record' : 'Add DNS Record'"
+      :button-label="recordSaving ? 'Saving...' : (recordModalMode === 'edit' ? 'Update' : 'Create')"
+      has-cancel
+      @confirm="saveRecord"
+    >
+      <FormField label="Type">
+        <FormControl
+          v-model="recordForm.type"
+          type="select"
+          :options="RECORD_TYPES.map(t => ({ id: t, label: t }))"
+        />
+      </FormField>
+      <FormField label="Name">
+        <FormControl
+          v-model="recordForm.name"
+          :placeholder="selectedZone ? selectedZone.name + '  (use @ for root, or sub.' + selectedZone.name + ')' : 'example.com'"
+        />
+        <p class="text-xs text-gray-500 mt-1">
+          Tip: use the apex domain (e.g. <code>{{ selectedZone?.name || 'example.com' }}</code>) or a subdomain
+          (e.g. <code>www.{{ selectedZone?.name || 'example.com' }}</code>). Cloudflare accepts <code>@</code> as a shortcut for the root.
+        </p>
+      </FormField>
+      <FormField label="Content">
+        <FormControl
+          v-model="recordForm.content"
+          :placeholder="recordForm.type === 'A' ? '192.0.2.1' : recordForm.type === 'CNAME' ? 'target.example.com' : recordForm.type === 'MX' ? 'mail.example.com' : 'value'"
+        />
+      </FormField>
+      <FormField v-if="typeNeedsPriority" label="Priority">
+        <FormControl v-model="recordForm.priority" type="number" placeholder="10" />
+      </FormField>
+      <FormField label="TTL">
+        <FormControl
+          v-model="recordForm.ttl"
+          type="select"
+          :options="ttlOptions"
+        />
+      </FormField>
+      <FormField v-if="typeSupportsProxy" label="Proxy through Cloudflare">
+        <label class="inline-flex items-center gap-2 cursor-pointer">
+          <input type="checkbox" v-model="recordForm.proxied" class="form-checkbox" />
+          <span class="text-sm">Proxied (orange cloud — provides CDN, WAF, hides origin IP)</span>
+        </label>
+      </FormField>
+      <FormField label="Comment">
+        <FormControl v-model="recordForm.comment" placeholder="Optional note about this record" />
+      </FormField>
+    </CardBoxModal>
+
+    <!-- DNS Record Delete Confirmation -->
+    <CardBoxModal
+      v-model="isDeleteRecordModalActive"
+      title="Delete DNS Record"
+      button-label="Delete"
+      button="danger"
+      has-cancel
+      @confirm="confirmDeleteRecord"
+    >
+      <p v-if="recordToDelete">
+        Are you sure you want to delete this DNS record?
+      </p>
+      <div v-if="recordToDelete" class="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded text-sm font-mono">
+        <div><strong>{{ recordToDelete.type }}</strong> {{ recordToDelete.name }}</div>
+        <div class="text-gray-500 break-all">{{ recordToDelete.content }}</div>
+      </div>
+    </CardBoxModal>
 
     <!-- Add Account Modal -->
     <CardBoxModal
