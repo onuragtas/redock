@@ -71,6 +71,12 @@ func Init(dm *dockermanager.DockerEnvironmentManager) {
 		torCancel:     torCancel,
 	}
 
+	if SystemTorServiceRunning() {
+		log.Println("onion_proxy: UYARI — sistem `tor` servisi aktif. " +
+			"redock kendi Tor instance'ını yönetir; iki Tor çakışır ve bootstrap fail olur. " +
+			"Çözüm: sudo systemctl disable --now tor")
+	}
+
 	// Kalıcı kayıtları geri yükle (Tor lazy-start; ilk publish'te bootstrap olur).
 	go manager.restoreAll()
 }
@@ -286,6 +292,9 @@ func (m *Manager) Create(in CreateInput) (*OnionServiceEntity, error) {
 	}
 	if _, err := exec.LookPath("tor"); err != nil {
 		return nil, fmt.Errorf("tor binary PATH'te bulunamadı; /api/v1/onion/status ile kurulum talimatına bakın")
+	}
+	if SystemTorServiceRunning() {
+		return nil, fmt.Errorf("sistem `tor` servisi aktif; redock kendi Tor'unu yönetir, çakışmayı önlemek için: sudo systemctl disable --now tor")
 	}
 
 	e := &OnionServiceEntity{

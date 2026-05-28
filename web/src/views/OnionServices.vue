@@ -44,6 +44,7 @@ const form = ref({
 
 const torInstalled = computed(() => status.value?.installed === true)
 const torRunning = computed(() => status.value?.tor_running === true)
+const systemServiceConflict = computed(() => status.value?.system_service_conflict === true)
 const noRoutes = computed(() => routes.value.length === 0)
 
 // Loaders
@@ -233,7 +234,7 @@ onUnmounted(stopInstallPoll)
             label="Add Onion"
             :icon="mdiPlus"
             color="white"
-            :disabled="!torInstalled || noRoutes"
+            :disabled="!torInstalled || noRoutes || systemServiceConflict"
             @click="openCreate"
           />
         </div>
@@ -262,6 +263,22 @@ onUnmounted(stopInstallPoll)
             Detected OS: <code>{{ status.install_hint?.os || '?' }}</code> · Arch:
             <code>{{ status.install_hint?.arch || '?' }}</code>
           </div>
+        </div>
+      </div>
+    </CardBox>
+
+    <!-- System tor service conflict -->
+    <CardBox v-if="torInstalled && systemServiceConflict" class="border-l-4 border-red-500">
+      <div class="flex items-start gap-3">
+        <BaseIcon :path="mdiAlertCircleOutline" size="24" class="text-red-500 flex-shrink-0" />
+        <div class="flex-1">
+          <h3 class="font-semibold">Conflicting system Tor service detected</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-300 mt-1 mb-3">
+            The OS-managed <code>tor</code> service is currently active. Redock
+            manages its own Tor instance — running both causes bootstrap failures.
+            Disable the system service:
+          </p>
+          <div class="bg-slate-900 text-slate-100 rounded-lg p-3 font-mono text-sm">sudo systemctl disable --now tor</div>
         </div>
       </div>
     </CardBox>
