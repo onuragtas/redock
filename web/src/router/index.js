@@ -181,6 +181,14 @@ const routes = [
       },
       {
         meta: {
+          title: 'Onion Services',
+        },
+        path: 'onion-services',
+        name: 'onion-services',
+        component: () => import('@/views/OnionServices.vue')
+      },
+      {
+        meta: {
           title: 'PHP XDebug Adapter',
         },
         path: 'php_xdebug_adapter',

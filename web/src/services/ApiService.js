@@ -579,6 +579,26 @@ class ApiService {
     return await this.get('/api/v1/local_proxy/start_all');
   }
 
+  static async onionStatus() {
+    return await this.get('/api/v1/onion/status');
+  }
+
+  static async onionList() {
+    return await this.get('/api/v1/onion/list');
+  }
+
+  static async onionCreate(data) {
+    return await this.post('/api/v1/onion/create', data);
+  }
+
+  static async onionUpdate(id, data) {
+    return await this.put(`/api/v1/onion/${id}`, data);
+  }
+
+  static async onionDelete(id) {
+    return await this.delete(`/api/v1/onion/${id}`);
+  }
+
   static async addService(service) {
     return await this.post('/api/v1/docker/add_service', {
       service: service

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(ps -o user,pid,comm -p 83956)"
+    ]
+  }
+}

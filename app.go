@@ -94,6 +94,7 @@ func app() {
 	routes.DeploymentRoutes(app)
 	routes.UsageRoutes(app)
 	routes.APIGatewayRoutes(app)
+	routes.OnionProxyRoutes(app)
 	routes.DNSRoutes(app)
 	routes.SetupVPNRoutes(app)
 	routes.CloudflareRoutes(app)

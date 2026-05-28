@@ -13,6 +13,7 @@ import (
 	"redock/dns_server"
 	"redock/email_server"
 	localproxy "redock/local_proxy"
+	"redock/onion_proxy"
 	"redock/php_debug_adapter"
 	"redock/pkg/network"
 	"redock/platform/database"
@@ -92,6 +93,7 @@ func initialize() {
 	saved_commands.Init(dockerEnvironmentManager)
 	deployment.Init(dockerEnvironmentManager)
 	api_gateway.Init(dockerEnvironmentManager)
+	onion_proxy.Init(dockerEnvironmentManager)
 	dns_server.Init(dockerEnvironmentManager)
 	vpn_server.Init()
 	cloudflare.Init()
@@ -164,6 +166,9 @@ func registerEntities(db *memory.Database) error {
 		{"php_xdebug_mappings", func() error { return memory.Register[*php_debug_adapter.PhpXDebugMappingEntity](db, "php_xdebug_mappings") }},
 		{"api_gateway_config", func() error { return memory.Register[*api_gateway.ApiGatewayConfigEntity](db, "api_gateway_config") }},
 		{"api_gateway_blocks", func() error { return memory.Register[*api_gateway.ApiGatewayBlockEntity](db, "api_gateway_blocks") }},
+		{"onion_services", func() error {
+			return memory.Register[*onion_proxy.OnionServiceEntity](db, onion_proxy.TableOnionServices)
+		}},
 		{"jwt_secrets", func() error { return memory.Register[*jwtsecrets.JWTSecretsEntity](db, jwtsecrets.TableName) }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
