@@ -220,19 +220,22 @@ const openEditRecord = (record) => {
   isRecordModalActive.value = true;
 };
 
+const unwrap = (v) => (v && typeof v === 'object' ? v.id : v);
+
 const buildRecordPayload = () => {
   const f = recordForm.value;
+  const type = unwrap(f.type);
   const payload = {
-    type: f.type,
+    type,
     name: f.name.trim(),
     content: f.content.trim(),
-    ttl: Number(f.ttl) || 1,
+    ttl: Number(unwrap(f.ttl)) || 1,
     comment: f.comment || ''
   };
-  if (PROXYABLE_TYPES.includes(f.type)) {
+  if (PROXYABLE_TYPES.includes(type)) {
     payload.proxied = !!f.proxied;
   }
-  if (f.type === 'MX' || f.type === 'SRV') {
+  if (type === 'MX' || type === 'SRV') {
     payload.priority = Number(f.priority) || 0;
   }
   return payload;
@@ -537,7 +540,7 @@ const confirmDeleteRecord = async () => {
         <FormControl
           v-model="recordForm.type"
           type="select"
-          :options="RECORD_TYPES.map(t => ({ id: t, label: t }))"
+          :options="RECORD_TYPES"
         />
       </FormField>
       <FormField label="Name">
