@@ -137,7 +137,7 @@ const newService = ref({
   enabled: true,
   health_check: {
     path: '/health',
-    interval: 30,
+    interval: 5,
     timeout: 5,
     healthy_threshold: 2,
     unhealthy_threshold: 3
@@ -481,7 +481,7 @@ const openAddServiceModal = () => {
     enabled: true,
     health_check: {
       path: '/health',
-      interval: 30,
+      interval: 5,
       timeout: 5,
       healthy_threshold: 2,
       unhealthy_threshold: 3
@@ -507,7 +507,7 @@ const openEditServiceModal = (service) => {
   if (!editingService.value.health_check) {
     editingService.value.health_check = {
       path: '/health',
-      interval: 30,
+      interval: 5,
       timeout: 5,
       healthy_threshold: 2,
       unhealthy_threshold: 3
@@ -2022,9 +2022,19 @@ onUnmounted(() => {
         <FormField label="Base Path (optional)">
           <FormControl v-model="newService.path" placeholder="/api" />
         </FormField>
-        <FormField label="Health Check Path">
-          <FormControl v-model="newService.health_check.path" placeholder="/health" />
-        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Health Check Path">
+            <FormControl v-model="newService.health_check.path" placeholder="/health" />
+          </FormField>
+          <FormField label="Health Check Interval (seconds)">
+            <FormControl
+              v-model.number="newService.health_check.interval"
+              type="number"
+              min="1"
+              placeholder="5"
+            />
+          </FormField>
+        </div>
       </div>
     </CardBoxModal>
 
@@ -2447,9 +2457,19 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="editingService.enabled" label="Enabled" name="edit_service_enabled" />
         </FormField>
-        <FormField label="Health Check Path">
-          <FormControl v-model="editingService.health_check.path" placeholder="/health" />
-        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Health Check Path">
+            <FormControl v-model="editingService.health_check.path" placeholder="/health" />
+          </FormField>
+          <FormField label="Health Check Interval (seconds)">
+            <FormControl
+              v-model.number="editingService.health_check.interval"
+              type="number"
+              min="1"
+              placeholder="5"
+            />
+          </FormField>
+        </div>
       </div>
     </CardBoxModal>
 

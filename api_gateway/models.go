@@ -386,6 +386,7 @@ type Gateway struct {
 	upstreamRuntimeMu sync.Mutex
 	routes            []*Route
 	serviceHealth     map[string]*ServiceHealth
+	lastHealthCheck   map[string]time.Time
 	rateLimiter       *rateLimiter
 	globalLimiter     *rateLimiter
 	stats             *gatewayStatsTracker

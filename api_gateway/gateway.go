@@ -55,6 +55,15 @@ const (
 	defaultHealthCheckTimeout      = 5 * time.Second
 )
 
+const (
+	// defaultHealthCheckInterval is used when a service's HealthCheck.Interval is 0/unset.
+	defaultHealthCheckInterval = 5 * time.Second
+	// minHealthCheckInterval clamps configured intervals so a bad value can't hammer backends.
+	minHealthCheckInterval = 1 * time.Second
+	// healthCheckTickResolution is how often the loop wakes to decide which services are due.
+	healthCheckTickResolution = 1 * time.Second
+)
+
 type resolvedTimeouts struct {
 	serverRead        time.Duration
 	serverWrite       time.Duration
@@ -384,6 +393,7 @@ func NewGateway(workDir string) *Gateway {
 		upstreams:        make(map[string]*Upstream),
 		upstreamRuntimes: make(map[string]*upstreamRuntime),
 		serviceHealth:    make(map[string]*ServiceHealth),
+		lastHealthCheck:  make(map[string]time.Time),
 		stopChan:         make(chan struct{}),
 		workDir:          workDir,
 		stats: &gatewayStatsTracker{
@@ -1593,31 +1603,52 @@ func claimAudMatches(raw interface{}, expected string) bool {
 	return false
 }
 
-// runHealthChecks runs periodic health checks on services
+// runHealthChecks wakes every healthCheckTickResolution and dispatches a check
+// for each service whose own HealthCheck.Interval has elapsed since its last run.
 func (g *Gateway) runHealthChecks() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(healthCheckTickResolution)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-g.stopChan:
 			return
-		case <-ticker.C:
-			g.checkAllServices()
+		case now := <-ticker.C:
+			g.checkAllServices(now)
 		}
 	}
 }
 
-// checkAllServices performs health checks on all services
-func (g *Gateway) checkAllServices() {
-	g.mu.RLock()
-	services := make([]*Service, 0, len(g.services))
-	for _, svc := range g.services {
-		if svc.Enabled && svc.HealthCheck != nil {
-			services = append(services, svc)
-		}
+// healthCheckInterval resolves a service's effective check interval, falling back
+// to the default when unset and clamping to the minimum.
+func healthCheckInterval(hc *HealthCheck) time.Duration {
+	if hc == nil || hc.Interval <= 0 {
+		return defaultHealthCheckInterval
 	}
-	g.mu.RUnlock()
+	interval := time.Duration(hc.Interval) * time.Second
+	if interval < minHealthCheckInterval {
+		return minHealthCheckInterval
+	}
+	return interval
+}
+
+// checkAllServices dispatches health checks for every enabled service that is due,
+// based on its per-service interval and the time of its last dispatch.
+func (g *Gateway) checkAllServices(now time.Time) {
+	g.mu.Lock()
+	services := make([]*Service, 0, len(g.services))
+	for id, svc := range g.services {
+		if !svc.Enabled || svc.HealthCheck == nil {
+			continue
+		}
+		last, seen := g.lastHealthCheck[id]
+		if seen && now.Sub(last) < healthCheckInterval(svc.HealthCheck) {
+			continue
+		}
+		g.lastHealthCheck[id] = now
+		services = append(services, svc)
+	}
+	g.mu.Unlock()
 
 	for _, svc := range services {
 		go g.checkServiceHealth(svc)

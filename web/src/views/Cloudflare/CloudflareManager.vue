@@ -571,7 +571,7 @@ const confirmDeleteRecord = async () => {
       </FormField>
       <FormField v-if="typeSupportsProxy" label="Proxy through Cloudflare">
         <label class="inline-flex items-center gap-2 cursor-pointer">
-          <input type="checkbox" v-model="recordForm.proxied" class="form-checkbox" />
+          <input v-model="recordForm.proxied" type="checkbox" class="form-checkbox" />
           <span class="text-sm">Proxied (orange cloud — provides CDN, WAF, hides origin IP)</span>
         </label>
       </FormField>

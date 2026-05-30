@@ -229,7 +229,7 @@ onUnmounted(stopInstallPoll)
           </p>
         </div>
         <div class="mt-6 lg:mt-0 flex space-x-3">
-          <BaseButton :icon="mdiRefresh" color="white" outline @click="refreshAll" :disabled="loading" />
+          <BaseButton :icon="mdiRefresh" color="white" outline :disabled="loading" @click="refreshAll" />
           <BaseButton
             label="Add Onion"
             :icon="mdiPlus"
@@ -254,7 +254,8 @@ onUnmounted(stopInstallPoll)
           </p>
           <div v-if="status.install_hint" class="bg-slate-900 text-slate-100 rounded-lg p-4 font-mono text-sm whitespace-pre overflow-x-auto">{{ status.install_hint.command }}</div>
           <div v-if="status.install_hint?.url" class="mt-3">
-            <a :href="status.install_hint.url" target="_blank" rel="noopener"
+            <a
+:href="status.install_hint.url" target="_blank" rel="noopener"
                class="text-indigo-600 dark:text-indigo-400 hover:underline text-sm">
               Documentation: {{ status.install_hint.url }}
             </a>
@@ -364,9 +365,9 @@ onUnmounted(stopInstallPoll)
               <span class="text-indigo-700 dark:text-indigo-400">{{ item.onion_address || '(not published yet)' }}</span>
               <button
                 v-if="item.onion_address"
-                @click="copy(item.onion_address)"
                 class="text-slate-400 hover:text-indigo-500"
                 title="Copy"
+                @click="copy(item.onion_address)"
               >
                 <BaseIcon :path="mdiContentCopy" size="16" />
               </button>
@@ -396,14 +397,15 @@ onUnmounted(stopInstallPoll)
                 <div class="absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"></div>
               </div>
             </label>
-            <BaseButton :icon="mdiPencil" color="info" small @click="openEdit(item)" title="Edit" />
-            <BaseButton :icon="mdiDelete" color="danger" small @click="openDelete(item)" title="Delete" />
+            <BaseButton :icon="mdiPencil" color="info" small title="Edit" @click="openEdit(item)" />
+            <BaseButton :icon="mdiDelete" color="danger" small title="Delete" @click="openDelete(item)" />
           </div>
         </div>
       </div>
     </CardBox>
 
-    <div v-if="copyToast"
+    <div
+v-if="copyToast"
          class="fixed bottom-6 right-6 bg-slate-900 text-white px-4 py-2 rounded-lg shadow-lg text-sm z-50">
       {{ copyToast }}
     </div>
@@ -463,7 +465,7 @@ onUnmounted(stopInstallPoll)
 
       <FormField label="Status">
         <label class="inline-flex items-center cursor-pointer mt-1">
-          <input type="checkbox" class="sr-only peer" v-model="form.enabled" />
+          <input v-model="form.enabled" type="checkbox" class="sr-only peer" />
           <div class="w-10 h-5 bg-slate-300 dark:bg-slate-600 rounded-full peer peer-checked:bg-emerald-500 transition-colors relative">
             <div class="absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"></div>
           </div>

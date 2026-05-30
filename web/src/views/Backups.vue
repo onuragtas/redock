@@ -257,24 +257,24 @@ onMounted(fetchBackups)
           color="info"
           small
           :disabled="loading"
-          @click="fetchBackups"
           label="Refresh"
+          @click="fetchBackups"
         />
         <BaseButton
           :icon="mdiUpload"
           color="info"
           small
           :disabled="uploading"
-          @click="triggerUpload"
           :label="uploading ? 'Uploading…' : 'Upload'"
+          @click="triggerUpload"
         />
         <BaseButton
           :icon="mdiContentSave"
           color="success"
           small
           :disabled="creating || restoring"
-          @click="createBackup"
           :label="creating ? 'Creating…' : 'Backup Now'"
+          @click="createBackup"
         />
       </BaseButtons>
     </SectionTitleLineWithButton>
@@ -294,8 +294,8 @@ onMounted(fetchBackups)
           color="info"
           small
           :disabled="savingConfig"
-          @click="saveConfig"
           :label="savingConfig ? 'Saving…' : 'Save Settings'"
+          @click="saveConfig"
         />
         <p class="text-xs text-slate-500 flex-1 min-w-[200px]">
           After every Create or Upload, the oldest backups beyond this limit are pruned automatically.
@@ -315,8 +315,8 @@ onMounted(fetchBackups)
         <BaseIcon :path="mdiArchive" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500 mb-4">No backups yet</p>
         <BaseButtons class="justify-center">
-          <BaseButton :icon="mdiContentSave" color="success" label="Create First Backup" @click="createBackup" :disabled="creating" />
-          <BaseButton :icon="mdiUpload" color="info" label="Upload Backup" @click="triggerUpload" :disabled="uploading" />
+          <BaseButton :icon="mdiContentSave" color="success" label="Create First Backup" :disabled="creating" @click="createBackup" />
+          <BaseButton :icon="mdiUpload" color="info" label="Upload Backup" :disabled="uploading" @click="triggerUpload" />
         </BaseButtons>
       </div>
 
