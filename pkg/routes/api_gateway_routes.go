@@ -52,7 +52,6 @@ func APIGatewayRoutes(a *fiber.App) {
 
 	// SSL/TLS Certificate management
 	route.Get("/api_gateway/certificate", controllers.APIGatewayGetCertificateInfo)
-	route.Post("/api_gateway/letsencrypt", controllers.APIGatewayConfigureLetsEncrypt)
 	route.Post("/api_gateway/certificate/request", controllers.APIGatewayRequestCertificate)
 	route.Get("/api_gateway/certificate/renewer", controllers.APIGatewayGetRenewerStatus)
 	route.Post("/api_gateway/certificate/renewer/start", controllers.APIGatewayStartRenewer)

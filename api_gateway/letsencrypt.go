@@ -321,78 +321,52 @@ func (g *Gateway) RequestCertificate() error {
 	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
 		return errors.New("Let's Encrypt is not enabled")
 	}
-	// Domains are derived from the routes that opted into Let's Encrypt
-	// (plus any externally-managed domains such as tunnel domains).
+	// Single source of truth: the certificate SAN list is the hosts of every
+	// enabled route that opted into Let's Encrypt. Nothing is stored separately.
 	domains := g.collectLetsEncryptDomains()
 	if len(domains) == 0 {
 		return errors.New("no domains for Let's Encrypt; enable it on a route that has a host set")
 	}
-	// Use the derived list for the ACME request without overwriting the
-	// persisted LetsEncrypt.Domains (which the tunnel server manages). Route
-	// domains stay dynamic so un-checking a route drops it on the next issue.
-	g.mu.Lock()
-	leCopy := *g.config.LetsEncrypt
-	g.mu.Unlock()
-	leCopy.Domains = domains
-	return g.requestCertificateWithLEConfig(&leCopy)
+	return g.requestCertificateWithLEConfig(config.LetsEncrypt, domains)
 }
 
-// collectLetsEncryptDomains gathers the unique, non-wildcard hosts that should
-// be on the certificate: the hosts of every enabled route with Let's Encrypt
-// turned on, unioned with any externally-managed domains already persisted in
-// LetsEncrypt.Domains (e.g. tunnel domains). Wildcard hosts are skipped because
-// the HTTP-01 challenge cannot validate them.
+// collectLetsEncryptDomains returns the unique, non-wildcard hosts of every
+// enabled route that opted into Let's Encrypt. This is the only source of cert
+// domains; wildcard hosts are skipped because HTTP-01 cannot validate them.
 func (g *Gateway) collectLetsEncryptDomains() []string {
 	config := g.GetConfig()
 	seen := make(map[string]bool)
 	domains := make([]string, 0)
-	add := func(h string) {
-		h = strings.TrimSpace(h)
-		if h == "" || seen[h] || strings.Contains(h, "*") {
-			return
-		}
-		seen[h] = true
-		domains = append(domains, h)
-	}
 	for _, route := range config.Routes {
 		if !route.LetsEncrypt || !route.Enabled {
 			continue
 		}
 		for _, h := range route.Hosts {
-			add(h)
-		}
-	}
-	if config.LetsEncrypt != nil {
-		for _, d := range config.LetsEncrypt.Domains {
-			add(d)
+			h = strings.TrimSpace(h)
+			if h == "" || seen[h] || strings.Contains(h, "*") {
+				continue
+			}
+			seen[h] = true
+			domains = append(domains, h)
 		}
 	}
 	return domains
 }
 
-// RequestCertificateWithConfig requests a certificate using the given LetsEncrypt config (domain list).
-// Use this when you have just updated the domain list in memory so the ACME request uses the exact list provided.
-func (g *Gateway) RequestCertificateWithConfig(leConfig *LetsEncryptConfig) error {
-	if leConfig == nil || !leConfig.Enabled {
-		return errors.New("Let's Encrypt is not enabled")
-	}
-	return g.requestCertificateWithLEConfig(leConfig)
-}
-
-func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) error {
-	if len(leConfig.Domains) == 0 {
+func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig, domains []string) error {
+	if len(domains) == 0 {
 		return errors.New("no domains configured for Let's Encrypt")
 	}
 	if leConfig.Email == "" {
 		return errors.New("email is required for Let's Encrypt")
 	}
 
-	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v (production)", leConfig.Domains)
+	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v (production)", domains)
 
 	certPath := filepath.Join(g.workDir, "data", "tls.crt")
 	keyPath := filepath.Join(g.workDir, "data", "tls.key")
 
-	if err := obtainCertificateViaACME(g.workDir, leConfig, certPath, keyPath); err != nil {
+	if err := obtainCertificateViaACME(g.workDir, leConfig, domains, certPath, keyPath); err != nil {
 		return fmt.Errorf("Let's Encrypt: %w", err)
 	}
 
@@ -426,7 +400,7 @@ func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) er
 
 // obtainCertificateViaACME runs the ACME flow (HTTP-01) and writes cert and key to the given paths.
 // Always uses Let's Encrypt production; staging is no longer configurable.
-func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, keyPath string) error {
+func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, wantDomains []string, certPath, keyPath string) error {
 	dirURL := acme.LetsEncryptURL
 
 	accountKey, err := loadOrCreateACMEAccountKey(workDir)
@@ -451,8 +425,8 @@ func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, 
 		return fmt.Errorf("register: %w", err)
 	}
 
-	domains := make([]string, 0, len(cfg.Domains))
-	for _, d := range cfg.Domains {
+	domains := make([]string, 0, len(wantDomains))
+	for _, d := range wantDomains {
 		d = strings.TrimSpace(d)
 		if d != "" && !strings.Contains(d, "*") {
 			domains = append(domains, d)
@@ -675,7 +649,7 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 		"certificate_ready": false,
 	}
 
-	// Domains are derived live from the routes that opted into Let's Encrypt.
+	// Cert domains come solely from routes with Let's Encrypt enabled.
 	leDomains := g.collectLetsEncryptDomains()
 	info["lets_encrypt_domains"] = leDomains
 
@@ -711,27 +685,6 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 	}
 
 	return info
-}
-
-// ConfigureLetsEncrypt updates Let's Encrypt configuration
-func (g *Gateway) ConfigureLetsEncrypt(config *LetsEncryptConfig) error {
-	g.mu.Lock()
-	g.config.LetsEncrypt = config
-	g.mu.Unlock()
-
-	if err := g.SaveConfig(); err != nil {
-		return err
-	}
-
-	// Start or stop renewer based on config
-	renewer := GetCertificateRenewer(g)
-	if config.Enabled && config.AutoRenew {
-		renewer.Start()
-	} else {
-		renewer.Stop()
-	}
-
-	return nil
 }
 
 // HandleACMEChallenge handles ACME HTTP-01 challenges

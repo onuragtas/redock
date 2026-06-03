@@ -1844,7 +1844,8 @@ onUnmounted(() => {
             <div v-if="certificateInfo.lets_encrypt_domains?.length" class="space-y-1">
               <span class="text-slate-500">Domains (from routes)</span>
               <div class="flex flex-wrap gap-2">
-                <span v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
+                <span
+v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
                       class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono">
                   {{ domain }}
                 </span>

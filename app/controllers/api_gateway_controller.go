@@ -1039,45 +1039,6 @@ func APIGatewayGetCertificateInfo(c *fiber.Ctx) error {
 	})
 }
 
-// APIGatewayConfigureLetsEncrypt configures Let's Encrypt settings
-// @Description Configure Let's Encrypt for automatic SSL certificate management
-// @Summary configure Let's Encrypt
-// @Tags API Gateway
-// @Accept json
-// @Produce json
-// @Param config body api_gateway.LetsEncryptConfig true "Let's Encrypt configuration"
-// @Success 200 {object} map[string]interface{}
-// @Router /v1/api_gateway/letsencrypt [post]
-func APIGatewayConfigureLetsEncrypt(c *fiber.Ctx) error {
-	gw := api_gateway.GetGateway()
-	if gw == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": true,
-			"msg":   "API Gateway not initialized",
-		})
-	}
-
-	config := &api_gateway.LetsEncryptConfig{}
-	if err := c.BodyParser(config); err != nil {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	if err := gw.ConfigureLetsEncrypt(config); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"msg":   "Let's Encrypt configuration saved",
-		"data":  gw.GetConfig().LetsEncrypt,
-	})
-}
 
 // APIGatewayRequestCertificate requests a new SSL certificate
 // @Description Request a new SSL certificate from Let's Encrypt

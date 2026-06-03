@@ -468,7 +468,7 @@ func (g *Gateway) loadConfig() {
 	defaultConfig()
 }
 
-const currentConfigVersion = 2
+const currentConfigVersion = 3
 
 // migrateConfig brings an older GatewayConfig up to currentConfigVersion.
 // v0/v1: Routes referenced services directly via service_id. v2 introduces
@@ -491,8 +491,13 @@ func (g *Gateway) migrateConfig(rawJSON string) bool {
 		ServiceID  string `json:"service_id,omitempty"`
 		UpstreamID string `json:"upstream_id,omitempty"`
 	}
+	type legacyLE struct {
+		Domains       []string `json:"domains"`
+		TunnelDomains []string `json:"tunnel_domains"`
+	}
 	type legacyShape struct {
-		Routes []legacyRoute `json:"routes"`
+		Routes      []legacyRoute `json:"routes"`
+		LetsEncrypt *legacyLE     `json:"lets_encrypt"`
 	}
 	var legacy legacyShape
 	if err := json.Unmarshal([]byte(rawJSON), &legacy); err != nil {
@@ -560,8 +565,33 @@ func (g *Gateway) migrateConfig(rawJSON string) bool {
 		migratedRoutes++
 	}
 
+	// v3: Let's Encrypt domains are now derived purely from routes. Move any
+	// legacy domain list (manual + tunnel) onto the routes serving those hosts
+	// by enabling LetsEncrypt on them; the stored domain list is then dropped.
+	leRoutes := 0
+	if legacy.LetsEncrypt != nil {
+		legacyDomains := make(map[string]bool)
+		for _, d := range append(legacy.LetsEncrypt.Domains, legacy.LetsEncrypt.TunnelDomains...) {
+			if d = strings.TrimSpace(d); d != "" {
+				legacyDomains[d] = true
+			}
+		}
+		if len(legacyDomains) > 0 {
+			for i := range g.config.Routes {
+				r := &g.config.Routes[i]
+				for _, h := range r.Hosts {
+					if legacyDomains[strings.TrimSpace(h)] {
+						r.LetsEncrypt = true
+						leRoutes++
+						break
+					}
+				}
+			}
+		}
+	}
+
 	g.config.ConfigVersion = currentConfigVersion
-	log.Printf("API Gateway: migration v→%d: %d routes mapped to %d auto-upstream(s); %d route(s) had no service_id and were left empty", currentConfigVersion, migratedRoutes, createdUpstreams, orphanedRoutes)
+	log.Printf("API Gateway: migration v→%d: %d routes mapped to %d auto-upstream(s); %d route(s) had no service_id and were left empty; %d route(s) marked for Let's Encrypt", currentConfigVersion, migratedRoutes, createdUpstreams, orphanedRoutes, leRoutes)
 	return true
 }
 

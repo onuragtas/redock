@@ -765,10 +765,6 @@ class ApiService {
     return await this.get('/api/v1/api_gateway/certificate');
   }
 
-  static async apiGatewayConfigureLetsEncrypt(data) {
-    return await this.post('/api/v1/api_gateway/letsencrypt', data);
-  }
-
   static async apiGatewayRequestCertificate() {
     return await this.post('/api/v1/api_gateway/certificate/request');
   }
