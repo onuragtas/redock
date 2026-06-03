@@ -70,6 +70,7 @@ type Route struct {
 	CORS                 *CORSConfig       `json:"cors,omitempty"`             // CORS response headers for this route (incl. WebSocket)
 	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route
 	Timeout              int               `json:"timeout,omitempty"`          // overall upstream request timeout in seconds; 0 = inherit from service then global
+	LetsEncrypt          bool              `json:"lets_encrypt,omitempty"`     // include this route's hosts in the Let's Encrypt certificate
 	Enabled              bool              `json:"enabled"`
 }
 

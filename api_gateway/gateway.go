@@ -716,6 +716,16 @@ func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 		return fmt.Errorf("failed to save config: %w", err)
 	}
 
+	// Manage the Let's Encrypt auto-renew scheduler based on the new config.
+	// LE account settings (enable/email/auto-renew) are configured via the
+	// gateway settings now, so this is where the renewer is started/stopped.
+	renewer := GetCertificateRenewer(g)
+	if config.LetsEncrypt != nil && config.LetsEncrypt.Enabled && config.LetsEncrypt.AutoRenew {
+		renewer.Start()
+	} else {
+		renewer.Stop()
+	}
+
 	if wasRunning && config.Enabled {
 		if err := g.startLocked(); err != nil {
 			return fmt.Errorf("failed to restart gateway: %w", err)

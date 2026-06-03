@@ -321,7 +321,53 @@ func (g *Gateway) RequestCertificate() error {
 	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
 		return errors.New("Let's Encrypt is not enabled")
 	}
-	return g.requestCertificateWithLEConfig(config.LetsEncrypt)
+	// Domains are derived from the routes that opted into Let's Encrypt
+	// (plus any externally-managed domains such as tunnel domains).
+	domains := g.collectLetsEncryptDomains()
+	if len(domains) == 0 {
+		return errors.New("no domains for Let's Encrypt; enable it on a route that has a host set")
+	}
+	// Use the derived list for the ACME request without overwriting the
+	// persisted LetsEncrypt.Domains (which the tunnel server manages). Route
+	// domains stay dynamic so un-checking a route drops it on the next issue.
+	g.mu.Lock()
+	leCopy := *g.config.LetsEncrypt
+	g.mu.Unlock()
+	leCopy.Domains = domains
+	return g.requestCertificateWithLEConfig(&leCopy)
+}
+
+// collectLetsEncryptDomains gathers the unique, non-wildcard hosts that should
+// be on the certificate: the hosts of every enabled route with Let's Encrypt
+// turned on, unioned with any externally-managed domains already persisted in
+// LetsEncrypt.Domains (e.g. tunnel domains). Wildcard hosts are skipped because
+// the HTTP-01 challenge cannot validate them.
+func (g *Gateway) collectLetsEncryptDomains() []string {
+	config := g.GetConfig()
+	seen := make(map[string]bool)
+	domains := make([]string, 0)
+	add := func(h string) {
+		h = strings.TrimSpace(h)
+		if h == "" || seen[h] || strings.Contains(h, "*") {
+			return
+		}
+		seen[h] = true
+		domains = append(domains, h)
+	}
+	for _, route := range config.Routes {
+		if !route.LetsEncrypt || !route.Enabled {
+			continue
+		}
+		for _, h := range route.Hosts {
+			add(h)
+		}
+	}
+	if config.LetsEncrypt != nil {
+		for _, d := range config.LetsEncrypt.Domains {
+			add(d)
+		}
+	}
+	return domains
 }
 
 // RequestCertificateWithConfig requests a certificate using the given LetsEncrypt config (domain list).
@@ -629,9 +675,12 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 		"certificate_ready": false,
 	}
 
+	// Domains are derived live from the routes that opted into Let's Encrypt.
+	leDomains := g.collectLetsEncryptDomains()
+	info["lets_encrypt_domains"] = leDomains
+
 	if config.LetsEncrypt != nil {
 		info["lets_encrypt_email"] = config.LetsEncrypt.Email
-		info["lets_encrypt_domains"] = config.LetsEncrypt.Domains
 		info["lets_encrypt_staging"] = config.LetsEncrypt.Staging
 		info["auto_renew"] = config.LetsEncrypt.AutoRenew
 		info["renew_before_days"] = config.LetsEncrypt.RenewBeforeDays
@@ -656,9 +705,9 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 			}
 		}
 	}
-	// If SAN was not set from cert file, show configured domains so UI stays in sync (e.g. after adding tunnel domain, before cert is re-issued)
-	if _, set := info["cert_dns_names"]; !set && config.LetsEncrypt != nil && len(config.LetsEncrypt.Domains) > 0 {
-		info["cert_dns_names"] = config.LetsEncrypt.Domains
+	// If SAN was not set from cert file, show the route-derived domains so the UI stays in sync (e.g. after enabling LE on a route, before cert is re-issued)
+	if _, set := info["cert_dns_names"]; !set && len(leDomains) > 0 {
+		info["cert_dns_names"] = leDomains
 	}
 
 	return info

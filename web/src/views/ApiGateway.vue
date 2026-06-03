@@ -78,7 +78,6 @@ const isEditRouteModalActive = ref(false)
 const isAddUpstreamModalActive = ref(false)
 const isEditUpstreamModalActive = ref(false)
 const isDeleteModalActive = ref(false)
-const isLetsEncryptModalActive = ref(false)
 const isConfigModalActive = ref(false)
 const isObservabilityModalActive = ref(false)
 const deleteTarget = ref({ type: '', item: null })
@@ -165,6 +164,7 @@ const newRoute = ref({
   basic_auth_realm: 'Restricted',
   jwt: { secret: '', issuer: '', audience: '' },
   observability_enabled: true,
+  lets_encrypt: false,
   enabled: true,
   cors: {
     enabled: false,
@@ -176,14 +176,6 @@ const newRoute = ref({
     max_age: 86400
   },
   response_headers: []
-})
-
-const letsEncryptConfig = ref({
-  enabled: false,
-  email: '',
-  domains: '',
-  auto_renew: true,
-  renew_before_days: 30
 })
 
 const createDefaultLokiConfig = () => ({
@@ -294,7 +286,13 @@ const gatewayConfig = ref({
   https_enabled: false,
   access_log_enabled: true,
   client_security: createDefaultClientSecurityConfig(),
-  timeouts: createDefaultTimeoutsConfig()
+  timeouts: createDefaultTimeoutsConfig(),
+  lets_encrypt: {
+    enabled: false,
+    email: '',
+    auto_renew: true,
+    renew_before_days: 30
+  }
 })
 
 const isSuccessfulResponse = (response) => {
@@ -640,6 +638,7 @@ const addRoute = async () => {
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
       upstream_id: newRoute.value.upstream_id?.value || newRoute.value.upstream_id,
       auth_type: authType,
+      lets_encrypt: newRoute.value.lets_encrypt === true,
       cors: buildCorsPayload(newRoute.value.cors),
       response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
       auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined,
@@ -685,6 +684,7 @@ const openEditRouteModal = (route) => {
     host_rewrite: route.host_rewrite || '',
     preserve_host: route.preserve_host === true,
     observability_enabled: route.observability_enabled !== false,
+    lets_encrypt: route.lets_encrypt === true,
     upstream_id: findUpstreamOption(upstreamId),
     cors: cors ? {
       enabled: !!cors.enabled,
@@ -714,6 +714,7 @@ const updateRoute = async () => {
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
       upstream_id: editingRoute.value.upstream_id?.value || editingRoute.value.upstream_id,
       auth_type: authType,
+      lets_encrypt: editingRoute.value.lets_encrypt === true,
       cors: buildCorsPayload(editingRoute.value.cors),
       response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
       auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined,
@@ -845,33 +846,6 @@ const removeUpstreamTarget = (form, idx) => {
   if (form.targets.length === 0) form.targets.push({ service_id: '', weight: 1 })
 }
 
-const openLetsEncryptModal = () => {
-  if (certificateInfo.value.lets_encrypt_email) {
-    letsEncryptConfig.value = {
-      enabled: certificateInfo.value.lets_encrypt || false,
-      email: certificateInfo.value.lets_encrypt_email || '',
-      domains: (certificateInfo.value.lets_encrypt_domains || []).join(', '),
-      auto_renew: certificateInfo.value.auto_renew !== false,
-      renew_before_days: certificateInfo.value.renew_before_days || 30
-    }
-  }
-  isLetsEncryptModalActive.value = true
-}
-
-const saveLetsEncrypt = async () => {
-  try {
-    const config = {
-      ...letsEncryptConfig.value,
-      domains: letsEncryptConfig.value.domains.split(',').map(d => d.trim()).filter(d => d)
-    }
-    await ApiService.apiGatewayConfigureLetsEncrypt(config)
-    isLetsEncryptModalActive.value = false
-    await loadData()
-  } catch (error) {
-    console.error('Failed to save Let\'s Encrypt config:', error)
-  }
-}
-
 const requestCertificate = async () => {
   try {
     await ApiService.apiGatewayRequestCertificate()
@@ -908,13 +882,20 @@ const openConfigModal = async () => {
     if (!clientSecurity.top_client_limit || clientSecurity.top_client_limit < 1) {
       clientSecurity.top_client_limit = 1000
     }
+    const le = cfg.lets_encrypt || {}
     gatewayConfig.value = {
       http_port: cfg.http_port || 80,
       https_port: cfg.https_port || 443,
       https_enabled: cfg.https_enabled || false,
       access_log_enabled: cfg.access_log_enabled !== false,
       client_security: clientSecurity,
-      timeouts: { ...createDefaultTimeoutsConfig(), ...(cfg.timeouts || {}) }
+      timeouts: { ...createDefaultTimeoutsConfig(), ...(cfg.timeouts || {}) },
+      lets_encrypt: {
+        enabled: le.enabled || false,
+        email: le.email || '',
+        auto_renew: le.auto_renew !== false,
+        renew_before_days: le.renew_before_days || 30
+      }
     }
     isConfigModalActive.value = true
   } catch (error) {
@@ -940,11 +921,22 @@ const saveConfig = async () => {
       const n = Number(timeoutsPayload[k])
       timeoutsPayload[k] = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0
     })
+    // Merge Let's Encrypt: keep runtime fields (domains, expiry, cert state) from
+    // the existing config, override only the account settings edited here.
+    const leForm = (gatewayConfig.value && gatewayConfig.value.lets_encrypt) || {}
+    const letsEncryptPayload = {
+      ...(currentConfig.lets_encrypt || {}),
+      enabled: !!leForm.enabled,
+      email: (leForm.email || '').trim(),
+      auto_renew: leForm.auto_renew !== false,
+      renew_before_days: Math.max(1, Number(leForm.renew_before_days) || 30)
+    }
     const updatedConfig = {
       ...currentConfig,
       ...gatewayConfig.value,
       client_security: clientSecurityPayload,
-      timeouts: timeoutsPayload
+      timeouts: timeoutsPayload,
+      lets_encrypt: letsEncryptPayload
     }
     await ApiService.apiGatewayUpdateConfig(updatedConfig)
     isConfigModalActive.value = false
@@ -1753,11 +1745,11 @@ onUnmounted(() => {
     <CardBox v-if="activeTab === 'certificates'">
       <SectionTitleLineWithButton :icon="mdiCertificate" title="SSL/TLS Certificates" main>
         <BaseButton
-          label="Configure Let's Encrypt"
-          :icon="mdiLock"
+          label="Gateway Settings"
+          :icon="mdiCog"
           color="info"
           small
-          @click="openLetsEncryptModal"
+          @click="openConfigModal"
         />
       </SectionTitleLineWithButton>
 
@@ -1849,6 +1841,15 @@ onUnmounted(() => {
               <span class="text-slate-500">Expires</span>
               <span>{{ certificateInfo.expires_at }}</span>
             </div>
+            <div v-if="certificateInfo.lets_encrypt_domains?.length" class="space-y-1">
+              <span class="text-slate-500">Domains (from routes)</span>
+              <div class="flex flex-wrap gap-2">
+                <span v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
+                      class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono">
+                  {{ domain }}
+                </span>
+              </div>
+            </div>
             <div class="pt-4 flex gap-2">
               <BaseButton
                 :label="renewerStatus.running ? 'Stop Scheduler' : 'Start Scheduler'"
@@ -1865,8 +1866,11 @@ onUnmounted(() => {
                 @click="requestCertificate"
               />
             </div>
-            <p v-if="!certificateInfo.lets_encrypt || !certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              Sertifika almak için önce "Configure Let's Encrypt" ile e-posta ve domain ekleyip kaydedin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
+            <p v-if="!certificateInfo.lets_encrypt" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+              Sertifika almak için önce <strong>Gateway Settings</strong> içinden Let's Encrypt'i etkinleştirip e-posta girin.
+            </p>
+            <p v-else-if="!certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+              Henüz Let's Encrypt seçili route yok. <strong>Routes</strong> sekmesinde, host'u tanımlı bir route'ta "Let's Encrypt" kutusunu işaretleyin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
             </p>
           </div>
         </div>
@@ -2201,6 +2205,12 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
         </FormField>
+        <FormField>
+          <FormCheckRadio v-model="newRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="new_route_lets_encrypt" />
+          <p class="text-xs text-gray-500 mt-1">
+            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Etkinleştirme/e-posta için Gateway Settings'i kullanın, sonra Certificates sekmesinden "Request Certificate" deyin.
+          </p>
+        </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
             <FormCheckRadio v-model="newRoute.auth_required" label="Require Auth" name="new_route_auth" />
@@ -2302,34 +2312,6 @@ onUnmounted(() => {
       </div>
     </CardBoxModal>
 
-    <!-- Let's Encrypt Modal -->
-    <CardBoxModal 
-      v-model="isLetsEncryptModalActive" 
-      title="Configure Let's Encrypt" 
-      button="success" 
-      button-label="Save Configuration"
-      has-cancel
-      @confirm="saveLetsEncrypt"
-    >
-      <div class="space-y-4">
-        <FormField>
-          <FormCheckRadio v-model="letsEncryptConfig.enabled" label="Enable Let's Encrypt" name="le_enabled" />
-        </FormField>
-        <FormField label="Email Address">
-          <FormControl v-model="letsEncryptConfig.email" type="email" placeholder="admin@example.com" />
-        </FormField>
-        <FormField label="Domains (comma-separated)">
-          <FormControl v-model="letsEncryptConfig.domains" placeholder="example.com, www.example.com" />
-        </FormField>
-        <FormField>
-          <FormCheckRadio v-model="letsEncryptConfig.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
-        </FormField>
-        <FormField label="Renew Before Expiry (days)">
-          <FormControl v-model="letsEncryptConfig.renew_before_days" type="number" placeholder="30" />
-        </FormField>
-      </div>
-    </CardBoxModal>
-
     <!-- Config Modal -->
     <CardBoxModal 
       v-model="isConfigModalActive" 
@@ -2354,6 +2336,32 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="gatewayConfig.access_log_enabled" label="Enable Access Logging" name="access_log" />
         </FormField>
+
+        <!-- Let's Encrypt / SSL -->
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3 flex items-center gap-2">
+            <BaseIcon :path="mdiLock" size="18" />
+            Let's Encrypt (SSL)
+          </h4>
+          <FormField>
+            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.enabled" label="Enable Let's Encrypt" name="le_enabled" />
+          </FormField>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <FormField label="Email Address">
+              <FormControl v-model="gatewayConfig.lets_encrypt.email" type="email" placeholder="admin@example.com" />
+            </FormField>
+            <FormField label="Renew Before Expiry (days)">
+              <FormControl v-model.number="gatewayConfig.lets_encrypt.renew_before_days" type="number" min="1" placeholder="30" />
+            </FormField>
+          </div>
+          <FormField>
+            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
+          </FormField>
+          <p class="text-xs text-gray-500">
+            Sertifika domain'leri, <strong>Routes</strong> sekmesinde "Let's Encrypt" işaretli route'ların Host'larından otomatik toplanır. Etkinleştirip kaydettikten sonra Certificates sekmesinden "Request Certificate" ile sertifikayı alın.
+          </p>
+        </div>
+
         <div class="border-t pt-4 mt-4">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <FormField label="Top Client Limit">
@@ -2517,6 +2525,12 @@ onUnmounted(() => {
         </FormField>
         <FormField>
           <FormCheckRadio v-model="editingRoute.observability_enabled" label="Send Observability Logs" name="edit_route_observability" />
+        </FormField>
+        <FormField>
+          <FormCheckRadio v-model="editingRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="edit_route_lets_encrypt" />
+          <p class="text-xs text-gray-500 mt-1">
+            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Etkinleştirme/e-posta için Gateway Settings'i kullanın, sonra Certificates sekmesinden "Request Certificate" deyin.
+          </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
