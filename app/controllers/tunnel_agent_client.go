@@ -112,6 +112,13 @@ func agentLoop(baseURL, clientID string) {
 				runTunnelClientKeyed(keyOf(a.Domain), cfg)
 				running[a.Domain] = sig
 			}
+			// Continuously enforce a single runner for this agent-managed domain.
+			// A stale persisted auto-tunnel (key = domain) or a manually started one
+			// would otherwise keep its own connection and fight the agent runner over
+			// the single server-side binding, causing an endless rebind loop. This
+			// runs every poll (not just when (re)starting) so a conflicting runner
+			// that appears later is evicted too.
+			stopRunnersForDomainExcept(a.Domain, keyOf(a.Domain))
 		}
 
 		for d := range running {
