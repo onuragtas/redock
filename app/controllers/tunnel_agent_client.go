@@ -25,6 +25,9 @@ const (
 	agentHTTPTimeout   = 20 * time.Second
 	agentVersion       = "redock"
 	agentDefaultServer = "https://redock.tnpx.org"
+	// agentMaxKeepalive caps the tunnel keepalive for agents (which usually sit
+	// behind NAT/firewall) so conntrack never drops the idle return path.
+	agentMaxKeepalive = 5 * time.Second
 )
 
 var agentHTTPClient = &http.Client{Timeout: agentHTTPTimeout}
@@ -136,9 +139,11 @@ func assignmentToConfig(baseURL, clientID string, a *tunnel_server.TunnelAgentAs
 	if serverDaemon == "" {
 		return client.Config{}, false
 	}
+	// Agent tunnels usually traverse NAT/firewall; force an aggressive keepalive
+	// (<= agentMaxKeepalive) so the idle return path is never dropped.
 	keepalive := time.Duration(a.KeepaliveIntervalSeconds) * time.Second
-	if a.KeepaliveIntervalSeconds < 0 {
-		keepalive = 0
+	if keepalive <= 0 || keepalive > agentMaxKeepalive {
+		keepalive = agentMaxKeepalive
 	}
 	return client.Config{
 		ServerAddr: serverDaemon,

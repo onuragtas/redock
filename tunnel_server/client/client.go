@@ -25,6 +25,16 @@ const (
 	backendBufSize   = 32 * 1024
 )
 
+// defaultKeepalive is used when Config.KeepaliveInterval is unset (0). Keepalive
+// is always on so NAT/firewall conntrack never drops an idle tunnel.
+const defaultKeepalive = 15 * time.Second
+
+// readTimeoutFactor sets the read deadline to keepalive*factor. If no frame
+// (including PONG) arrives within that window the connection is treated as dead
+// (e.g. the NAT/firewall dropped the server→client return path) and the client
+// reconnects instead of sitting on a zombie connection.
+const readTimeoutFactor = 3
+
 // Config holds tunnel client configuration.
 type Config struct {
 	// ServerAddr is the daemon address (e.g. "host:8443").
@@ -208,28 +218,38 @@ func RunWithReconnect(cfg Config, stop <-chan struct{}) error {
 }
 
 func (c *Client) run() error {
-	if c.cfg.KeepaliveInterval > 0 {
-		done := make(chan struct{})
-		defer close(done)
-		go func() {
-			ticker := time.NewTicker(c.cfg.KeepaliveInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-done:
-					return
-				case <-c.closed:
-					return
-				case <-ticker.C:
-					_ = c.sendControl("PING\n")
-				}
-			}
-		}()
+	keepalive := c.cfg.KeepaliveInterval
+	if keepalive <= 0 {
+		keepalive = defaultKeepalive
 	}
+	// Read deadline well above the keepalive cycle: every PING gets a PONG that
+	// resets it, so it only fires when the return path is actually dead.
+	readTimeout := keepalive * readTimeoutFactor
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(keepalive)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-c.closed:
+				return
+			case <-ticker.C:
+				_ = c.sendControl("PING\n")
+			}
+		}
+	}()
+
 	for {
+		_ = c.conn.SetReadDeadline(time.Now().Add(readTimeout))
 		payload, err := c.readFrame()
 		if err != nil {
-			if err != io.EOF {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				log.Printf("tunnel_client: no frame for %v, connection dead; reconnecting", readTimeout)
+			} else if err != io.EOF {
 				log.Printf("tunnel_client: read frame: %v", err)
 			}
 			return err

@@ -253,7 +253,7 @@ const blankAssignment = () => ({
   local_udp_port: "",
   source_bind_ip: "",
   host_rewrite: "",
-  keepalive_interval_seconds: 30,
+  keepalive_interval_seconds: 5,
   auto_connect: true,
   enabled: true
 });
