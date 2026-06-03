@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"log"
 	"redock/app/cache_models"
+	"redock/backup"
+	dockermanager "redock/docker-manager"
 	"redock/platform/database"
 	"redock/platform/memory"
 	"redock/selfupdate"
@@ -209,6 +211,19 @@ func ApplyUpdate(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
 			"error": true,
 			"msg":   "No binary available for your platform",
+		})
+	}
+
+	// Auto-backup the data dir BEFORE shutting down. Done up front (not inside
+	// the shutdown callback) so a backup failure aborts the update with a
+	// useful error response, instead of leaving the user with a half-stopped
+	// server. If the backup itself fails we refuse to proceed.
+	dm := dockermanager.GetDockerManager()
+	if _, err := backup.Create(dm.GetWorkDir(), currentVersion, "pre-update"); err != nil {
+		log.Printf("❌ Pre-update backup failed: %v", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "pre-update backup failed: " + err.Error(),
 		})
 	}
 

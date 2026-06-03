@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -19,8 +20,12 @@ import (
 	"time"
 
 	dockermanager "redock/docker-manager"
+	"redock/pkg/pathutil"
 	"redock/platform/database"
 	"redock/platform/memory"
+
+	"github.com/golang-jwt/jwt/v5"
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -36,7 +41,87 @@ const (
 	defaultTopClientLimit    = 1000
 	defaultNoRouteThreshold  = 5
 	defaultAutoBlockDuration = 5 * time.Minute
+
+	defaultServerReadTimeout       = 30 * time.Second
+	defaultServerWriteTimeout      = 30 * time.Second
+	defaultServerIdleTimeout       = 60 * time.Second
+	defaultShutdownTimeout         = 10 * time.Second
+	defaultRequestTimeout          = 0 // 0 = no overall request timeout (only Server.WriteTimeout caps)
+	defaultUpstreamDialTimeout     = 30 * time.Second
+	defaultUpstreamKeepAlive       = 30 * time.Second
+	defaultUpstreamIdleConnTimeout = 90 * time.Second
+	defaultTLSHandshakeTimeout     = 10 * time.Second
+	defaultExpectContinueTimeout   = 1 * time.Second
+	defaultHealthCheckTimeout      = 5 * time.Second
 )
+
+const (
+	// defaultHealthCheckInterval is used when a service's HealthCheck.Interval is 0/unset.
+	defaultHealthCheckInterval = 5 * time.Second
+	// minHealthCheckInterval clamps configured intervals so a bad value can't hammer backends.
+	minHealthCheckInterval = 1 * time.Second
+	// healthCheckTickResolution is how often the loop wakes to decide which services are due.
+	healthCheckTickResolution = 1 * time.Second
+)
+
+type resolvedTimeouts struct {
+	serverRead        time.Duration
+	serverWrite       time.Duration
+	serverIdle        time.Duration
+	shutdown          time.Duration
+	request           time.Duration
+	upstreamDial      time.Duration
+	upstreamKeepAlive time.Duration
+	upstreamIdleConn  time.Duration
+	tlsHandshake      time.Duration
+	expectContinue    time.Duration
+	healthCheck       time.Duration
+}
+
+func (g *Gateway) resolveTimeouts() resolvedTimeouts {
+	var t *TimeoutsConfig
+	if g.config != nil {
+		t = g.config.Timeouts
+	}
+	if t == nil {
+		t = &TimeoutsConfig{}
+	}
+	pick := func(sec int, def time.Duration) time.Duration {
+		if sec <= 0 {
+			return def
+		}
+		return time.Duration(sec) * time.Second
+	}
+	return resolvedTimeouts{
+		serverRead:        pick(t.ServerReadSec, defaultServerReadTimeout),
+		serverWrite:       pick(t.ServerWriteSec, defaultServerWriteTimeout),
+		serverIdle:        pick(t.ServerIdleSec, defaultServerIdleTimeout),
+		shutdown:          pick(t.ShutdownSec, defaultShutdownTimeout),
+		request:           pick(t.RequestTimeoutSec, defaultRequestTimeout),
+		upstreamDial:      pick(t.UpstreamDialSec, defaultUpstreamDialTimeout),
+		upstreamKeepAlive: pick(t.UpstreamKeepAliveSec, defaultUpstreamKeepAlive),
+		upstreamIdleConn:  pick(t.UpstreamIdleConnSec, defaultUpstreamIdleConnTimeout),
+		tlsHandshake:      pick(t.TLSHandshakeSec, defaultTLSHandshakeTimeout),
+		expectContinue:    pick(t.ExpectContinueSec, defaultExpectContinueTimeout),
+		healthCheck:       pick(t.HealthCheckSec, defaultHealthCheckTimeout),
+	}
+}
+
+func (g *Gateway) buildHTTPClient() {
+	to := g.resolveTimeouts()
+	clientTimeout := to.request
+	if clientTimeout <= 0 {
+		clientTimeout = to.upstreamDial
+	}
+	g.httpClient = &http.Client{
+		Timeout: clientTimeout,
+		Transport: &http.Transport{
+			MaxIdleConns:        100,
+			MaxIdleConnsPerHost: 10,
+			IdleConnTimeout:     to.upstreamIdleConn,
+		},
+	}
+}
 
 func defaultClientSecurityConfig() *ClientSecurityConfig {
 	return &ClientSecurityConfig{
@@ -304,18 +389,13 @@ func GetGateway() *Gateway {
 // NewGateway creates a new Gateway instance
 func NewGateway(workDir string) *Gateway {
 	g := &Gateway{
-		services:      make(map[string]*Service),
-		serviceHealth: make(map[string]*ServiceHealth),
-		stopChan:      make(chan struct{}),
-		workDir:       workDir,
-		httpClient: &http.Client{
-			Timeout: 30 * time.Second,
-			Transport: &http.Transport{
-				MaxIdleConns:        100,
-				MaxIdleConnsPerHost: 10,
-				IdleConnTimeout:     90 * time.Second,
-			},
-		},
+		services:         make(map[string]*Service),
+		upstreams:        make(map[string]*Upstream),
+		upstreamRuntimes: make(map[string]*upstreamRuntime),
+		serviceHealth:    make(map[string]*ServiceHealth),
+		lastHealthCheck:  make(map[string]time.Time),
+		stopChan:         make(chan struct{}),
+		workDir:          workDir,
 		stats: &gatewayStatsTracker{
 			startTime:    time.Now(),
 			serviceStats: make(map[string]*serviceStatsTracker),
@@ -328,6 +408,7 @@ func NewGateway(workDir string) *Gateway {
 		persistentBlocks: make(map[string]BlockedClient),
 	}
 	g.loadConfig()
+	g.buildHTTPClient()
 	return g
 }
 
@@ -335,6 +416,7 @@ func NewGateway(workDir string) *Gateway {
 func (g *Gateway) loadConfig() {
 	defaultConfig := func() {
 		g.config = &GatewayConfig{
+			ConfigVersion:    currentConfigVersion,
 			HTTPPort:         8080,
 			HTTPSPort:        8081,
 			HTTPSEnabled:     false,
@@ -342,6 +424,7 @@ func (g *Gateway) loadConfig() {
 			AccessLogEnabled: true,
 			Enabled:          false,
 			Services:         []Service{},
+			Upstreams:        []Upstream{},
 			Routes:           []Route{},
 			UDPRoutes:        []UDPRoute{},
 			TCPRoutes:        []TCPRoute{},
@@ -363,9 +446,18 @@ func (g *Gateway) loadConfig() {
 				return
 			}
 			g.config = &config
+			migrated := g.migrateConfig(list[0].ConfigJSON)
+			pathsRewritten := g.normalizeStoredPaths()
 			g.refreshClientSecurity()
 			g.loadBlockList()
 			g.refreshServicesAndRoutes()
+			if migrated || pathsRewritten {
+				if err := g.SaveConfig(); err != nil {
+					log.Printf("API Gateway: Failed to persist updated config: %v", err)
+				} else if migrated {
+					log.Printf("API Gateway: Config migrated to version %d", currentConfigVersion)
+				}
+			}
 			return
 		}
 		defaultConfig()
@@ -374,6 +466,154 @@ func (g *Gateway) loadConfig() {
 
 	// No file fallback: config is only in memory DB
 	defaultConfig()
+}
+
+const currentConfigVersion = 3
+
+// migrateConfig brings an older GatewayConfig up to currentConfigVersion.
+// v0/v1: Routes referenced services directly via service_id. v2 introduces
+// Upstream pools; each unique service referenced by an HTTP route becomes
+// an auto-upstream "auto-<serviceID>" with a single target.
+//
+// rawJSON is the original on-disk JSON; we re-decode into a permissive shape
+// so legacy "service_id" fields on Route are recoverable even though the Go
+// struct no longer has that field.
+func (g *Gateway) migrateConfig(rawJSON string) bool {
+	if g.config == nil {
+		return false
+	}
+	if g.config.ConfigVersion >= currentConfigVersion {
+		return false
+	}
+
+	type legacyRoute struct {
+		ID         string `json:"id"`
+		ServiceID  string `json:"service_id,omitempty"`
+		UpstreamID string `json:"upstream_id,omitempty"`
+	}
+	type legacyLE struct {
+		Domains       []string `json:"domains"`
+		TunnelDomains []string `json:"tunnel_domains"`
+	}
+	type legacyShape struct {
+		Routes      []legacyRoute `json:"routes"`
+		LetsEncrypt *legacyLE     `json:"lets_encrypt"`
+	}
+	var legacy legacyShape
+	if err := json.Unmarshal([]byte(rawJSON), &legacy); err != nil {
+		// Refuse to bump ConfigVersion on parse failure: doing so would let
+		// SaveConfig later overwrite the original blob and lose the
+		// route→service bindings for good. Bail out and let the next boot
+		// retry (or a human investigate the malformed config).
+		log.Printf("API Gateway: migration aborted, legacy re-parse failed: %v", err)
+		return false
+	}
+
+	routeServiceID := make(map[string]string)
+	for _, lr := range legacy.Routes {
+		if lr.ID == "" || lr.UpstreamID != "" {
+			continue
+		}
+		if lr.ServiceID != "" {
+			routeServiceID[lr.ID] = lr.ServiceID
+		}
+	}
+
+	upstreamByService := make(map[string]string)
+	for _, up := range g.config.Upstreams {
+		if len(up.Targets) == 1 && strings.HasPrefix(up.ID, "auto-") {
+			upstreamByService[up.Targets[0].ServiceID] = up.ID
+		}
+	}
+
+	createdUpstreams := 0
+	migratedRoutes := 0
+	orphanedRoutes := 0
+	for i := range g.config.Routes {
+		r := &g.config.Routes[i]
+		if r.UpstreamID != "" {
+			continue
+		}
+		serviceID := routeServiceID[r.ID]
+		if serviceID == "" {
+			orphanedRoutes++
+			continue
+		}
+		upID, ok := upstreamByService[serviceID]
+		if !ok {
+			upID = "auto-" + serviceID
+			name := serviceID
+			for _, svc := range g.config.Services {
+				if svc.ID == serviceID {
+					if svc.Name != "" {
+						name = svc.Name
+					}
+					break
+				}
+			}
+			g.config.Upstreams = append(g.config.Upstreams, Upstream{
+				ID:       upID,
+				Name:     "auto: " + name,
+				Strategy: StrategyRoundRobin,
+				Targets:  []UpstreamTarget{{ServiceID: serviceID, Weight: 1}},
+				Enabled:  true,
+			})
+			upstreamByService[serviceID] = upID
+			createdUpstreams++
+		}
+		r.UpstreamID = upID
+		migratedRoutes++
+	}
+
+	// v3: Let's Encrypt domains are now derived purely from routes. Move any
+	// legacy domain list (manual + tunnel) onto the routes serving those hosts
+	// by enabling LetsEncrypt on them; the stored domain list is then dropped.
+	leRoutes := 0
+	if legacy.LetsEncrypt != nil {
+		legacyDomains := make(map[string]bool)
+		for _, d := range append(legacy.LetsEncrypt.Domains, legacy.LetsEncrypt.TunnelDomains...) {
+			if d = strings.TrimSpace(d); d != "" {
+				legacyDomains[d] = true
+			}
+		}
+		if len(legacyDomains) > 0 {
+			for i := range g.config.Routes {
+				r := &g.config.Routes[i]
+				for _, h := range r.Hosts {
+					if legacyDomains[strings.TrimSpace(h)] {
+						r.LetsEncrypt = true
+						leRoutes++
+						break
+					}
+				}
+			}
+		}
+	}
+
+	g.config.ConfigVersion = currentConfigVersion
+	log.Printf("API Gateway: migration v→%d: %d routes mapped to %d auto-upstream(s); %d route(s) had no service_id and were left empty; %d route(s) marked for Let's Encrypt", currentConfigVersion, migratedRoutes, createdUpstreams, orphanedRoutes, leRoutes)
+	return true
+}
+
+// normalizeStoredPaths rewrites any in-config absolute paths whose
+// docker-environment prefix points at a different host's home (e.g. after a
+// cross-machine restore) so they resolve against the running user's
+// workDir. Returns true if any field was changed; the caller is expected
+// to persist the config in that case.
+func (g *Gateway) normalizeStoredPaths() bool {
+	if g.config == nil {
+		return false
+	}
+	changed := false
+	if v := pathutil.NormalizeWorkDirPath(g.config.TLSCertFile, g.workDir); v != g.config.TLSCertFile {
+		g.config.TLSCertFile = v
+		changed = true
+	}
+	if v := pathutil.NormalizeWorkDirPath(g.config.TLSKeyFile, g.workDir); v != g.config.TLSKeyFile {
+		g.config.TLSKeyFile = v
+		changed = true
+	}
+	return changed
 }
 
 // SaveConfig saves the gateway configuration to memory DB
@@ -415,6 +655,22 @@ func (g *Gateway) refreshServicesAndRoutes() {
 		svc := &g.config.Services[i]
 		g.services[svc.ID] = svc
 	}
+
+	// Rebuild upstreams map. Runtime state (RR counter, in-flight) is kept
+	// across reloads so an UpdateConfig that doesn't touch a pool doesn't
+	// reset its counters; entries for removed upstreams are pruned below.
+	g.upstreams = make(map[string]*Upstream)
+	for i := range g.config.Upstreams {
+		up := &g.config.Upstreams[i]
+		g.upstreams[up.ID] = up
+	}
+	g.upstreamRuntimeMu.Lock()
+	for id := range g.upstreamRuntimes {
+		if _, ok := g.upstreams[id]; !ok {
+			delete(g.upstreamRuntimes, id)
+		}
+	}
+	g.upstreamRuntimeMu.Unlock()
 
 	// Rebuild routes slice and sort by priority
 	g.routes = make([]*Route, len(g.config.Routes))
@@ -482,11 +738,22 @@ func (g *Gateway) UpdateConfig(config *GatewayConfig) error {
 	g.config = config
 	g.mu.Unlock()
 
+	g.buildHTTPClient()
 	g.refreshServicesAndRoutes()
 	g.refreshClientSecurity()
 
 	if err := g.SaveConfig(); err != nil {
 		return fmt.Errorf("failed to save config: %w", err)
+	}
+
+	// Manage the Let's Encrypt auto-renew scheduler based on the new config.
+	// LE account settings (enable/email/auto-renew) are configured via the
+	// gateway settings now, so this is where the renewer is started/stopped.
+	renewer := GetCertificateRenewer(g)
+	if config.LetsEncrypt != nil && config.LetsEncrypt.Enabled && config.LetsEncrypt.AutoRenew {
+		renewer.Start()
+	} else {
+		renewer.Stop()
 	}
 
 	if wasRunning && config.Enabled {
@@ -515,15 +782,17 @@ func (g *Gateway) startLocked() error {
 	g.refreshClientSecurity()
 	g.stopChan = make(chan struct{})
 
+	to := g.resolveTimeouts()
+
 	// Create HTTP server
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", g.handleRequest)
 
 	g.httpServer = &http.Server{
 		Handler:      mux,
-		ReadTimeout:  30 * time.Second,
-		WriteTimeout: 30 * time.Second,
-		IdleTimeout:  60 * time.Second,
+		ReadTimeout:  to.serverRead,
+		WriteTimeout: to.serverWrite,
+		IdleTimeout:  to.serverIdle,
 	}
 
 	// Start HTTP listener
@@ -565,9 +834,9 @@ func (g *Gateway) startLocked() error {
 		g.httpsServer = &http.Server{
 			Handler:      mux,
 			TLSConfig:    g.tlsConfig,
-			ReadTimeout:  30 * time.Second,
-			WriteTimeout: 30 * time.Second,
-			IdleTimeout:  60 * time.Second,
+			ReadTimeout:  to.serverRead,
+			WriteTimeout: to.serverWrite,
+			IdleTimeout:  to.serverIdle,
 		}
 
 		httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
@@ -626,7 +895,7 @@ func (g *Gateway) stopLocked() error {
 
 	close(g.stopChan)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), g.resolveTimeouts().shutdown)
 	defer cancel()
 
 	if g.httpServer != nil {
@@ -672,7 +941,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		g.recordError()
 		status := http.StatusBadRequest
 		http.Error(lw, "Invalid request body", status)
-		g.logRequest(r, status, startTime, "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
+		g.logRequest(r, status, startTime, "", "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -681,6 +950,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	statusCode := http.StatusOK
 	routeID := ""
 	routeName := ""
+	upstreamID := ""
 	serviceID := ""
 	serviceName := ""
 	matchedRoute := false
@@ -698,7 +968,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			message = "Client blocked"
 		}
 		http.Error(lw, message, statusCode)
-		g.logRequest(r, statusCode, startTime, "", "", "", "", true, message, reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, message, reqInfo, lw.LogInfo())
 		trackClient = false
 		return
 	}
@@ -706,7 +976,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Handle ACME challenges for Let's Encrypt
 	if HandleACMEChallenge(lw, r) {
 		statusCode = lw.StatusCode()
-		g.logRequest(r, statusCode, startTime, "", "", "", "", true, "", reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "", reqInfo, lw.LogInfo())
 		trackClient = false
 		return
 	}
@@ -723,7 +993,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordRateLimited()
 			statusCode = http.StatusTooManyRequests
 			http.Error(lw, "Rate limit exceeded", statusCode)
-			g.logRequest(r, statusCode, startTime, "", "", "", "", true, "rate limit exceeded", reqInfo, lw.LogInfo())
+			g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
@@ -734,18 +1004,19 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		g.recordError()
 		statusCode = http.StatusNotFound
 		http.Error(lw, "Not Found", statusCode)
-		g.logRequest(r, statusCode, startTime, "", "", "", "", true, "no matching route", reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "no matching route", reqInfo, lw.LogInfo())
 		return
 	}
 	matchedRoute = true
 	routeID = route.ID
 	routeName = route.Name
+	upstreamID = route.UpstreamID
 
 	// OPTIONS preflight: respond with route CORS headers and 204 without proxying
 	if r.Method == http.MethodOptions && route.CORS != nil && route.CORS.Enabled {
 		applyCORSHeaders(lw.Header(), r.Header.Get("Origin"), route.CORS)
 		lw.WriteHeader(http.StatusNoContent)
-		g.logRequest(r, http.StatusNoContent, startTime, routeID, routeName, "", "", g.isRouteObservabilityEnabled(route), "", reqInfo, lw.LogInfo())
+		g.logRequest(r, http.StatusNoContent, startTime, routeID, routeName, upstreamID, "", "", g.isRouteObservabilityEnabled(route), "", reqInfo, lw.LogInfo())
 		return
 	}
 
@@ -763,49 +1034,41 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordRateLimited()
 			statusCode = http.StatusTooManyRequests
 			http.Error(lw, "Rate limit exceeded", statusCode)
-			g.logRequest(r, statusCode, startTime, routeID, routeName, "", "", routeObservability, "rate limit exceeded", reqInfo, lw.LogInfo())
+			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
 	}
 
 	// Check authentication if required
 	if route.AuthRequired {
-		if !g.checkAuth(r, route) {
+		allowed, challenge := g.checkAuth(r, route)
+		if !allowed {
 			g.recordError()
 			statusCode = http.StatusUnauthorized
+			if challenge != "" {
+				lw.Header().Set("WWW-Authenticate", challenge)
+			}
 			http.Error(lw, "Unauthorized", statusCode)
-			g.logRequest(r, statusCode, startTime, routeID, routeName, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
+			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
 			return
 		}
 	}
 
-	// Get service
-	g.mu.RLock()
-	service := g.services[route.ServiceID]
-	g.mu.RUnlock()
-
-	if service == nil || !service.Enabled {
+	// Resolve a healthy backend through the upstream load balancer.
+	service, upstream, release, pickErr := g.pickBackend(route, r)
+	defer release()
+	if pickErr != nil {
 		g.recordError()
 		statusCode = http.StatusServiceUnavailable
 		http.Error(lw, "Service Unavailable", statusCode)
-		g.logRequest(r, statusCode, startTime, routeID, routeName, route.ServiceID, serviceName, routeObservability, "service not available", reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, pickErr.Error(), reqInfo, lw.LogInfo())
 		return
 	}
 	serviceID = service.ID
 	serviceName = service.Name
 
-	// Check service health
-	g.mu.RLock()
-	health := g.serviceHealth[serviceID]
-	g.mu.RUnlock()
-
-	if health != nil && !health.Healthy {
-		g.recordError()
-		statusCode = http.StatusServiceUnavailable
-		http.Error(lw, "Service Unavailable", statusCode)
-		g.logRequest(r, statusCode, startTime, routeID, routeName, serviceID, serviceName, routeObservability, "service unhealthy", reqInfo, lw.LogInfo())
-		return
-	}
+	// Refresh sticky-cookie binding before proxying (no-op for non-cookie modes).
+	applyStickyCookie(lw, upstream, serviceID)
 
 	// Update service stats
 	g.stats.mu.Lock()
@@ -820,9 +1083,9 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	statusCode = lw.StatusCode()
 	if err != nil {
 		g.recordServiceError(serviceID)
-		g.logRequest(r, statusCode, startTime, routeID, routeName, serviceID, serviceName, routeObservability, err.Error(), reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, err.Error(), reqInfo, lw.LogInfo())
 	} else {
-		g.logRequest(r, statusCode, startTime, routeID, routeName, serviceID, serviceName, routeObservability, "", reqInfo, lw.LogInfo())
+		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, "", reqInfo, lw.LogInfo())
 	}
 
 	// Record latency
@@ -1127,20 +1390,33 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	// Create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(target)
 
-	// Configure transport with default timeout if not specified
-	dialTimeout := time.Duration(service.Timeout) * time.Second
-	if dialTimeout <= 0 {
-		dialTimeout = 30 * time.Second
-	}
+	to := g.resolveTimeouts()
 	proxy.Transport = &http.Transport{
 		DialContext: (&net.Dialer{
-			Timeout:   dialTimeout,
-			KeepAlive: 30 * time.Second,
+			Timeout:   to.upstreamDial,
+			KeepAlive: to.upstreamKeepAlive,
 		}).DialContext,
 		MaxIdleConns:          100,
-		IdleConnTimeout:       90 * time.Second,
-		TLSHandshakeTimeout:   10 * time.Second,
-		ExpectContinueTimeout: 1 * time.Second,
+		IdleConnTimeout:       to.upstreamIdleConn,
+		TLSHandshakeTimeout:   to.tlsHandshake,
+		ExpectContinueTimeout: to.expectContinue,
+	}
+
+	// Resolve effective request timeout: route → service → global default.
+	// Skip for protocol upgrades (e.g. WebSocket) since those are long-lived.
+	requestTimeout := time.Duration(0)
+	switch {
+	case route.Timeout > 0:
+		requestTimeout = time.Duration(route.Timeout) * time.Second
+	case service.Timeout > 0:
+		requestTimeout = time.Duration(service.Timeout) * time.Second
+	default:
+		requestTimeout = to.request
+	}
+	if requestTimeout > 0 && !strings.EqualFold(r.Header.Get("Connection"), "upgrade") {
+		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
+		defer cancel()
+		r = r.WithContext(ctx)
 	}
 
 	// Determine the incoming protocol
@@ -1201,6 +1477,10 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	var proxyErr error
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		proxyErr = fmt.Errorf("proxy error: %w", err)
+		if errors.Is(err, context.DeadlineExceeded) {
+			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+			return
+		}
 		http.Error(w, "Bad Gateway", http.StatusBadGateway)
 	}
 
@@ -1242,30 +1522,76 @@ func (g *Gateway) checkRateLimit(limiter *rateLimiter, clientIP string) bool {
 	return true
 }
 
-// checkAuth verifies authentication for the request
-func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
+// checkAuth verifies authentication for the request.
+// Returns (allowed, wwwAuthenticate) — when allowed=false, wwwAuthenticate (if non-empty)
+// should be set on the 401 response so browsers prompt natively for basic auth.
+func (g *Gateway) checkAuth(r *http.Request, route *Route) (bool, string) {
 	switch route.AuthType {
 	case "basic":
-		username, password, ok := r.BasicAuth()
-		if !ok {
-			return false
+		realm := route.BasicAuthRealm
+		if realm == "" {
+			realm = "Restricted"
 		}
-		return username != "" && password != ""
+		challenge := fmt.Sprintf(`Basic realm=%q, charset="UTF-8"`, realm)
+
+		if len(route.BasicAuthUsers) == 0 {
+			return false, challenge
+		}
+		username, password, ok := r.BasicAuth()
+		if !ok || username == "" || password == "" {
+			return false, challenge
+		}
+		for _, u := range route.BasicAuthUsers {
+			if subtleConstEq(u.Username, username) && u.PasswordHash != "" {
+				if bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)) == nil {
+					return true, ""
+				}
+			}
+		}
+		return false, challenge
 
 	case "jwt":
+		challenge := `Bearer realm="api"`
+		if route.JWT == nil || route.JWT.Secret == "" {
+			return false, `Bearer error="invalid_request", error_description="jwt not configured"`
+		}
 		authHeader := r.Header.Get("Authorization")
-		if authHeader == "" {
-			return false
+		if authHeader == "" || !strings.HasPrefix(authHeader, "Bearer ") {
+			return false, challenge
 		}
-		if !strings.HasPrefix(authHeader, "Bearer ") {
-			return false
+		raw := strings.TrimSpace(strings.TrimPrefix(authHeader, "Bearer "))
+		if raw == "" {
+			return false, challenge
 		}
-		token := strings.TrimPrefix(authHeader, "Bearer ")
-		return token != ""
+		secret := []byte(route.JWT.Secret)
+		parsed, err := jwt.Parse(raw, func(t *jwt.Token) (interface{}, error) {
+			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
+				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+			}
+			return secret, nil
+		}, jwt.WithValidMethods([]string{"HS256", "HS384", "HS512"}))
+		if err != nil || parsed == nil || !parsed.Valid {
+			return false, `Bearer error="invalid_token"`
+		}
+		claims, ok := parsed.Claims.(jwt.MapClaims)
+		if !ok {
+			return false, `Bearer error="invalid_token"`
+		}
+		if iss := strings.TrimSpace(route.JWT.Issuer); iss != "" {
+			if got, _ := claims["iss"].(string); got != iss {
+				return false, `Bearer error="invalid_token", error_description="issuer mismatch"`
+			}
+		}
+		if aud := strings.TrimSpace(route.JWT.Audience); aud != "" {
+			if !claimAudMatches(claims["aud"], aud) {
+				return false, `Bearer error="invalid_token", error_description="audience mismatch"`
+			}
+		}
+		return true, ""
 
 	case "header":
 		if len(route.AuthHeaders) == 0 {
-			return false
+			return false, ""
 		}
 		for _, h := range route.AuthHeaders {
 			key := strings.TrimSpace(h.Key)
@@ -1275,46 +1601,94 @@ func (g *Gateway) checkAuth(r *http.Request, route *Route) bool {
 			got := r.Header.Get(key)
 			if h.Value == "" {
 				if got == "" {
-					return false
+					return false, ""
 				}
 				continue
 			}
 			if got != h.Value {
-				return false
+				return false, ""
 			}
 		}
-		return true
+		return true, ""
 
 	default:
-		return true
+		return true, ""
 	}
 }
 
-// runHealthChecks runs periodic health checks on services
+// subtleConstEq compares two strings in constant time to avoid leaking length-prefix info via timing.
+func subtleConstEq(a, b string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	var v byte
+	for i := 0; i < len(a); i++ {
+		v |= a[i] ^ b[i]
+	}
+	return v == 0
+}
+
+// claimAudMatches checks whether the JWT "aud" claim (string or []string) contains the expected value.
+func claimAudMatches(raw interface{}, expected string) bool {
+	switch v := raw.(type) {
+	case string:
+		return v == expected
+	case []interface{}:
+		for _, item := range v {
+			if s, ok := item.(string); ok && s == expected {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// runHealthChecks wakes every healthCheckTickResolution and dispatches a check
+// for each service whose own HealthCheck.Interval has elapsed since its last run.
 func (g *Gateway) runHealthChecks() {
-	ticker := time.NewTicker(10 * time.Second)
+	ticker := time.NewTicker(healthCheckTickResolution)
 	defer ticker.Stop()
 
 	for {
 		select {
 		case <-g.stopChan:
 			return
-		case <-ticker.C:
-			g.checkAllServices()
+		case now := <-ticker.C:
+			g.checkAllServices(now)
 		}
 	}
 }
 
-// checkAllServices performs health checks on all services
-func (g *Gateway) checkAllServices() {
-	g.mu.RLock()
-	services := make([]*Service, 0, len(g.services))
-	for _, svc := range g.services {
-		if svc.Enabled && svc.HealthCheck != nil {
-			services = append(services, svc)
-		}
+// healthCheckInterval resolves a service's effective check interval, falling back
+// to the default when unset and clamping to the minimum.
+func healthCheckInterval(hc *HealthCheck) time.Duration {
+	if hc == nil || hc.Interval <= 0 {
+		return defaultHealthCheckInterval
 	}
-	g.mu.RUnlock()
+	interval := time.Duration(hc.Interval) * time.Second
+	if interval < minHealthCheckInterval {
+		return minHealthCheckInterval
+	}
+	return interval
+}
+
+// checkAllServices dispatches health checks for every enabled service that is due,
+// based on its per-service interval and the time of its last dispatch.
+func (g *Gateway) checkAllServices(now time.Time) {
+	g.mu.Lock()
+	services := make([]*Service, 0, len(g.services))
+	for id, svc := range g.services {
+		if !svc.Enabled || svc.HealthCheck == nil {
+			continue
+		}
+		last, seen := g.lastHealthCheck[id]
+		if seen && now.Sub(last) < healthCheckInterval(svc.HealthCheck) {
+			continue
+		}
+		g.lastHealthCheck[id] = now
+		services = append(services, svc)
+	}
+	g.mu.Unlock()
 
 	for _, svc := range services {
 		go g.checkServiceHealth(svc)
@@ -1332,7 +1706,7 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 
 	timeout := time.Duration(service.HealthCheck.Timeout) * time.Second
 	if timeout == 0 {
-		timeout = 5 * time.Second
+		timeout = g.resolveTimeouts().healthCheck
 	}
 
 	client := &http.Client{Timeout: timeout}
@@ -1393,7 +1767,7 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 }
 
 // logRequest logs an access log entry
-func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, routeName, serviceID, serviceName string, allowTelemetry bool, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
+func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, routeName, upstreamID, serviceID, serviceName string, allowTelemetry bool, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
 	logEntry := RequestLog{
 		Timestamp:             startTime,
 		Method:                r.Method,
@@ -1402,6 +1776,7 @@ func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Tim
 		RemoteAddr:            getClientIP(r),
 		RouteID:               routeID,
 		RouteName:             routeName,
+		UpstreamID:            upstreamID,
 		ServiceID:             serviceID,
 		ServiceName:           serviceName,
 		StatusCode:            statusCode,
@@ -1874,16 +2249,25 @@ func (g *Gateway) DeleteService(serviceID string) error {
 	return fmt.Errorf("service with ID %s not found", serviceID)
 }
 
-// AddRoute adds a new route to the gateway
+// AddRoute adds a new route to the gateway. The route's UpstreamID must
+// reference an existing Upstream.
 func (g *Gateway) AddRoute(route Route) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Check for duplicate ID
+	if route.UpstreamID == "" {
+		return fmt.Errorf("route upstream_id is required")
+	}
+	if _, ok := g.upstreams[route.UpstreamID]; !ok {
+		return fmt.Errorf("upstream %s not found", route.UpstreamID)
+	}
 	for _, r := range g.config.Routes {
 		if r.ID == route.ID {
 			return fmt.Errorf("route with ID %s already exists", route.ID)
 		}
+	}
+	if err := prepareRouteAuth(&route, nil); err != nil {
+		return err
 	}
 
 	g.config.Routes = append(g.config.Routes, route)
@@ -1897,8 +2281,18 @@ func (g *Gateway) UpdateRoute(route Route) error {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
+	if route.UpstreamID == "" {
+		return fmt.Errorf("route upstream_id is required")
+	}
+	if _, ok := g.upstreams[route.UpstreamID]; !ok {
+		return fmt.Errorf("upstream %s not found", route.UpstreamID)
+	}
 	for i, r := range g.config.Routes {
 		if r.ID == route.ID {
+			existing := g.config.Routes[i]
+			if err := prepareRouteAuth(&route, &existing); err != nil {
+				return err
+			}
 			g.config.Routes[i] = route
 			g.refreshRoutes()
 			g.clearRouteCache()
@@ -1907,6 +2301,213 @@ func (g *Gateway) UpdateRoute(route Route) error {
 	}
 
 	return fmt.Errorf("route with ID %s not found", route.ID)
+}
+
+// prepareRouteAuth normalizes and validates auth fields before persistence.
+// - basic: hashes any plaintext passwords; preserves an unchanged password by
+//   reusing the matching existing user's hash when both Password and PasswordHash
+//   are empty on input. Drops users that end up without a hash.
+// - jwt: rejects routes with no secret configured.
+// - header: rejects routes with no headers configured.
+// When prev is nil (new route), unchanged-password preservation is skipped.
+func prepareRouteAuth(route *Route, prev *Route) error {
+	if !route.AuthRequired {
+		// still wipe any incidental plaintext on auth users to be safe
+		for i := range route.BasicAuthUsers {
+			route.BasicAuthUsers[i].Password = ""
+		}
+		return nil
+	}
+
+	switch route.AuthType {
+	case "basic":
+		var prevUsers []BasicAuthUser
+		if prev != nil {
+			prevUsers = prev.BasicAuthUsers
+		}
+		cleaned := make([]BasicAuthUser, 0, len(route.BasicAuthUsers))
+		for _, u := range route.BasicAuthUsers {
+			u.Username = strings.TrimSpace(u.Username)
+			if u.Username == "" {
+				continue
+			}
+			switch {
+			case u.Password != "":
+				hash, err := bcrypt.GenerateFromPassword([]byte(u.Password), bcrypt.DefaultCost)
+				if err != nil {
+					return fmt.Errorf("hash password for %s: %w", u.Username, err)
+				}
+				u.PasswordHash = string(hash)
+			case u.PasswordHash == "":
+				// no new password and no incoming hash — try to preserve existing
+				for _, pu := range prevUsers {
+					if pu.Username == u.Username && pu.PasswordHash != "" {
+						u.PasswordHash = pu.PasswordHash
+						break
+					}
+				}
+			}
+			u.Password = ""
+			if u.PasswordHash == "" {
+				// no credential at all — skip rather than store a useless entry
+				continue
+			}
+			cleaned = append(cleaned, u)
+		}
+		if len(cleaned) == 0 {
+			return fmt.Errorf("basic auth requires at least one user with a password")
+		}
+		route.BasicAuthUsers = cleaned
+		route.JWT = nil
+		route.AuthHeaders = nil
+
+	case "jwt":
+		if route.JWT == nil || strings.TrimSpace(route.JWT.Secret) == "" {
+			return fmt.Errorf("jwt auth requires a non-empty secret")
+		}
+		route.BasicAuthUsers = nil
+		route.AuthHeaders = nil
+
+	case "header":
+		hasOne := false
+		for _, h := range route.AuthHeaders {
+			if strings.TrimSpace(h.Key) != "" {
+				hasOne = true
+				break
+			}
+		}
+		if !hasOne {
+			return fmt.Errorf("header auth requires at least one header key")
+		}
+		route.BasicAuthUsers = nil
+		route.JWT = nil
+
+	default:
+		return fmt.Errorf("unsupported auth_type %q (expected basic, jwt, or header)", route.AuthType)
+	}
+	return nil
+}
+
+// ListUpstreams returns a copy of all upstream pools.
+func (g *Gateway) ListUpstreams() []Upstream {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil || len(g.config.Upstreams) == 0 {
+		return []Upstream{}
+	}
+	out := make([]Upstream, len(g.config.Upstreams))
+	copy(out, g.config.Upstreams)
+	return out
+}
+
+// GetUpstream returns a copy of the upstream with the given ID, or nil.
+func (g *Gateway) GetUpstream(id string) *Upstream {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	for i := range g.config.Upstreams {
+		if g.config.Upstreams[i].ID == id {
+			c := g.config.Upstreams[i]
+			return &c
+		}
+	}
+	return nil
+}
+
+// AddUpstream registers a new upstream pool.
+func (g *Gateway) AddUpstream(upstream Upstream) error {
+	if err := validateUpstream(&upstream); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, t := range upstream.Targets {
+		if _, ok := g.services[t.ServiceID]; !ok {
+			return fmt.Errorf("target service %s not found", t.ServiceID)
+		}
+	}
+	for _, up := range g.config.Upstreams {
+		if up.ID == upstream.ID {
+			return fmt.Errorf("upstream with ID %s already exists", upstream.ID)
+		}
+	}
+
+	g.config.Upstreams = append(g.config.Upstreams, upstream)
+	g.upstreams[upstream.ID] = &g.config.Upstreams[len(g.config.Upstreams)-1]
+	return g.saveConfigLocked()
+}
+
+// UpdateUpstream replaces an existing upstream pool by ID.
+func (g *Gateway) UpdateUpstream(upstream Upstream) error {
+	if err := validateUpstream(&upstream); err != nil {
+		return err
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, t := range upstream.Targets {
+		if _, ok := g.services[t.ServiceID]; !ok {
+			return fmt.Errorf("target service %s not found", t.ServiceID)
+		}
+	}
+	for i, up := range g.config.Upstreams {
+		if up.ID == upstream.ID {
+			g.config.Upstreams[i] = upstream
+			g.upstreams[upstream.ID] = &g.config.Upstreams[i]
+			g.clearRouteCache()
+			return g.saveConfigLocked()
+		}
+	}
+	return fmt.Errorf("upstream with ID %s not found", upstream.ID)
+}
+
+// DeleteUpstream removes an upstream pool. Fails if any HTTP route still
+// references it (callers must delete dependent routes first).
+func (g *Gateway) DeleteUpstream(id string) error {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	for _, r := range g.config.Routes {
+		if r.UpstreamID == id {
+			return fmt.Errorf("upstream %s is in use by route %s", id, r.ID)
+		}
+	}
+	for i, up := range g.config.Upstreams {
+		if up.ID == id {
+			g.config.Upstreams = append(g.config.Upstreams[:i], g.config.Upstreams[i+1:]...)
+			delete(g.upstreams, id)
+			g.upstreamRuntimeMu.Lock()
+			delete(g.upstreamRuntimes, id)
+			g.upstreamRuntimeMu.Unlock()
+			return g.saveConfigLocked()
+		}
+	}
+	return fmt.Errorf("upstream with ID %s not found", id)
+}
+
+func validateUpstream(u *Upstream) error {
+	if u.ID == "" {
+		return fmt.Errorf("upstream id is required")
+	}
+	if len(u.Targets) == 0 {
+		return fmt.Errorf("upstream must have at least one target")
+	}
+	switch u.Strategy {
+	case "", StrategyRoundRobin, StrategyWeighted, StrategyRandom, StrategyLeastConn:
+	default:
+		return fmt.Errorf("unknown strategy %q", u.Strategy)
+	}
+	if u.Sticky != nil {
+		switch u.Sticky.Mode {
+		case "", StickyIPHash, StickyCookie, StickyHeader:
+		default:
+			return fmt.Errorf("unknown sticky mode %q", u.Sticky.Mode)
+		}
+		if u.Sticky.Mode == StickyHeader && u.Sticky.HeaderName == "" {
+			return fmt.Errorf("sticky header mode requires header_name")
+		}
+	}
+	return nil
 }
 
 // DeleteRoute removes a route from the gateway
@@ -2072,14 +2673,11 @@ func (g *Gateway) Validate(method, path, host string, headers map[string]string)
 		return nil, nil, fmt.Errorf("no matching route")
 	}
 
-	g.mu.RLock()
-	service := g.services[route.ServiceID]
-	g.mu.RUnlock()
-
-	if service == nil {
-		return route, nil, fmt.Errorf("service not found")
+	service, _, release, err := g.pickBackend(route, req)
+	if err != nil {
+		return route, nil, err
 	}
-
+	release()
 	return route, service, nil
 }
 

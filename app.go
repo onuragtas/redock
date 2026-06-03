@@ -94,12 +94,14 @@ func app() {
 	routes.DeploymentRoutes(app)
 	routes.UsageRoutes(app)
 	routes.APIGatewayRoutes(app)
+	routes.OnionProxyRoutes(app)
 	routes.DNSRoutes(app)
 	routes.SetupVPNRoutes(app)
 	routes.CloudflareRoutes(app)
 	routes.EmailRoutes(app)
 	routes.NetworkRoutes(app)
 	routes.UpdateRoutes(app)
+	routes.BackupRoutes(app)
 	// Static SPA after routes.
 	app.Use("/", filesystem.New(filesystem.Config{
 		Root:       http.FS(embedDirStatic),

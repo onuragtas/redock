@@ -1020,8 +1020,8 @@ const deleteClientBan = async (clientIP) => {
                   {{ client.query_count }} queries
                 </span>
                 <button 
-                  @click="toggleClientMenu(client.ip)"
                   class="px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                  @click="toggleClientMenu(client.ip)"
                 >
                   ...
                 </button>
@@ -1031,15 +1031,15 @@ const deleteClientBan = async (clientIP) => {
             <div v-if="activeClientMenu === client.ip" class="absolute right-4 top-16 w-48 bg-white dark:bg-slate-800 rounded-lg shadow-xl border border-slate-200 dark:border-slate-700 z-50 py-1" @click.stop>
               <button 
                 v-if="client.is_banned"
-                @click="unblockClient(client.ip)" 
-                class="w-full px-4 py-2 text-left text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600"
+                class="w-full px-4 py-2 text-left text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600" 
+                @click="unblockClient(client.ip)"
               >
                 ✅ Unban this client
               </button>
               <button 
                 v-else
-                @click="blockClient(client.ip)" 
-                class="w-full px-4 py-2 text-left text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600"
+                class="w-full px-4 py-2 text-left text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600" 
+                @click="blockClient(client.ip)"
               >
                 🚫 Block this client (IP Ban)
               </button>
@@ -1367,7 +1367,8 @@ const deleteClientBan = async (clientIP) => {
 
               <!-- Answer -->
               <div class="flex items-center gap-3">
-                <span :class="[
+                <span
+:class="[
                   'text-xs font-medium px-2 py-1 rounded',
                   rewrite.type === 'A' ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' :
                   rewrite.type === 'AAAA' ? 'bg-cyan-100 dark:bg-cyan-900/30 text-cyan-700 dark:text-cyan-300' :
@@ -1388,7 +1389,8 @@ const deleteClientBan = async (clientIP) => {
 
               <!-- Status -->
               <div class="flex items-center gap-2 ml-2">
-                <span :class="[
+                <span
+:class="[
                   'inline-flex items-center px-2 py-1 rounded-full text-xs font-medium',
                   rewrite.enabled 
                     ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300' 
@@ -1449,8 +1451,8 @@ const deleteClientBan = async (clientIP) => {
           />
           <div v-if="searchQuery" class="absolute inset-y-0 right-0 pr-3 flex items-center">
             <button
-              @click="searchQuery = ''; logsPage = 1; fetchQueryLogs()"
               class="text-slate-400 hover:text-slate-600 dark:hover:text-slate-300"
+              @click="searchQuery = ''; logsPage = 1; fetchQueryLogs()"
             >
               <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
@@ -1502,8 +1504,8 @@ const deleteClientBan = async (clientIP) => {
               <td class="py-3 font-mono text-xs relative">
                 <button 
                   v-if="log.response" 
-                  @click="selectedResponse = log.response"
                   class="group text-slate-700 dark:text-slate-300 hover:text-blue-600 dark:hover:text-blue-400 cursor-pointer text-left"
+                  @click="selectedResponse = log.response"
                 >
                   {{ log.response.length > 40 ? log.response.substring(0, 40) + '...' : log.response }}
                   
@@ -1537,8 +1539,8 @@ const deleteClientBan = async (clientIP) => {
               <td class="py-3">{{ log.response_time }}ms</td>
               <td class="py-3 text-center relative">
                 <button 
-                  @click="toggleLogMenu(log.id)"
                   class="px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
+                  @click="toggleLogMenu(log.id)"
                 >
                   ...
                 </button>
@@ -1560,16 +1562,16 @@ const deleteClientBan = async (clientIP) => {
                     
                     <button
                       v-if="currentLogStatus.global_domain_block"
-                      @click="removeGlobalBlock(log.domain)"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                      @click="removeGlobalBlock(log.domain)"
                     >
                       ✅ Allow domain (globally)
                     </button>
                     
                     <button
                       v-else
-                      @click="blockDomainGlobally(log.domain)"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                      @click="blockDomainGlobally(log.domain)"
                     >
                       🚫 Block domain (globally)
                     </button>
@@ -1581,16 +1583,16 @@ const deleteClientBan = async (clientIP) => {
                     
                     <button
                       v-if="currentLogStatus.client_specific_block"
-                      @click="removeClientDomainRule(log.client_ip, log.domain, 'block')"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                      @click="removeClientDomainRule(log.client_ip, log.domain, 'block')"
                     >
                       ✅ Allow for this client
                     </button>
                     
                     <button
                       v-else
-                      @click="blockDomainForClient(log.client_ip, log.domain)"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
+                      @click="blockDomainForClient(log.client_ip, log.domain)"
                     >
                       🚫 Block for this client
                     </button>
@@ -1600,16 +1602,16 @@ const deleteClientBan = async (clientIP) => {
                     <!-- Client Ban Actions -->
                     <button
                       v-if="currentLogStatus.client_block"
-                      @click="unblockClient(log.client_ip)"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600"
+                      @click="unblockClient(log.client_ip)"
                     >
                       ✅ Unban this client
                     </button>
                     
                     <button
                       v-else
-                      @click="blockClient(log.client_ip)"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600"
+                      @click="blockClient(log.client_ip)"
                     >
                       🚫 Ban this client (IP Ban)
                     </button>
@@ -1627,8 +1629,8 @@ const deleteClientBan = async (clientIP) => {
           <span class="text-sm text-slate-700 dark:text-slate-300">Showing {{ logsPaginationInfo }}</span>
           <select
             v-model.number="logsLimit"
-            @change="setLogsLimit(logsLimit)"
             class="text-sm border border-slate-300 dark:border-slate-600 rounded px-2 py-1 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100"
+            @change="setLogsLimit(logsLimit)"
           >
             <option :value="25">25</option>
             <option :value="50">50</option>
@@ -2127,7 +2129,7 @@ const deleteClientBan = async (clientIP) => {
       @confirm="confirmDelete"
     >
       <p>Are you sure you want to delete this {{ deleteTarget.type }}?</p>
-      <p class="font-semibold mt-2" v-if="deleteTarget.item">
+      <p v-if="deleteTarget.item" class="font-semibold mt-2">
         {{ deleteTarget.item.name || deleteTarget.item.domain }}
       </p>
     </CardBoxModal>

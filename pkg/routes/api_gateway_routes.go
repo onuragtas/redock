@@ -34,6 +34,12 @@ func APIGatewayRoutes(a *fiber.App) {
 	route.Put("/api_gateway/routes", controllers.APIGatewayUpdateRoute)
 	route.Delete("/api_gateway/routes", controllers.APIGatewayDeleteRoute)
 
+	// Upstreams (load-balanced backend pools)
+	route.Get("/api_gateway/upstreams", controllers.APIGatewayListUpstreams)
+	route.Post("/api_gateway/upstreams", controllers.APIGatewayAddUpstream)
+	route.Put("/api_gateway/upstreams", controllers.APIGatewayUpdateUpstream)
+	route.Delete("/api_gateway/upstreams", controllers.APIGatewayDeleteUpstream)
+
 	// UDP routes management
 	route.Get("/api_gateway/udp_routes", controllers.APIGatewayListUDPRoutes)
 	route.Post("/api_gateway/udp_routes", controllers.APIGatewayAddUDPRoute)
@@ -46,7 +52,6 @@ func APIGatewayRoutes(a *fiber.App) {
 
 	// SSL/TLS Certificate management
 	route.Get("/api_gateway/certificate", controllers.APIGatewayGetCertificateInfo)
-	route.Post("/api_gateway/letsencrypt", controllers.APIGatewayConfigureLetsEncrypt)
 	route.Post("/api_gateway/certificate/request", controllers.APIGatewayRequestCertificate)
 	route.Get("/api_gateway/certificate/renewer", controllers.APIGatewayGetRenewerStatus)
 	route.Post("/api_gateway/certificate/renewer/start", controllers.APIGatewayStartRenewer)

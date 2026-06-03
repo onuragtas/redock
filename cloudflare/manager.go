@@ -247,6 +247,45 @@ func (m *CloudflareManager) ListZones(accountID uint) ([]*CloudflareZone, error)
 	return zones, nil
 }
 
+// PurgeCache purges the Cloudflare edge cache for a zone.
+// When everything is true, the entire cache is purged; otherwise only the given
+// absolute URLs (files) are purged. Cloudflare limits files purges to 30 entries.
+func (m *CloudflareManager) PurgeCache(zoneID string, everything bool, files []string) error {
+	zone, err := m.GetZone(zoneID)
+	if err != nil {
+		return err
+	}
+
+	client, err := m.GetClient(zone.AccountID)
+	if err != nil {
+		return err
+	}
+
+	pcr := cf.PurgeCacheRequest{}
+	if everything {
+		pcr.Everything = true
+	} else {
+		if len(files) == 0 {
+			return fmt.Errorf("no files provided to purge")
+		}
+		if len(files) > 30 {
+			return fmt.Errorf("too many files: %d (Cloudflare allows max 30 per request)", len(files))
+		}
+		pcr.Files = files
+	}
+
+	ctx := context.Background()
+	resp, err := client.PurgeCache(ctx, zoneID, pcr)
+	if err != nil {
+		return fmt.Errorf("failed to purge cache: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("cloudflare reported purge failure for zone %s", zoneID)
+	}
+
+	return nil
+}
+
 // GetDB returns database connection
 func (m *CloudflareManager) GetDB() (*memory.Database, error) {
 	if m.db == nil {

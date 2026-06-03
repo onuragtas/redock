@@ -3,7 +3,7 @@
     <!-- Add Mailbox Form -->
     <div class="add-form-card">
       <h2>➕ Create New Mailbox</h2>
-      <form @submit.prevent="handleAdd" class="add-form">
+      <form class="add-form" @submit.prevent="handleAdd">
         <div class="form-grid">
           <select v-model="newMailbox.domain_id" required class="form-select">
             <option value="">Select Domain</option>
@@ -43,7 +43,7 @@
     <div class="mailboxes-card">
       <div class="card-header">
         <h2>📬 Mailboxes ({{ mailboxes.length }})</h2>
-        <button @click="$emit('refresh')" class="btn-icon">🔄</button>
+        <button class="btn-icon" @click="$emit('refresh')">🔄</button>
       </div>
 
       <div v-if="mailboxes.length === 0" class="empty-state">
@@ -95,10 +95,10 @@
       <div class="modal-content" @click.stop>
         <div class="modal-header">
           <h3>⚙️ Mailbox Settings: {{ editingMailbox.email }}</h3>
-          <button @click="closeEditModal" class="btn-close">✕</button>
+          <button class="btn-close" @click="closeEditModal">✕</button>
         </div>
         
-        <form @submit.prevent="handleEdit" class="edit-form">
+        <form class="edit-form" @submit.prevent="handleEdit">
           <div class="form-group">
             <label>Display Name</label>
             <input
@@ -184,7 +184,7 @@
           </div>
           
           <div class="modal-footer">
-            <button type="button" @click="closeEditModal" class="btn-cancel">
+            <button type="button" class="btn-cancel" @click="closeEditModal">
               Cancel
             </button>
             <button type="submit" class="btn-save">

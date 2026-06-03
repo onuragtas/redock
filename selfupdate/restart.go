@@ -15,6 +15,21 @@ import (
 	"github.com/kardianos/osext"
 )
 
+// RestartProcess restarts the redock process, picking the right strategy:
+// systemctl restart when running under systemd, otherwise spawn a fresh
+// child and exit. Useful from non-update flows (e.g. backup restore) that
+// need the binary re-execed so init.go reloads all on-disk state.
+func RestartProcess() error {
+	if isRunningAsService() {
+		return restartService()
+	}
+	path, err := osext.Executable()
+	if err != nil {
+		return fmt.Errorf("failed to get executable path: %w", err)
+	}
+	return gracefulRestart(path)
+}
+
 // UpdateWithRestart downloads and applies update, then restarts the process
 func (u *Updater) UpdateWithRestart() error {
 	// Download new binary

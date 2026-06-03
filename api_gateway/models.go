@@ -17,7 +17,7 @@ type Service struct {
 	Protocol    string            `json:"protocol"` // http, https, grpc
 	Path        string            `json:"path"`     // base path for the service
 	Retries     int               `json:"retries"`
-	Timeout     int               `json:"timeout"` // in seconds
+	Timeout     int               `json:"timeout"` // overall upstream request timeout in seconds; 0 = inherit from global
 	HealthCheck *HealthCheck      `json:"health_check,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"` // headers to add to requests
 	Enabled     bool              `json:"enabled"`
@@ -29,11 +29,26 @@ type AuthHeader struct {
 	Value string `json:"value"`
 }
 
-// Route represents a routing rule that maps incoming requests to services
+// BasicAuthUser is one credential allowed for auth_type=basic.
+// Password is write-only: controllers hash it into PasswordHash and clear Password before persistence.
+type BasicAuthUser struct {
+	Username     string `json:"username"`
+	Password     string `json:"password,omitempty"`      // plaintext input from API; never persisted
+	PasswordHash string `json:"password_hash,omitempty"` // bcrypt hash, stored
+}
+
+// JWTConfig configures HS256 bearer-token verification for auth_type=jwt.
+type JWTConfig struct {
+	Secret   string `json:"secret,omitempty"`   // HS256 shared secret
+	Issuer   string `json:"issuer,omitempty"`   // optional: required "iss" claim
+	Audience string `json:"audience,omitempty"` // optional: required "aud" claim
+}
+
+// Route represents a routing rule that maps incoming requests to an upstream pool
 type Route struct {
 	ID                   string            `json:"id"`
 	Name                 string            `json:"name"`
-	ServiceID            string            `json:"service_id"`
+	UpstreamID           string            `json:"upstream_id"`            // ID of the upstream pool to forward to
 	Paths                []string          `json:"paths"`                  // URL paths to match
 	Methods              []string          `json:"methods,omitempty"`      // HTTP methods to match (empty = all)
 	Hosts                []string          `json:"hosts,omitempty"`        // Host headers to match (empty = all)
@@ -46,11 +61,16 @@ type Route struct {
 	RateLimitRequests    int               `json:"rate_limit_requests"` // requests per window
 	RateLimitWindow      int               `json:"rate_limit_window"`   // window in seconds
 	AuthRequired         bool              `json:"auth_required"`
-	AuthType             string            `json:"auth_type,omitempty"`     // basic, jwt, header
+	AuthType             string            `json:"auth_type,omitempty"`      // basic, jwt, header
 	AuthHeaders          []AuthHeader      `json:"auth_headers,omitempty"`   // required header key-value pairs when auth_type=header
+	BasicAuthUsers       []BasicAuthUser   `json:"basic_auth_users,omitempty"` // credentials for auth_type=basic
+	BasicAuthRealm       string            `json:"basic_auth_realm,omitempty"` // WWW-Authenticate realm; default "Restricted"
+	JWT                  *JWTConfig        `json:"jwt,omitempty"`              // HS256 config for auth_type=jwt
 	ObservabilityEnabled *bool             `json:"observability_enabled,omitempty"`
-	CORS                 *CORSConfig       `json:"cors,omitempty"`           // CORS response headers for this route (incl. WebSocket)
+	CORS                 *CORSConfig       `json:"cors,omitempty"`             // CORS response headers for this route (incl. WebSocket)
 	ResponseHeaders      map[string]string `json:"response_headers,omitempty"` // extra response headers for this route
+	Timeout              int               `json:"timeout,omitempty"`          // overall upstream request timeout in seconds; 0 = inherit from service then global
+	LetsEncrypt          bool              `json:"lets_encrypt,omitempty"`     // include this route's hosts in the Let's Encrypt certificate
 	Enabled              bool              `json:"enabled"`
 }
 
@@ -94,6 +114,7 @@ type CORSConfig struct {
 
 // GatewayConfig represents the overall gateway configuration
 type GatewayConfig struct {
+	ConfigVersion    int                   `json:"config_version"` // schema version; auto-migrated on load
 	HTTPPort         int                   `json:"http_port"`
 	HTTPSPort        int                   `json:"https_port"`
 	HTTPSEnabled     bool                  `json:"https_enabled"`
@@ -101,6 +122,7 @@ type GatewayConfig struct {
 	TLSKeyFile       string                `json:"tls_key_file,omitempty"`
 	LetsEncrypt      *LetsEncryptConfig    `json:"lets_encrypt,omitempty"`
 	Services         []Service             `json:"services"`
+	Upstreams        []Upstream            `json:"upstreams,omitempty"`
 	Routes           []Route               `json:"routes"`
 	UDPRoutes        []UDPRoute            `json:"udp_routes,omitempty"`
 	TCPRoutes        []TCPRoute            `json:"tcp_routes,omitempty"`
@@ -109,7 +131,61 @@ type GatewayConfig struct {
 	AccessLogEnabled bool                  `json:"access_log_enabled"`
 	Observability    *ObservabilityConfig  `json:"observability,omitempty"`
 	ClientSecurity   *ClientSecurityConfig `json:"client_security,omitempty"`
+	Timeouts         *TimeoutsConfig       `json:"timeouts,omitempty"`
 	Enabled          bool                  `json:"enabled"`
+}
+
+// Upstream is a pool of backend services with a load balancing strategy and
+// optional session affinity. Routes forward to an Upstream rather than a
+// single Service, which lets one route distribute traffic across many
+// backends.
+type Upstream struct {
+	ID       string           `json:"id"`
+	Name     string           `json:"name"`
+	Strategy string           `json:"strategy"`           // round_robin (default) | weighted | random | least_conn
+	Sticky   *StickyConfig    `json:"sticky,omitempty"`   // nil = no session affinity
+	Targets  []UpstreamTarget `json:"targets"`
+	Enabled  bool             `json:"enabled"`
+}
+
+// UpstreamTarget references a Service with an optional weight (default 1).
+type UpstreamTarget struct {
+	ServiceID string `json:"service_id"`
+	Weight    int    `json:"weight,omitempty"` // > 0; defaults to 1 if missing
+}
+
+// StickyConfig pins a client to one target across requests.
+//
+// Modes:
+//   - "ip_hash": stateless, hashes client IP (Rendezvous/HRW). Honors weights when Strategy=weighted.
+//   - "cookie":  stateless cookie holds selected service ID; first request distributes via Strategy and sets cookie.
+//   - "header":  stateless, hashes a header value just like ip_hash but using the given header.
+//
+// When Strategy is "weighted" combined with a hash-based sticky mode the
+// distribution honors weights via weighted HRW; for any other strategy the
+// hash distributes uniformly across healthy targets.
+type StickyConfig struct {
+	Mode       string `json:"mode"`                  // ip_hash | cookie | header
+	CookieName string `json:"cookie_name,omitempty"` // for cookie mode (default: "redock_lb")
+	HeaderName string `json:"header_name,omitempty"` // for header mode (e.g. "X-Session-Id")
+	TTLSeconds int    `json:"ttl_seconds,omitempty"` // cookie max-age; 0 = session cookie
+}
+
+// TimeoutsConfig holds global default timeouts. Per-service / per-route
+// timeouts override RequestTimeoutSec; the rest are transport/server level.
+// Values are in seconds; 0 falls back to the built-in default.
+type TimeoutsConfig struct {
+	ServerReadSec        int `json:"server_read_seconds"`
+	ServerWriteSec       int `json:"server_write_seconds"`
+	ServerIdleSec        int `json:"server_idle_seconds"`
+	ShutdownSec          int `json:"shutdown_seconds"`
+	RequestTimeoutSec    int `json:"request_timeout_seconds"`
+	UpstreamDialSec      int `json:"upstream_dial_seconds"`
+	UpstreamKeepAliveSec int `json:"upstream_keep_alive_seconds"`
+	UpstreamIdleConnSec  int `json:"upstream_idle_conn_seconds"`
+	TLSHandshakeSec      int `json:"tls_handshake_seconds"`
+	ExpectContinueSec    int `json:"expect_continue_seconds"`
+	HealthCheckSec       int `json:"health_check_seconds"`
 }
 
 // ClientSecurityConfig toggles request tracking and auto-blocking behaviour
@@ -179,15 +255,14 @@ type GraylogConfig struct {
 
 // LetsEncryptConfig represents Let's Encrypt certificate configuration
 type LetsEncryptConfig struct {
-	Enabled          bool     `json:"enabled"`
-	Email            string   `json:"email"`
-	Domains          []string `json:"domains"`
-	Staging          bool     `json:"staging"`           // Use staging server for testing
-	AutoRenew        bool     `json:"auto_renew"`        // Auto-renew before expiry
-	RenewBeforeDays  int      `json:"renew_before_days"` // Days before expiry to renew
-	LastRenewAt      string   `json:"last_renew_at,omitempty"`
-	ExpiresAt        string   `json:"expires_at,omitempty"`
-	CertificateReady bool     `json:"certificate_ready"`
+	Enabled          bool   `json:"enabled"`
+	Email            string `json:"email"`
+	Staging          bool   `json:"staging"`           // Use staging server for testing
+	AutoRenew        bool   `json:"auto_renew"`        // Auto-renew before expiry
+	RenewBeforeDays  int    `json:"renew_before_days"` // Days before expiry to renew
+	LastRenewAt      string `json:"last_renew_at,omitempty"`
+	ExpiresAt        string `json:"expires_at,omitempty"`
+	CertificateReady bool   `json:"certificate_ready"`
 }
 
 // RateLimitConfig represents global rate limiting configuration
@@ -217,6 +292,7 @@ type RequestLog struct {
 	RemoteAddr            string    `json:"remote_addr"`
 	RouteID               string    `json:"route_id"`
 	RouteName             string    `json:"route_name,omitempty"`
+	UpstreamID            string    `json:"upstream_id,omitempty"`
 	ServiceID             string    `json:"service_id"`
 	ServiceName           string    `json:"service_name,omitempty"`
 	StatusCode            int       `json:"status_code"`
@@ -299,33 +375,38 @@ type clientRateLimit struct {
 
 // Gateway represents the API gateway server
 type Gateway struct {
-	config           *GatewayConfig
-	httpServer       *http.Server
-	httpsServer      *http.Server
-	httpListener     net.Listener
-	httpsListener    net.Listener
-	services         map[string]*Service
-	routes           []*Route
-	serviceHealth    map[string]*ServiceHealth
-	rateLimiter      *rateLimiter
-	globalLimiter    *rateLimiter
-	stats            *gatewayStatsTracker
-	mu               sync.RWMutex
-	running          bool
-	stopChan         chan struct{}
-	workDir          string
-	httpClient       *http.Client
-	tlsConfig        *tls.Config
-	routeCache       map[string]*cachedRoute
-	routeCacheOrder  []string
-	routeCacheLimit  int
-	routeCacheTTL    time.Duration
-	routeCacheMu     sync.RWMutex
-	clientStats      map[string]*clientStatsTracker
-	clientStatsLimit int
-	clientStatsMu    sync.RWMutex
-	persistentBlocks map[string]BlockedClient
-	blockListMu      sync.Mutex
+	config            *GatewayConfig
+	httpServer        *http.Server
+	httpsServer       *http.Server
+	httpListener      net.Listener
+	httpsListener     net.Listener
+	services          map[string]*Service
+	upstreams         map[string]*Upstream
+	upstreamRuntimes  map[string]*upstreamRuntime
+	upstreamRuntimeMu sync.Mutex
+	routes            []*Route
+	serviceHealth     map[string]*ServiceHealth
+	lastHealthCheck   map[string]time.Time
+	rateLimiter       *rateLimiter
+	globalLimiter     *rateLimiter
+	stats             *gatewayStatsTracker
+	mu                sync.RWMutex
+	running           bool
+	stopChan          chan struct{}
+	workDir           string
+	httpClient        *http.Client
+	tlsConfig         *tls.Config
+	routeCache        map[string]*cachedRoute
+	routeCacheOrder   []string
+	routeCacheLimit   int
+	routeCacheTTL     time.Duration
+	routeCacheMu      sync.RWMutex
+	clientStats       map[string]*clientStatsTracker
+	clientStatsLimit  int
+	clientStatsMu     sync.RWMutex
+	persistentBlocks  map[string]BlockedClient
+	blockListMu       sync.Mutex
+	certReissuing     int32 // atomic guard so only one auto re-issue runs at a time
 }
 
 // gatewayStatsTracker tracks gateway statistics

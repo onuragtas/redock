@@ -142,7 +142,7 @@ onMounted(() => {
     </div>
 
     <!-- Current Version Card -->
-    <CardBox class="mb-6" v-if="currentVersion">
+    <CardBox v-if="currentVersion" class="mb-6">
       <div class="flex items-center justify-between">
         <div class="flex items-center gap-4">
           <div class="p-3 rounded-lg" :class="currentVersionBadge">
@@ -165,9 +165,9 @@ onMounted(() => {
           :icon="mdiRefresh"
           color="info"
           label="Check for Updates"
-          @click="fetchUpdates"
           :disabled="loading || updating"
           rounded-full
+          @click="fetchUpdates"
         />
       </div>
     </CardBox>
@@ -253,9 +253,9 @@ onMounted(() => {
                 :icon="mdiDownload"
                 :color="update.recommended ? 'success' : update.type === 'beta' ? 'warning' : 'info'"
                 :label="update.recommended ? 'Update Now' : update.type === 'beta' ? 'Try Beta' : 'Update'"
-                @click="confirmUpdate(update.tag)"
                 :disabled="updating || loading"
                 rounded-full
+                @click="confirmUpdate(update.tag)"
               />
             </div>
           </div>

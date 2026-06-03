@@ -3,7 +3,7 @@
     <!-- Add Domain Form -->
     <div class="add-form-card">
       <h2>➕ Add New Domain</h2>
-      <form @submit.prevent="handleAdd" class="add-form">
+      <form class="add-form" @submit.prevent="handleAdd">
         <div class="form-row">
           <input
             v-model="newDomain.domain"
@@ -27,7 +27,7 @@
     <div class="domains-card">
       <div class="card-header">
         <h2>🌐 Email Domains ({{ domains.length }})</h2>
-        <button @click="$emit('refresh')" class="btn-icon">🔄</button>
+        <button class="btn-icon" @click="$emit('refresh')">🔄</button>
       </div>
 
       <div v-if="domains.length === 0" class="empty-state">
@@ -45,7 +45,7 @@
               <span :class="['status-badge', domain.enabled ? 'enabled' : 'disabled']">
                 {{ domain.enabled ? '✅ Active' : '❌ Disabled' }}
               </span>
-              <button @click="openEditModal(domain)" class="btn-edit" title="Edit Domain">
+              <button class="btn-edit" title="Edit Domain" @click="openEditModal(domain)">
                 ✏️
               </button>
             </div>
@@ -67,7 +67,7 @@
           </div>
 
           <div class="domain-dns">
-            <button @click="domain.showDNS = !domain.showDNS" class="btn-dns">
+            <button class="btn-dns" @click="domain.showDNS = !domain.showDNS">
               {{ domain.showDNS ? '▼' : '▶' }} DNS Records
             </button>
             
@@ -103,10 +103,10 @@
       <div class="modal-content" @click.stop>
         <div class="modal-header">
           <h3>✏️ Edit Domain: {{ editingDomain.domain }}</h3>
-          <button @click="closeEditModal" class="btn-close">✕</button>
+          <button class="btn-close" @click="closeEditModal">✕</button>
         </div>
         
-        <form @submit.prevent="handleEdit" class="edit-form">
+        <form class="edit-form" @submit.prevent="handleEdit">
           <div class="form-group">
             <label>Description</label>
             <input
@@ -129,7 +129,7 @@
           </div>
           
           <div class="modal-footer">
-            <button type="button" @click="closeEditModal" class="btn-cancel">
+            <button type="button" class="btn-cancel" @click="closeEditModal">
               Cancel
             </button>
             <button type="submit" class="btn-save">

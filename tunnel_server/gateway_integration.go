@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 	"strconv"
-	"strings"
 	"time"
 
 	"redock/api_gateway"
@@ -12,6 +11,7 @@ import (
 
 const (
 	gatewayServicePrefix    = "tunnel-s-"
+	gatewayUpstreamPrefix   = "tunnel-up-"
 	gatewayRoutePrefix      = "tunnel-r-"
 	gatewayUDPServicePrefix = "tunnel-su-"
 	gatewayUDPRoutePrefix   = "tunnel-u-"
@@ -40,6 +40,9 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	if cfg.Services == nil {
 		cfg.Services = []api_gateway.Service{}
 	}
+	if cfg.Upstreams == nil {
+		cfg.Upstreams = []api_gateway.Upstream{}
+	}
 	if cfg.Routes == nil {
 		cfg.Routes = []api_gateway.Route{}
 	}
@@ -52,7 +55,7 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 	// Gateway must be enabled so UpdateConfig restarts it and StartAll() actually starts listeners.
 	cfg.Enabled = true
 
-	// HTTP/HTTPS: Service + Route (backend 127.0.0.1:internalHttpPort; 0.0.0.0:d.Port gateway TCP/UDP için serbest, PORTS.md)
+	// HTTP/HTTPS: Service + Upstream (single target) + Route (backend 127.0.0.1:internalHttpPort; 0.0.0.0:d.Port gateway TCP/UDP için serbest, PORTS.md)
 	if needHTTP {
 		svc := api_gateway.Service{
 			ID:       gatewayServicePrefix + idStr,
@@ -62,19 +65,29 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 			Protocol: "http",
 			Enabled:  true,
 		}
+		upstream := api_gateway.Upstream{
+			ID:       gatewayUpstreamPrefix + idStr,
+			Name:     "tunnel:" + d.FullDomain,
+			Strategy: api_gateway.StrategyRoundRobin,
+			Targets:  []api_gateway.UpstreamTarget{{ServiceID: svc.ID, Weight: 1}},
+			Enabled:  true,
+		}
 		route := api_gateway.Route{
-			ID:        gatewayRoutePrefix + idStr,
-			Name:      "tunnel:" + d.FullDomain,
-			ServiceID: svc.ID,
-			Hosts:     []string{d.FullDomain},
-			Paths:     []string{"/"},
-			Priority:  100,
-			StripPath: false,
-			Enabled:   true,
+			ID:          gatewayRoutePrefix + idStr,
+			Name:        "tunnel:" + d.FullDomain,
+			UpstreamID:  upstream.ID,
+			Hosts:       []string{d.FullDomain},
+			Paths:       []string{"/"},
+			Priority:    100,
+			StripPath:   false,
+			LetsEncrypt: true,
+			Enabled:     true,
 		}
 		cfg.Services = append(cfg.Services, svc)
+		cfg.Upstreams = append(cfg.Upstreams, upstream)
 		cfg.Routes = append(cfg.Routes, route)
 		d.GatewayServiceID = svc.ID
+		d.GatewayUpstreamID = upstream.ID
 		d.GatewayRouteID = route.ID
 	}
 
@@ -144,45 +157,22 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 
 	gw.StartAll()
 
-	// If Let's Encrypt is enabled, add domain to list and request certificate in background so the API response is not blocked (avoids 502/timeout)
+	// The HTTP route was created with LetsEncrypt=true, so its host is already
+	// part of the cert domain set. Request the certificate in the background so
+	// the API response is not blocked (avoids 502/timeout).
 	if needHTTP {
-		go addTunnelDomainToLetsEncrypt(gw, d.FullDomain)
+		go requestTunnelCertificate(gw, d.FullDomain)
 	}
 
 	return nil
 }
 
-// addTunnelDomainToLetsEncrypt adds fullDomain to the gateway's Let's Encrypt domain list (if not already present) and requests a new certificate (one bulk SAN request for all domains).
-func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
+// requestTunnelCertificate waits for the gateway to be serving HTTP-01 and then
+// re-issues the certificate, which now covers all Let's Encrypt routes including
+// the tunnel route just added.
+func requestTunnelCertificate(gw *api_gateway.Gateway, fullDomain string) {
 	cfg := gw.GetConfig()
 	if cfg == nil || cfg.LetsEncrypt == nil || !cfg.LetsEncrypt.Enabled {
-		return
-	}
-	fullDomain = strings.TrimSpace(fullDomain)
-	if fullDomain == "" {
-		return
-	}
-	for _, d := range cfg.LetsEncrypt.Domains {
-		if strings.TrimSpace(d) == fullDomain {
-			return
-		}
-	}
-	domains := make([]string, 0, len(cfg.LetsEncrypt.Domains)+1)
-	domains = append(domains, cfg.LetsEncrypt.Domains...)
-	domains = append(domains, fullDomain)
-	leCopy := &api_gateway.LetsEncryptConfig{
-		Enabled:          cfg.LetsEncrypt.Enabled,
-		Email:            cfg.LetsEncrypt.Email,
-		Domains:          domains,
-		Staging:          cfg.LetsEncrypt.Staging,
-		AutoRenew:        cfg.LetsEncrypt.AutoRenew,
-		RenewBeforeDays:  cfg.LetsEncrypt.RenewBeforeDays,
-		LastRenewAt:      cfg.LetsEncrypt.LastRenewAt,
-		ExpiresAt:        cfg.LetsEncrypt.ExpiresAt,
-		CertificateReady: cfg.LetsEncrypt.CertificateReady,
-	}
-	if err := gw.ConfigureLetsEncrypt(leCopy); err != nil {
-		log.Printf("tunnel_server: add domain to Let's Encrypt config: %v", err)
 		return
 	}
 	// Wait for gateway to be running before ACME HTTP-01 (with timeout to avoid spinning forever)
@@ -197,53 +187,12 @@ func addTunnelDomainToLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
 		time.Sleep(pollInterval)
 	}
 
-	log.Println("tunnel_server: waiting for 15 seconds")
 	time.Sleep(15 * time.Second)
-	log.Println("tunnel_server: 15 seconds passed")
-	// Request certificate for full domain list (one SAN cert: tls.crt / tls.key)
-	if err := gw.RequestCertificateWithConfig(leCopy); err != nil {
-		log.Printf("tunnel_server: request certificate for %s (full list): %v", fullDomain, err)
+	if err := gw.RequestCertificate(); err != nil {
+		log.Printf("tunnel_server: request certificate for %s: %v", fullDomain, err)
 		return
 	}
 	log.Printf("tunnel_server: Let's Encrypt certificate updated to include %s", fullDomain)
-}
-
-// removeTunnelDomainFromLetsEncrypt removes fullDomain from the gateway's Let's Encrypt domain list.
-// The current certificate is not re-issued; the domain is dropped from the list so the next renewal excludes it.
-func removeTunnelDomainFromLetsEncrypt(gw *api_gateway.Gateway, fullDomain string) {
-	cfg := gw.GetConfig()
-	if cfg == nil || cfg.LetsEncrypt == nil || !cfg.LetsEncrypt.Enabled {
-		return
-	}
-	fullDomain = strings.TrimSpace(fullDomain)
-	if fullDomain == "" {
-		return
-	}
-	var newDomains []string
-	for _, d := range cfg.LetsEncrypt.Domains {
-		if strings.TrimSpace(d) != fullDomain {
-			newDomains = append(newDomains, d)
-		}
-	}
-	if len(newDomains) == len(cfg.LetsEncrypt.Domains) {
-		return
-	}
-	leCopy := &api_gateway.LetsEncryptConfig{
-		Enabled:          cfg.LetsEncrypt.Enabled,
-		Email:            cfg.LetsEncrypt.Email,
-		Domains:          newDomains,
-		Staging:          cfg.LetsEncrypt.Staging,
-		AutoRenew:        cfg.LetsEncrypt.AutoRenew,
-		RenewBeforeDays:  cfg.LetsEncrypt.RenewBeforeDays,
-		LastRenewAt:      cfg.LetsEncrypt.LastRenewAt,
-		ExpiresAt:        cfg.LetsEncrypt.ExpiresAt,
-		CertificateReady: cfg.LetsEncrypt.CertificateReady,
-	}
-	if err := gw.ConfigureLetsEncrypt(leCopy); err != nil {
-		log.Printf("tunnel_server: remove domain from Let's Encrypt config: %v", err)
-		return
-	}
-	log.Printf("tunnel_server: %s removed from Let's Encrypt domain list", fullDomain)
 }
 
 // SetTunnelRouteHostRewrite updates the HTTP route's HostRewrite for the tunnel domain (only for http/https). Empty string clears the override.
@@ -286,10 +235,8 @@ func RemoveTunnelDomainFromGateway(d *TunnelDomain) error {
 	if gw == nil {
 		return nil
 	}
-	// Remove this HTTP(S) domain from Let's Encrypt list so next renewal doesn't include it
-	if d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all" {
-		removeTunnelDomainFromLetsEncrypt(gw, d.FullDomain)
-	}
+	// The HTTP route is deleted below; since cert domains derive from routes,
+	// the host drops out of the certificate on the next issuance automatically.
 	var errs []error
 	// TCP route/service (tcp, tcp+udp)
 	if d.GatewayTCPRouteID != "" {
@@ -320,6 +267,19 @@ func RemoveTunnelDomainFromGateway(d *TunnelDomain) error {
 		if err := gw.DeleteRoute(d.GatewayRouteID); err != nil {
 			log.Printf("tunnel_server: DeleteRoute %s: %v", d.GatewayRouteID, err)
 			errs = append(errs, err)
+		}
+	}
+	// Pre-migration domains stored only GatewayServiceID; their HTTP route was
+	// auto-bound to "auto-<serviceID>" during config migration. Try to delete
+	// that derived upstream too so we don't leak orphans.
+	upstreamToDelete := d.GatewayUpstreamID
+	if upstreamToDelete == "" && d.GatewayServiceID != "" && d.GatewayRouteID != "" {
+		upstreamToDelete = "auto-" + d.GatewayServiceID
+	}
+	if upstreamToDelete != "" {
+		if err := gw.DeleteUpstream(upstreamToDelete); err != nil {
+			// Non-fatal: upstream may have been removed manually or never existed.
+			log.Printf("tunnel_server: DeleteUpstream %s: %v", upstreamToDelete, err)
 		}
 	}
 	if d.GatewayServiceID != "" {

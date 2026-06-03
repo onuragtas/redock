@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -321,32 +322,128 @@ func (g *Gateway) RequestCertificate() error {
 	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
 		return errors.New("Let's Encrypt is not enabled")
 	}
-	return g.requestCertificateWithLEConfig(config.LetsEncrypt)
-}
-
-// RequestCertificateWithConfig requests a certificate using the given LetsEncrypt config (domain list).
-// Use this when you have just updated the domain list in memory so the ACME request uses the exact list provided.
-func (g *Gateway) RequestCertificateWithConfig(leConfig *LetsEncryptConfig) error {
-	if leConfig == nil || !leConfig.Enabled {
-		return errors.New("Let's Encrypt is not enabled")
+	// Single source of truth: the certificate SAN list is the hosts of every
+	// enabled route that opted into Let's Encrypt. Nothing is stored separately.
+	domains := g.collectLetsEncryptDomains()
+	if len(domains) == 0 {
+		return errors.New("no domains for Let's Encrypt; enable it on a route that has a host set")
 	}
-	return g.requestCertificateWithLEConfig(leConfig)
+	return g.requestCertificateWithLEConfig(config.LetsEncrypt, domains)
 }
 
-func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) error {
-	if len(leConfig.Domains) == 0 {
+// collectLetsEncryptDomains returns the unique, non-wildcard hosts of every
+// enabled route that opted into Let's Encrypt. This is the only source of cert
+// domains; wildcard hosts are skipped because HTTP-01 cannot validate them.
+func (g *Gateway) collectLetsEncryptDomains() []string {
+	config := g.GetConfig()
+	seen := make(map[string]bool)
+	domains := make([]string, 0)
+	for _, route := range config.Routes {
+		if !route.LetsEncrypt || !route.Enabled {
+			continue
+		}
+		for _, h := range route.Hosts {
+			h = strings.TrimSpace(h)
+			if h == "" || seen[h] || strings.Contains(h, "*") {
+				continue
+			}
+			seen[h] = true
+			domains = append(domains, h)
+		}
+	}
+	return domains
+}
+
+// certCoversDomains reports whether the on-disk certificate already includes
+// every domain in want as a SAN. Used to skip redundant ACME requests.
+func (g *Gateway) certCoversDomains(want []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	certPath := g.GetConfig().TLSCertFile
+	if certPath == "" {
+		return false
+	}
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	have := make(map[string]bool, len(cert.DNSNames))
+	for _, d := range cert.DNSNames {
+		have[strings.ToLower(strings.TrimSpace(d))] = true
+	}
+	for _, d := range want {
+		if !have[strings.ToLower(strings.TrimSpace(d))] {
+			return false
+		}
+	}
+	return true
+}
+
+// ReissueCertificateIfNeeded re-issues the certificate in the background when a
+// route's Let's Encrypt settings change introduce a host the current cert does
+// not yet cover. It is a no-op when Let's Encrypt is disabled, there are no
+// domains, the cert already covers them, or another re-issue is already running.
+// Removed domains are not actively dropped here (the cert keeps the extra SAN
+// until the next renewal) to stay within ACME rate limits.
+func (g *Gateway) ReissueCertificateIfNeeded() {
+	config := g.GetConfig()
+	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
+		return
+	}
+	want := g.collectLetsEncryptDomains()
+	if len(want) == 0 || g.certCoversDomains(want) {
+		return
+	}
+	if !atomic.CompareAndSwapInt32(&g.certReissuing, 0, 1) {
+		return // a re-issue is already in flight
+	}
+	go func() {
+		defer atomic.StoreInt32(&g.certReissuing, 0)
+
+		// Wait for the gateway to be serving so the ACME HTTP-01 challenge can be answered.
+		const pollInterval = 200 * time.Millisecond
+		const maxWait = 15 * time.Second
+		deadline := time.Now().Add(maxWait)
+		for !g.IsRunning() {
+			if time.Now().After(deadline) {
+				log.Printf("API Gateway: gateway not running, skipping auto certificate re-issue for %v", want)
+				return
+			}
+			time.Sleep(pollInterval)
+		}
+		// Small settle delay so freshly added routes/DNS are reachable.
+		time.Sleep(3 * time.Second)
+
+		log.Printf("API Gateway: route SSL change detected, re-issuing certificate for %v", want)
+		if err := g.RequestCertificate(); err != nil {
+			log.Printf("API Gateway: auto certificate re-issue failed: %v", err)
+		}
+	}()
+}
+
+func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig, domains []string) error {
+	if len(domains) == 0 {
 		return errors.New("no domains configured for Let's Encrypt")
 	}
 	if leConfig.Email == "" {
 		return errors.New("email is required for Let's Encrypt")
 	}
 
-	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v (production)", leConfig.Domains)
+	log.Printf("API Gateway: Requesting Let's Encrypt certificate for domains: %v (production)", domains)
 
 	certPath := filepath.Join(g.workDir, "data", "tls.crt")
 	keyPath := filepath.Join(g.workDir, "data", "tls.key")
 
-	if err := obtainCertificateViaACME(g.workDir, leConfig, certPath, keyPath); err != nil {
+	if err := obtainCertificateViaACME(g.workDir, leConfig, domains, certPath, keyPath); err != nil {
 		return fmt.Errorf("Let's Encrypt: %w", err)
 	}
 
@@ -380,7 +477,7 @@ func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig) er
 
 // obtainCertificateViaACME runs the ACME flow (HTTP-01) and writes cert and key to the given paths.
 // Always uses Let's Encrypt production; staging is no longer configurable.
-func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, keyPath string) error {
+func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, wantDomains []string, certPath, keyPath string) error {
 	dirURL := acme.LetsEncryptURL
 
 	accountKey, err := loadOrCreateACMEAccountKey(workDir)
@@ -405,8 +502,8 @@ func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, certPath, 
 		return fmt.Errorf("register: %w", err)
 	}
 
-	domains := make([]string, 0, len(cfg.Domains))
-	for _, d := range cfg.Domains {
+	domains := make([]string, 0, len(wantDomains))
+	for _, d := range wantDomains {
 		d = strings.TrimSpace(d)
 		if d != "" && !strings.Contains(d, "*") {
 			domains = append(domains, d)
@@ -629,9 +726,12 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 		"certificate_ready": false,
 	}
 
+	// Cert domains come solely from routes with Let's Encrypt enabled.
+	leDomains := g.collectLetsEncryptDomains()
+	info["lets_encrypt_domains"] = leDomains
+
 	if config.LetsEncrypt != nil {
 		info["lets_encrypt_email"] = config.LetsEncrypt.Email
-		info["lets_encrypt_domains"] = config.LetsEncrypt.Domains
 		info["lets_encrypt_staging"] = config.LetsEncrypt.Staging
 		info["auto_renew"] = config.LetsEncrypt.AutoRenew
 		info["renew_before_days"] = config.LetsEncrypt.RenewBeforeDays
@@ -656,33 +756,12 @@ func (g *Gateway) GetCertificateInfo() map[string]interface{} {
 			}
 		}
 	}
-	// If SAN was not set from cert file, show configured domains so UI stays in sync (e.g. after adding tunnel domain, before cert is re-issued)
-	if _, set := info["cert_dns_names"]; !set && config.LetsEncrypt != nil && len(config.LetsEncrypt.Domains) > 0 {
-		info["cert_dns_names"] = config.LetsEncrypt.Domains
+	// If SAN was not set from cert file, show the route-derived domains so the UI stays in sync (e.g. after enabling LE on a route, before cert is re-issued)
+	if _, set := info["cert_dns_names"]; !set && len(leDomains) > 0 {
+		info["cert_dns_names"] = leDomains
 	}
 
 	return info
-}
-
-// ConfigureLetsEncrypt updates Let's Encrypt configuration
-func (g *Gateway) ConfigureLetsEncrypt(config *LetsEncryptConfig) error {
-	g.mu.Lock()
-	g.config.LetsEncrypt = config
-	g.mu.Unlock()
-
-	if err := g.SaveConfig(); err != nil {
-		return err
-	}
-
-	// Start or stop renewer based on config
-	renewer := GetCertificateRenewer(g)
-	if config.Enabled && config.AutoRenew {
-		renewer.Start()
-	} else {
-		renewer.Stop()
-	}
-
-	return nil
 }
 
 // HandleACMEChallenge handles ACME HTTP-01 challenges

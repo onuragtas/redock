@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"redock/pkg/pathutil"
 	"redock/pkg/security"
 	"redock/platform/memory"
 	"strings"
@@ -116,6 +117,17 @@ mailbox_list_index = no
 		memory.Create[*EmailServerConfig](db, "email_server_configs", m.config)
 	} else {
 		m.config = configs[0]
+		// Cross-machine restore: persisted absolute paths still reference
+		// the source host's home. Rewrite the docker-environment prefix to
+		// the running user's workDir so cert/data/log files resolve.
+		// m.dataPath is "<workDir>/data/email", so the workDir is two
+		// levels up.
+		workDir := filepath.Dir(filepath.Dir(m.dataPath))
+		if m.normalizeConfigPaths(workDir) {
+			if err := memory.Update[*EmailServerConfig](db, "email_server_configs", m.config); err != nil {
+				log.Printf("email_server: failed to persist normalized paths: %v", err)
+			}
+		}
 	}
 	
 	m.restorePasswordCache()
@@ -129,6 +141,28 @@ mailbox_list_index = no
 	}
 	
 	return nil
+}
+
+// normalizeConfigPaths rewrites docker-environment-rooted absolute paths in
+// the loaded EmailServerConfig so they match the running user's workDir.
+// Returns true if any field changed; idempotent on already-correct paths.
+func (m *EmailManager) normalizeConfigPaths(workDir string) bool {
+	if m.config == nil || workDir == "" {
+		return false
+	}
+	changed := false
+	rewrite := func(p *string) {
+		if v := pathutil.NormalizeWorkDirPath(*p, workDir); v != *p {
+			*p = v
+			changed = true
+		}
+	}
+	rewrite(&m.config.SSLCertPath)
+	rewrite(&m.config.SSLKeyPath)
+	rewrite(&m.config.DataPath)
+	rewrite(&m.config.ConfigPath)
+	rewrite(&m.config.LogPath)
+	return changed
 }
 
 func (m *EmailManager) createDefaultConfig() *EmailServerConfig {

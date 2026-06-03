@@ -35,6 +35,7 @@ require (
 )
 
 require (
+	github.com/cretz/bine v0.2.0 // indirect
 	github.com/onuragtas/go-requests v1.0.6 // indirect
 	github.com/vishvananda/netlink v1.3.0 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect

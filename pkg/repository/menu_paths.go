@@ -22,22 +22,24 @@ var AllMenuItems = []MenuItem{
 	{Path: "/php-xdebug-adapter", Name: "PHP XDebug", Icon: "mdiBugCheck"},
 	{Path: "/ip_alias", Name: "IP Alias", Icon: "mdiNetworkOutline"},
 	{Path: "/api-gateway", Name: "API Gateway", Icon: "mdiNetworkOutline"},
+	{Path: "/onion-services", Name: "Onion Services", Icon: "mdiIncognito"},
 	{Path: "/dns-server", Name: "DNS Server", Icon: "mdiDns"},
 	{Path: "/vpn-server", Name: "VPN Server", Icon: "mdiServerNetwork"},
 	{Path: "/email-server", Name: "Email Server", Icon: "mdiEmail"},
 	{Path: "/cloudflare", Name: "Cloudflare", Icon: "mdiCloud"},
 	{Path: "/tunnel-proxy-server", Name: "Tunnel Proxy Server", Icon: "mdiServerNetwork"},
 	{Path: "/users", Name: "Users", Icon: "mdiAccountGroup"},
+	{Path: "/backups", Name: "Backups", Icon: "mdiArchive"},
 	{Path: "/updates", Name: "Updates", Icon: "mdiDownload"},
 }
 
 // AllMenuPaths path listesi (mevcut kullanım için).
 var AllMenuPaths = []string{
 	"/", "/deployment", "/setup_environment", "/devenv", "/container_settings",
-	"/api-gateway", "/dns-server", "/vpn-server", "/email-server", "/cloudflare",
+	"/api-gateway", "/onion-services", "/dns-server", "/vpn-server", "/email-server", "/cloudflare",
 	"/local-proxy", "/exec", "/tunnel-proxy-server", "/tunnel-proxy-client",
 	"/virtual-hosts", "/saved-commands", "/php-xdebug-adapter", "/updates",
-	"/users", "/ip_alias",
+	"/users", "/ip_alias", "/backups",
 }
 
 // DefaultUserMenuPaths user rolü için varsayılan menüler (AllowedMenus boşsa).

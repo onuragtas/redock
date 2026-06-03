@@ -19,6 +19,7 @@ import {
   mdiHeart,
   mdiHeartPulse,
   mdiLock,
+  mdiMagnify,
   mdiMessageText,
   mdiPencil,
   mdiPlay,
@@ -27,6 +28,7 @@ import {
   mdiRouter,
   mdiServer,
   mdiShield,
+  mdiSourceBranch,
   mdiSpeedometer,
   mdiStop,
   mdiSync,
@@ -50,7 +52,14 @@ const config = ref({
   enabled: false
 })
 const services = ref([])
+const upstreams = ref([])
 const routes = ref([])
+const routeSearch = ref('')
+const routeStatusFilter = ref('all') // all | enabled | disabled
+const serviceSearch = ref('')
+const serviceStatusFilter = ref('all')
+const upstreamSearch = ref('')
+const upstreamStatusFilter = ref('all')
 const serviceHealth = ref([])
 const certificateInfo = ref({})
 const renewerStatus = ref({ running: false })
@@ -66,13 +75,55 @@ const isAddServiceModalActive = ref(false)
 const isEditServiceModalActive = ref(false)
 const isAddRouteModalActive = ref(false)
 const isEditRouteModalActive = ref(false)
+const isAddUpstreamModalActive = ref(false)
+const isEditUpstreamModalActive = ref(false)
 const isDeleteModalActive = ref(false)
-const isLetsEncryptModalActive = ref(false)
 const isConfigModalActive = ref(false)
 const isObservabilityModalActive = ref(false)
 const deleteTarget = ref({ type: '', item: null })
 const editingService = ref(null)
 const editingRoute = ref(null)
+const editingUpstream = ref(null)
+
+// FormControl select stores the WHOLE option object as v-model value (see
+// FormControl.vue :value="option"), so dropdown-bound fields are kept as
+// {value,label} pairs in form state and unwrapped to plain strings in
+// buildUpstreamPayload.
+const strategyOptions = [
+  { value: 'round_robin', label: 'Round Robin' },
+  { value: 'weighted',    label: 'Weighted' },
+  { value: 'random',      label: 'Random' },
+  { value: 'least_conn',  label: 'Least Connections' }
+]
+const stickyModeOptions = [
+  { value: 'ip_hash', label: 'IP hash' },
+  { value: 'cookie',  label: 'Cookie' },
+  { value: 'header',  label: 'Header' }
+]
+const findOption = (opts, val) => opts.find(o => o.value === val) || opts[0]
+// Wrap a service ID into the {value,label} option shape FormControl expects;
+// falls back to the raw id if the service isn't (yet) in the loaded list.
+const findServiceOption = (id) => {
+  if (!id) return ''
+  const s = services.value.find(x => x.id === id)
+  return s ? { value: s.id, label: s.name || s.id } : { value: id, label: id }
+}
+
+const createDefaultUpstream = () => ({
+  name: '',
+  strategy: findOption(strategyOptions, 'round_robin'),
+  enabled: true,
+  sticky_enabled: false,
+  sticky: {
+    mode: findOption(stickyModeOptions, 'ip_hash'),
+    cookie_name: 'redock_lb',
+    header_name: '',
+    ttl_seconds: 0
+  },
+  targets: [{ service_id: '', weight: 1 }]
+})
+
+const newUpstream = ref(createDefaultUpstream())
 
 // Form data
 const newService = ref({
@@ -85,7 +136,7 @@ const newService = ref({
   enabled: true,
   health_check: {
     path: '/health',
-    interval: 30,
+    interval: 5,
     timeout: 5,
     healthy_threshold: 2,
     unhealthy_threshold: 3
@@ -94,7 +145,7 @@ const newService = ref({
 
 const newRoute = ref({
   name: '',
-  service_id: '',
+  upstream_id: '',
   paths: '',
   methods: '',
   hosts: '',
@@ -102,13 +153,18 @@ const newRoute = ref({
   preserve_host: false,
   host_rewrite: '',
   priority: 0,
+  timeout: 0,
   rate_limit_enabled: false,
   rate_limit_requests: 100,
   rate_limit_window: 60,
   auth_required: false,
   auth_type: '',
   auth_headers: [],
+  basic_auth_users: [],
+  basic_auth_realm: 'Restricted',
+  jwt: { secret: '', issuer: '', audience: '' },
   observability_enabled: true,
+  lets_encrypt: false,
   enabled: true,
   cors: {
     enabled: false,
@@ -120,14 +176,6 @@ const newRoute = ref({
     max_age: 86400
   },
   response_headers: []
-})
-
-const letsEncryptConfig = ref({
-  enabled: false,
-  email: '',
-  domains: '',
-  auto_renew: true,
-  renew_before_days: 30
 })
 
 const createDefaultLokiConfig = () => ({
@@ -181,6 +229,20 @@ const createDefaultClientSecurityConfig = () => ({
   manual_blocks: []
 })
 
+const createDefaultTimeoutsConfig = () => ({
+  server_read_seconds: 30,
+  server_write_seconds: 30,
+  server_idle_seconds: 60,
+  shutdown_seconds: 10,
+  request_timeout_seconds: 0,
+  upstream_dial_seconds: 30,
+  upstream_keep_alive_seconds: 30,
+  upstream_idle_conn_seconds: 90,
+  tls_handshake_seconds: 10,
+  expect_continue_seconds: 1,
+  health_check_seconds: 5
+})
+
 const normalizeObservabilityConfig = (cfg = {}) => {
   const base = createDefaultObservabilityConfig()
   return {
@@ -223,7 +285,14 @@ const gatewayConfig = ref({
   https_port: 443,
   https_enabled: false,
   access_log_enabled: true,
-  client_security: createDefaultClientSecurityConfig()
+  client_security: createDefaultClientSecurityConfig(),
+  timeouts: createDefaultTimeoutsConfig(),
+  lets_encrypt: {
+    enabled: false,
+    email: '',
+    auto_renew: true,
+    renew_before_days: 30
+  }
 })
 
 const isSuccessfulResponse = (response) => {
@@ -268,6 +337,73 @@ const routeMap = computed(() => {
   })
   return map
 })
+// Single source of truth for the upstream dropdown's options. Both the
+// add-route and edit-route modals bind to it so that the v-model object
+// reference is preserved across init/update — Vue's <select> v-model does
+// strict equality, so a freshly-built {value,label} pair would never match
+// the array's entries even if they encode the same upstream.
+const upstreamOptions = computed(() =>
+  upstreams.value.map(u => ({
+    value: u.id,
+    label: (u.name || u.id) + ' — ' + (u.strategy || 'round_robin')
+  }))
+)
+const findUpstreamOption = (id) => {
+  if (!id) return null
+  return upstreamOptions.value.find(o => o.value === id) || { value: id, label: id }
+}
+
+// Same shape as filteredRoutes/filteredServices: `enabled` boolean +
+// substring match across the visible columns. Kept as a single helper so
+// search semantics stay consistent across the three tabs.
+const matchStatus = (enabled, status) => {
+  if (status === 'enabled') return enabled !== false
+  if (status === 'disabled') return enabled === false
+  return true
+}
+const matchSubstring = (q, parts) => {
+  if (!q) return true
+  return parts.filter(Boolean).join(' ').toLowerCase().includes(q.trim().toLowerCase())
+}
+
+const filteredServices = computed(() =>
+  services.value.filter(s =>
+    matchStatus(s.enabled, serviceStatusFilter.value) &&
+    matchSubstring(serviceSearch.value, [s.name, s.host, String(s.port || ''), s.protocol, s.id])
+  )
+)
+
+const filteredUpstreams = computed(() =>
+  upstreams.value.filter(u =>
+    matchStatus(u.enabled, upstreamStatusFilter.value) &&
+    matchSubstring(upstreamSearch.value, [
+      u.name, u.id, u.strategy,
+      ...(Array.isArray(u.targets) ? u.targets.map(t => getServiceName(t.service_id)) : [])
+    ])
+  )
+)
+
+// Filtered + sorted route list driven by the routes-tab search box and
+// status chips. Matches against name, paths, hosts, and the resolved
+// upstream name (so users can search by backend pool too).
+const filteredRoutes = computed(() => {
+  const q = routeSearch.value.trim().toLowerCase()
+  const status = routeStatusFilter.value
+  return routes.value.filter(r => {
+    if (status === 'enabled' && !r.enabled) return false
+    if (status === 'disabled' && r.enabled) return false
+    if (!q) return true
+    const haystack = [
+      r.name || '',
+      ...(Array.isArray(r.paths) ? r.paths : []),
+      ...(Array.isArray(r.hosts) ? r.hosts : []),
+      r.host_rewrite || '',
+      getUpstreamName(r.upstream_id)
+    ].join(' ').toLowerCase()
+    return haystack.includes(q)
+  })
+})
+
 const topClientDisplayOptions = [10, 20, 50, 100, 250, 500, 1000]
 const topClientDisplayLimit = ref(10)
 const allTopClients = computed(() => stats.value.top_clients || [])
@@ -288,23 +424,27 @@ const formatUptime = (seconds) => {
 const loadData = async () => {
   loading.value = true
   try {
-    const [statusRes, statsRes, servicesRes, routesRes, healthRes, certRes, renewerRes] = await Promise.all([
+    const [statusRes, statsRes, servicesRes, upstreamsRes, routesRes, healthRes, certRes, renewerRes, observabilityRes] = await Promise.all([
       ApiService.apiGatewayStatus().catch(() => ({ data: { data: {} } })),
       ApiService.apiGatewayStats().catch(() => ({ data: { data: {} } })),
       ApiService.apiGatewayListServices().catch(() => ({ data: { data: [] } })),
+      ApiService.apiGatewayListUpstreams().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayListRoutes().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayHealth().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayCertificateInfo().catch(() => ({ data: { data: {} } })),
-      ApiService.apiGatewayRenewerStatus().catch(() => ({ data: { data: {} } }))
+      ApiService.apiGatewayRenewerStatus().catch(() => ({ data: { data: {} } })),
+      ApiService.apiGatewayGetObservabilityStatus().catch(() => ({ data: { data: {} } }))
     ])
 
     status.value = statusRes.data.data || {}
     stats.value = statsRes.data.data || {}
     services.value = servicesRes.data.data || []
+    upstreams.value = upstreamsRes.data.data || []
     routes.value = routesRes.data.data || []
     serviceHealth.value = healthRes.data.data || []
     certificateInfo.value = certRes.data.data || {}
     renewerStatus.value = renewerRes.data.data || {}
+    observabilityConfig.value = normalizeObservabilityConfig(observabilityRes.data.data?.config || {})
   } catch (error) {
     console.error('Failed to load API Gateway data:', error)
   } finally {
@@ -341,7 +481,7 @@ const openAddServiceModal = () => {
     enabled: true,
     health_check: {
       path: '/health',
-      interval: 30,
+      interval: 5,
       timeout: 5,
       healthy_threshold: 2,
       unhealthy_threshold: 3
@@ -367,7 +507,7 @@ const openEditServiceModal = (service) => {
   if (!editingService.value.health_check) {
     editingService.value.health_check = {
       path: '/health',
-      interval: 30,
+      interval: 5,
       timeout: 5,
       healthy_threshold: 2,
       unhealthy_threshold: 3
@@ -391,7 +531,7 @@ const updateService = async () => {
 const openAddRouteModal = () => {
   newRoute.value = {
     name: '',
-    service_id: null,
+    upstream_id: null,
     paths: '',
     methods: '',
     hosts: '',
@@ -399,12 +539,16 @@ const openAddRouteModal = () => {
     preserve_host: false,
     host_rewrite: '',
     priority: 0,
+    timeout: 0,
     rate_limit_enabled: false,
     rate_limit_requests: 100,
     rate_limit_window: 60,
     auth_required: false,
     auth_type: '',
     auth_headers: [],
+    basic_auth_users: [],
+    basic_auth_realm: 'Restricted',
+    jwt: { secret: '', issuer: '', audience: '' },
     observability_enabled: true,
     enabled: true,
     cors: {
@@ -453,6 +597,32 @@ function buildAuthHeadersPayload(arr) {
   return out.length ? out : undefined
 }
 
+function buildBasicAuthUsersPayload(arr) {
+  if (!Array.isArray(arr)) return undefined
+  const out = []
+  for (const u of arr) {
+    const username = (u?.username != null ? String(u.username) : '').trim()
+    if (!username) continue
+    const password = u?.password != null ? String(u.password) : ''
+    const hash = u?.password_hash != null ? String(u.password_hash) : ''
+    const entry = { username }
+    if (password) entry.password = password
+    else if (hash) entry.password_hash = hash
+    out.push(entry)
+  }
+  return out.length ? out : undefined
+}
+
+function buildJWTPayload(j) {
+  if (!j) return undefined
+  const secret = j.secret != null ? String(j.secret).trim() : ''
+  if (!secret) return undefined
+  const out = { secret }
+  if (j.issuer && String(j.issuer).trim()) out.issuer = String(j.issuer).trim()
+  if (j.audience && String(j.audience).trim()) out.audience = String(j.audience).trim()
+  return out
+}
+
 function normalizeAuthType(v) {
   if (v == null) return ''
   if (typeof v === 'string') return v
@@ -468,11 +638,15 @@ const addRoute = async () => {
       paths: newRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: newRoute.value.methods ? newRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: newRoute.value.hosts ? newRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: newRoute.value.service_id?.value || newRoute.value.service_id,
+      upstream_id: newRoute.value.upstream_id?.value || newRoute.value.upstream_id,
       auth_type: authType,
+      lets_encrypt: newRoute.value.lets_encrypt === true,
       cors: buildCorsPayload(newRoute.value.cors),
       response_headers: buildResponseHeadersPayload(newRoute.value.response_headers),
-      auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(newRoute.value.auth_headers) : undefined,
+      basic_auth_users: authType === 'basic' ? buildBasicAuthUsersPayload(newRoute.value.basic_auth_users) : undefined,
+      basic_auth_realm: authType === 'basic' ? (newRoute.value.basic_auth_realm || 'Restricted') : undefined,
+      jwt: authType === 'jwt' ? buildJWTPayload(newRoute.value.jwt) : undefined
     }
     const response = await ApiService.apiGatewayAddRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -485,8 +659,7 @@ const addRoute = async () => {
 }
 
 const openEditRouteModal = (route) => {
-  const serviceId = route.service_id?.value || route.service_id
-  const serviceMatch = services.value.find(s => s.id === serviceId)
+  const upstreamId = route.upstream_id?.value || route.upstream_id
   const cors = route.cors
   const responseHeaders = route.response_headers && typeof route.response_headers === 'object'
     ? Object.entries(route.response_headers).map(([key, value]) => ({ key, value }))
@@ -494,6 +667,16 @@ const openEditRouteModal = (route) => {
   const authHeaders = Array.isArray(route.auth_headers)
     ? route.auth_headers.map(h => ({ key: h.key || h.Key || '', value: h.value != null ? String(h.value) : (h.Value != null ? String(h.Value) : '') }))
     : []
+  const basicUsers = Array.isArray(route.basic_auth_users)
+    ? route.basic_auth_users.map(u => ({
+        username: u.username || '',
+        password: '', // never round-trip; blank means "keep existing hash"
+        password_hash: u.password_hash || ''
+      }))
+    : []
+  const jwtCfg = route.jwt && typeof route.jwt === 'object'
+    ? { secret: route.jwt.secret || '', issuer: route.jwt.issuer || '', audience: route.jwt.audience || '' }
+    : { secret: '', issuer: '', audience: '' }
 
   editingRoute.value = {
     ...route,
@@ -503,11 +686,8 @@ const openEditRouteModal = (route) => {
     host_rewrite: route.host_rewrite || '',
     preserve_host: route.preserve_host === true,
     observability_enabled: route.observability_enabled !== false,
-    service_id: serviceMatch
-      ? { value: serviceMatch.id, label: serviceMatch.name }
-      : serviceId
-        ? { value: serviceId, label: route.service_name || serviceId }
-        : null,
+    lets_encrypt: route.lets_encrypt === true,
+    upstream_id: findUpstreamOption(upstreamId),
     cors: cors ? {
       enabled: !!cors.enabled,
       allow_origins: Array.isArray(cors.allow_origins) ? cors.allow_origins.join(', ') : (cors.allow_origins || ''),
@@ -518,7 +698,10 @@ const openEditRouteModal = (route) => {
       max_age: parseInt(cors.max_age, 10) || 0
     } : { enabled: false, allow_origins: '', allow_methods: '', allow_headers: '', expose_headers: '', allow_credentials: false, max_age: 0 },
     response_headers: responseHeaders,
-    auth_headers: authHeaders
+    auth_headers: authHeaders,
+    basic_auth_users: basicUsers,
+    basic_auth_realm: route.basic_auth_realm || 'Restricted',
+    jwt: jwtCfg
   }
   isEditRouteModalActive.value = true
 }
@@ -531,11 +714,15 @@ const updateRoute = async () => {
       paths: editingRoute.value.paths.split(',').map(p => p.trim()).filter(p => p),
       methods: editingRoute.value.methods ? editingRoute.value.methods.split(',').map(m => m.trim().toUpperCase()).filter(m => m) : [],
       hosts: editingRoute.value.hosts ? editingRoute.value.hosts.split(',').map(h => h.trim()).filter(h => h) : [],
-      service_id: editingRoute.value.service_id?.value || editingRoute.value.service_id,
+      upstream_id: editingRoute.value.upstream_id?.value || editingRoute.value.upstream_id,
       auth_type: authType,
+      lets_encrypt: editingRoute.value.lets_encrypt === true,
       cors: buildCorsPayload(editingRoute.value.cors),
       response_headers: buildResponseHeadersPayload(editingRoute.value.response_headers),
-      auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined
+      auth_headers: authType === 'header' ? buildAuthHeadersPayload(editingRoute.value.auth_headers) : undefined,
+      basic_auth_users: authType === 'basic' ? buildBasicAuthUsersPayload(editingRoute.value.basic_auth_users) : undefined,
+      basic_auth_realm: authType === 'basic' ? (editingRoute.value.basic_auth_realm || 'Restricted') : undefined,
+      jwt: authType === 'jwt' ? buildJWTPayload(editingRoute.value.jwt) : undefined
     }
     const response = await ApiService.apiGatewayUpdateRoute(routeData)
     if (isSuccessfulResponse(response)) {
@@ -558,6 +745,8 @@ const deleteItem = async () => {
       await ApiService.apiGatewayDeleteService({ id: deleteTarget.value.item.id })
     } else if (deleteTarget.value.type === 'route') {
       await ApiService.apiGatewayDeleteRoute({ id: deleteTarget.value.item.id })
+    } else if (deleteTarget.value.type === 'upstream') {
+      await ApiService.apiGatewayDeleteUpstream({ id: deleteTarget.value.item.id })
     }
     isDeleteModalActive.value = false
     await loadData()
@@ -566,31 +755,97 @@ const deleteItem = async () => {
   }
 }
 
-const openLetsEncryptModal = () => {
-  if (certificateInfo.value.lets_encrypt_email) {
-    letsEncryptConfig.value = {
-      enabled: certificateInfo.value.lets_encrypt || false,
-      email: certificateInfo.value.lets_encrypt_email || '',
-      domains: (certificateInfo.value.lets_encrypt_domains || []).join(', '),
-      auto_renew: certificateInfo.value.auto_renew !== false,
-      renew_before_days: certificateInfo.value.renew_before_days || 30
+const buildUpstreamPayload = (form) => {
+  // FormControl wraps select values as {value,label}; unwrap to the plain
+  // string the backend expects.
+  const unwrap = (v) => (v && typeof v === 'object' && 'value' in v) ? v.value : v
+  const payload = {
+    id: form.id,
+    name: form.name,
+    strategy: unwrap(form.strategy) || 'round_robin',
+    enabled: form.enabled !== false,
+    targets: (form.targets || [])
+      .map(t => ({
+        service_id: unwrap(t.service_id) || '',
+        weight: Number.isFinite(Number(t.weight)) && Number(t.weight) > 0 ? Math.round(Number(t.weight)) : 1
+      }))
+      .filter(t => t.service_id)
+  }
+  if (form.sticky_enabled && form.sticky?.mode) {
+    payload.sticky = {
+      mode: unwrap(form.sticky.mode),
+      cookie_name: form.sticky.cookie_name || '',
+      header_name: form.sticky.header_name || '',
+      ttl_seconds: Number.isFinite(Number(form.sticky.ttl_seconds)) ? Math.max(0, Math.round(Number(form.sticky.ttl_seconds))) : 0
     }
   }
-  isLetsEncryptModalActive.value = true
+  return payload
 }
 
-const saveLetsEncrypt = async () => {
+const openAddUpstreamModal = () => {
+  newUpstream.value = createDefaultUpstream()
+  isAddUpstreamModalActive.value = true
+}
+
+const addUpstream = async () => {
   try {
-    const config = {
-      ...letsEncryptConfig.value,
-      domains: letsEncryptConfig.value.domains.split(',').map(d => d.trim()).filter(d => d)
+    const response = await ApiService.apiGatewayAddUpstream(buildUpstreamPayload(newUpstream.value))
+    if (isSuccessfulResponse(response)) {
+      isAddUpstreamModalActive.value = false
+      await loadData()
     }
-    await ApiService.apiGatewayConfigureLetsEncrypt(config)
-    isLetsEncryptModalActive.value = false
-    await loadData()
   } catch (error) {
-    console.error('Failed to save Let\'s Encrypt config:', error)
+    console.error('Failed to add upstream:', error)
   }
+}
+
+const openEditUpstreamModal = (upstream) => {
+  editingUpstream.value = {
+    id: upstream.id,
+    name: upstream.name || '',
+    strategy: findOption(strategyOptions, upstream.strategy || 'round_robin'),
+    enabled: upstream.enabled !== false,
+    sticky_enabled: !!upstream.sticky,
+    sticky: upstream.sticky
+      ? {
+          mode: findOption(stickyModeOptions, upstream.sticky.mode || 'ip_hash'),
+          cookie_name: upstream.sticky.cookie_name || 'redock_lb',
+          header_name: upstream.sticky.header_name || '',
+          ttl_seconds: upstream.sticky.ttl_seconds || 0
+        }
+      : {
+          mode: findOption(stickyModeOptions, 'ip_hash'),
+          cookie_name: 'redock_lb',
+          header_name: '',
+          ttl_seconds: 0
+        },
+    targets: Array.isArray(upstream.targets) && upstream.targets.length
+      ? upstream.targets.map(t => ({ service_id: findServiceOption(t.service_id), weight: t.weight || 1 }))
+      : [{ service_id: '', weight: 1 }]
+  }
+  isEditUpstreamModalActive.value = true
+}
+
+const updateUpstream = async () => {
+  try {
+    const response = await ApiService.apiGatewayUpdateUpstream(buildUpstreamPayload(editingUpstream.value))
+    if (isSuccessfulResponse(response)) {
+      isEditUpstreamModalActive.value = false
+      await loadData()
+    }
+  } catch (error) {
+    console.error('Failed to update upstream:', error)
+  }
+}
+
+const addUpstreamTarget = (form) => {
+  if (!Array.isArray(form.targets)) form.targets = []
+  form.targets.push({ service_id: '', weight: 1 })
+}
+
+const removeUpstreamTarget = (form, idx) => {
+  form.targets.splice(idx, 1)
+  if (form.targets.length === 0) form.targets.push({ service_id: '', weight: 1 })
 }
 
 const requestCertificate = async () => {
@@ -629,12 +884,20 @@ const openConfigModal = async () => {
     if (!clientSecurity.top_client_limit || clientSecurity.top_client_limit < 1) {
       clientSecurity.top_client_limit = 1000
     }
+    const le = cfg.lets_encrypt || {}
     gatewayConfig.value = {
       http_port: cfg.http_port || 80,
       https_port: cfg.https_port || 443,
       https_enabled: cfg.https_enabled || false,
       access_log_enabled: cfg.access_log_enabled !== false,
-      client_security: clientSecurity
+      client_security: clientSecurity,
+      timeouts: { ...createDefaultTimeoutsConfig(), ...(cfg.timeouts || {}) },
+      lets_encrypt: {
+        enabled: le.enabled || false,
+        email: le.email || '',
+        auto_renew: le.auto_renew !== false,
+        renew_before_days: le.renew_before_days || 30
+      }
     }
     isConfigModalActive.value = true
   } catch (error) {
@@ -652,10 +915,30 @@ const saveConfig = async () => {
     const rawLimit = Number(clientSecurityPayload.top_client_limit)
     const boundedLimit = Math.min(1000, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 1000))
     clientSecurityPayload.top_client_limit = Math.round(boundedLimit)
+    const timeoutsPayload = {
+      ...(currentConfig.timeouts || {}),
+      ...((gatewayConfig.value && gatewayConfig.value.timeouts) || {})
+    }
+    Object.keys(timeoutsPayload).forEach(k => {
+      const n = Number(timeoutsPayload[k])
+      timeoutsPayload[k] = Number.isFinite(n) && n >= 0 ? Math.round(n) : 0
+    })
+    // Merge Let's Encrypt: keep runtime fields (domains, expiry, cert state) from
+    // the existing config, override only the account settings edited here.
+    const leForm = (gatewayConfig.value && gatewayConfig.value.lets_encrypt) || {}
+    const letsEncryptPayload = {
+      ...(currentConfig.lets_encrypt || {}),
+      enabled: !!leForm.enabled,
+      email: (leForm.email || '').trim(),
+      auto_renew: leForm.auto_renew !== false,
+      renew_before_days: Math.max(1, Number(leForm.renew_before_days) || 30)
+    }
     const updatedConfig = {
       ...currentConfig,
       ...gatewayConfig.value,
-      client_security: clientSecurityPayload
+      client_security: clientSecurityPayload,
+      timeouts: timeoutsPayload,
+      lets_encrypt: letsEncryptPayload
     }
     await ApiService.apiGatewayUpdateConfig(updatedConfig)
     isConfigModalActive.value = false
@@ -705,7 +988,13 @@ const getRouteName = (routeId) => {
 const getRouteServiceName = (routeId) => {
   const route = routeMap.value[routeId]
   if (!route) return '-'
-  return getServiceName(route.service_id)
+  return getUpstreamName(route.upstream_id)
+}
+
+const getUpstreamName = (upstreamId) => {
+  if (!upstreamId) return 'Unknown Upstream'
+  const u = upstreams.value.find(x => x.id === upstreamId)
+  return u ? (u.name || u.id) : upstreamId
 }
 
 const getHealthColor = (healthy) => {
@@ -891,7 +1180,7 @@ onUnmounted(() => {
     <div class="overflow-x-auto pb-px -mx-1 px-1">
       <div class="flex flex-nowrap gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-700">
         <button
-          v-for="tab in ['overview', 'services', 'routes', 'clients', 'certificates', 'observability']"
+          v-for="tab in ['overview', 'services', 'upstreams', 'routes', 'clients', 'certificates', 'observability']"
           :key="tab"
           :class="[
             'shrink-0 whitespace-nowrap px-4 sm:px-6 py-3 font-medium text-sm border-b-2 transition-colors capitalize',
@@ -974,15 +1263,48 @@ onUnmounted(() => {
         />
       </SectionTitleLineWithButton>
 
+      <div v-if="services.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <FormControl
+            v-model="serviceSearch"
+            placeholder="Search by name, host, port, protocol…"
+            :icon="mdiMagnify"
+          />
+        </div>
+        <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
+          <button
+            v-for="opt in [
+              { value: 'all',      label: 'All' },
+              { value: 'enabled',  label: 'Active' },
+              { value: 'disabled', label: 'Disabled' }
+            ]"
+            :key="opt.value"
+            type="button"
+            class="px-3 py-1.5 transition-colors"
+            :class="serviceStatusFilter === opt.value
+              ? 'bg-blue-500 text-white'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
+            @click="serviceStatusFilter = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500">{{ filteredServices.length }} / {{ services.length }}</span>
+      </div>
+
       <div v-if="services.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiServer" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500 mb-4">No services configured</p>
         <BaseButton label="Add Your First Service" :icon="mdiPlus" color="info" @click="openAddServiceModal" />
       </div>
 
+      <div v-else-if="filteredServices.length === 0" class="text-center py-12 text-slate-500">
+        No services match the current filter.
+      </div>
+
       <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
         <div
-          v-for="service in services"
+          v-for="service in filteredServices"
           :key="service.id"
           class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
         >
@@ -1011,6 +1333,105 @@ onUnmounted(() => {
               <BaseButton :icon="mdiPencil" color="info" small @click="openEditServiceModal(service)" />
               <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('service', service)" />
             </div>
+          </div>
+        </div>
+      </div>
+    </CardBox>
+
+    <!-- Upstreams Tab -->
+    <CardBox v-if="activeTab === 'upstreams'">
+      <SectionTitleLineWithButton :icon="mdiSourceBranch" title="Upstream Pools" main>
+        <BaseButton
+          label="Add Upstream"
+          :icon="mdiPlus"
+          color="info"
+          small
+          @click="openAddUpstreamModal"
+        />
+      </SectionTitleLineWithButton>
+
+      <p class="text-xs text-slate-500 mt-2">
+        An upstream is a pool of one or more services with a load-balancing strategy and optional session affinity.
+        Routes forward to upstreams.
+      </p>
+
+      <div v-if="upstreams.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <FormControl
+            v-model="upstreamSearch"
+            placeholder="Search by name, strategy, or target service…"
+            :icon="mdiMagnify"
+          />
+        </div>
+        <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
+          <button
+            v-for="opt in [
+              { value: 'all',      label: 'All' },
+              { value: 'enabled',  label: 'Active' },
+              { value: 'disabled', label: 'Disabled' }
+            ]"
+            :key="opt.value"
+            type="button"
+            class="px-3 py-1.5 transition-colors"
+            :class="upstreamStatusFilter === opt.value
+              ? 'bg-blue-500 text-white'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
+            @click="upstreamStatusFilter = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500">{{ filteredUpstreams.length }} / {{ upstreams.length }}</span>
+      </div>
+
+      <div v-if="upstreams.length === 0" class="text-center py-12">
+        <BaseIcon :path="mdiSourceBranch" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
+        <p class="text-slate-500 mb-4">No upstream pools configured</p>
+        <BaseButton label="Add Your First Upstream" :icon="mdiPlus" color="info" @click="openAddUpstreamModal" />
+      </div>
+
+      <div v-else-if="filteredUpstreams.length === 0" class="text-center py-12 text-slate-500">
+        No upstreams match the current filter.
+      </div>
+
+      <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
+        <div
+          v-for="upstream in filteredUpstreams"
+          :key="upstream.id"
+          class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
+        >
+          <div class="flex items-start justify-between">
+            <div>
+              <h3 class="font-semibold">{{ upstream.name || upstream.id }}</h3>
+              <p class="text-xs text-slate-500 break-all">{{ upstream.id }}</p>
+            </div>
+            <span
+              class="px-2 py-0.5 text-xs rounded"
+              :class="upstream.enabled
+                ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
+                : 'bg-slate-200 dark:bg-slate-700 text-slate-500'"
+            >
+              {{ upstream.enabled ? 'enabled' : 'disabled' }}
+            </span>
+          </div>
+          <div class="flex flex-wrap gap-2 mt-3 text-xs">
+            <span class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{{ upstream.strategy || 'round_robin' }}</span>
+            <span v-if="upstream.sticky" class="px-2 py-1 bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400 rounded">
+              sticky: {{ upstream.sticky.mode }}
+            </span>
+            <span class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">
+              {{ (upstream.targets || []).length }} target{{ (upstream.targets || []).length === 1 ? '' : 's' }}
+            </span>
+          </div>
+          <div class="mt-3 text-xs text-slate-600 dark:text-slate-400 space-y-1">
+            <div v-for="t in (upstream.targets || [])" :key="t.service_id" class="flex justify-between">
+              <span>{{ getServiceName(t.service_id) }}</span>
+              <span class="text-slate-400">weight {{ t.weight || 1 }}</span>
+            </div>
+          </div>
+          <div class="mt-3 flex justify-end gap-2">
+            <BaseButton :icon="mdiPencil" color="info" small @click="openEditUpstreamModal(upstream)" />
+            <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('upstream', upstream)" />
           </div>
         </div>
       </div>
@@ -1228,37 +1649,78 @@ onUnmounted(() => {
         />
       </SectionTitleLineWithButton>
 
+      <!-- Filter bar -->
+      <div v-if="routes.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
+        <div class="flex-1 min-w-[200px]">
+          <FormControl
+            v-model="routeSearch"
+            placeholder="Search by name, path, host, or upstream…"
+            :icon="mdiMagnify"
+          />
+        </div>
+        <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
+          <button
+            v-for="opt in [
+              { value: 'all',      label: 'All' },
+              { value: 'enabled',  label: 'Active' },
+              { value: 'disabled', label: 'Disabled' }
+            ]"
+            :key="opt.value"
+            type="button"
+            class="px-3 py-1.5 transition-colors"
+            :class="routeStatusFilter === opt.value
+              ? 'bg-blue-500 text-white'
+              : 'bg-white dark:bg-slate-800 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-700'"
+            @click="routeStatusFilter = opt.value"
+          >
+            {{ opt.label }}
+          </button>
+        </div>
+        <span class="text-xs text-slate-500">
+          {{ filteredRoutes.length }} / {{ routes.length }}
+        </span>
+      </div>
+
       <div v-if="routes.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
         <p class="text-slate-500 mb-4">No routes configured</p>
         <BaseButton label="Add Your First Route" :icon="mdiPlus" color="info" @click="openAddRouteModal" />
       </div>
 
-      <div v-else class="space-y-4 mt-4">
+      <div v-else-if="filteredRoutes.length === 0" class="text-center py-12 text-slate-500">
+        No routes match the current filter.
+      </div>
+
+      <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
         <div
-          v-for="route in routes"
+          v-for="route in filteredRoutes"
           :key="route.id"
-          class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl"
+          class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-xl flex flex-col"
         >
-          <div class="flex items-start justify-between">
-            <div>
-              <h3 class="font-semibold flex items-center gap-2">
-                {{ route.name }}
-                <span 
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <h3 class="font-semibold flex items-center gap-2 flex-wrap">
+                <span class="truncate">{{ route.name || route.id }}</span>
+                <span
                   :class="[
-                    'px-2 py-0.5 text-xs rounded',
-                    route.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-700'
+                    'px-2 py-0.5 text-xs rounded shrink-0',
+                    route.enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
                   ]"
                 >
                   {{ route.enabled ? 'Active' : 'Disabled' }}
                 </span>
               </h3>
-              <p class="text-sm text-slate-500 mt-1">
+              <p class="text-sm text-slate-500 mt-1 break-all">
                 <span class="font-mono">{{ route.paths?.join(', ') }}</span>
-                → {{ getServiceName(route.service_id) }}
+              </p>
+              <p class="text-xs text-slate-400 mt-1 truncate">
+                → {{ getUpstreamName(route.upstream_id) }}
+              </p>
+              <p v-if="route.hosts?.length" class="text-xs text-slate-400 mt-1 truncate">
+                hosts: {{ route.hosts.join(', ') }}
               </p>
             </div>
-            <div class="flex gap-2">
+            <div class="flex gap-2 shrink-0">
               <BaseButton :icon="mdiPencil" color="info" small @click="openEditRouteModal(route)" />
               <BaseButton :icon="mdiDelete" color="danger" small @click="confirmDelete('route', route)" />
             </div>
@@ -1273,6 +1735,9 @@ onUnmounted(() => {
             <span v-if="route.strip_path" class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded">
               Strip Path
             </span>
+            <span v-if="route.timeout > 0" class="px-2 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs rounded">
+              Timeout {{ route.timeout }}s
+            </span>
           </div>
         </div>
       </div>
@@ -1282,11 +1747,11 @@ onUnmounted(() => {
     <CardBox v-if="activeTab === 'certificates'">
       <SectionTitleLineWithButton :icon="mdiCertificate" title="SSL/TLS Certificates" main>
         <BaseButton
-          label="Configure Let's Encrypt"
-          :icon="mdiLock"
+          label="Gateway Settings"
+          :icon="mdiCog"
           color="info"
           small
-          @click="openLetsEncryptModal"
+          @click="openConfigModal"
         />
       </SectionTitleLineWithButton>
 
@@ -1378,6 +1843,16 @@ onUnmounted(() => {
               <span class="text-slate-500">Expires</span>
               <span>{{ certificateInfo.expires_at }}</span>
             </div>
+            <div v-if="certificateInfo.lets_encrypt_domains?.length" class="space-y-1">
+              <span class="text-slate-500">Domains (from routes)</span>
+              <div class="flex flex-wrap gap-2">
+                <span
+v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
+                      class="px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700 text-xs font-mono">
+                  {{ domain }}
+                </span>
+              </div>
+            </div>
             <div class="pt-4 flex gap-2">
               <BaseButton
                 :label="renewerStatus.running ? 'Stop Scheduler' : 'Start Scheduler'"
@@ -1394,8 +1869,11 @@ onUnmounted(() => {
                 @click="requestCertificate"
               />
             </div>
-            <p v-if="!certificateInfo.lets_encrypt || !certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              Sertifika almak için önce "Configure Let's Encrypt" ile e-posta ve domain ekleyip kaydedin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
+            <p v-if="!certificateInfo.lets_encrypt" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+              Sertifika almak için önce <strong>Gateway Settings</strong> içinden Let's Encrypt'i etkinleştirip e-posta girin.
+            </p>
+            <p v-else-if="!certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
+              Henüz Let's Encrypt seçili route yok. <strong>Routes</strong> sekmesinde, host'u tanımlı bir route'ta "Let's Encrypt" kutusunu işaretleyin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
             </p>
           </div>
         </div>
@@ -1544,16 +2022,144 @@ onUnmounted(() => {
           <FormField label="Protocol">
             <FormControl v-model="newService.protocol" :options="['http', 'https']" />
           </FormField>
-          <FormField label="Timeout (seconds)">
-            <FormControl v-model="newService.timeout" type="number" placeholder="30" />
+          <FormField label="Request Timeout (seconds, 0 = global default)">
+            <FormControl v-model.number="newService.timeout" type="number" min="0" placeholder="0" />
           </FormField>
         </div>
         <FormField label="Base Path (optional)">
           <FormControl v-model="newService.path" placeholder="/api" />
         </FormField>
-        <FormField label="Health Check Path">
-          <FormControl v-model="newService.health_check.path" placeholder="/health" />
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Health Check Path">
+            <FormControl v-model="newService.health_check.path" placeholder="/health" />
+          </FormField>
+          <FormField label="Health Check Interval (seconds)">
+            <FormControl
+              v-model.number="newService.health_check.interval"
+              type="number"
+              min="1"
+              placeholder="5"
+            />
+          </FormField>
+        </div>
+      </div>
+    </CardBoxModal>
+
+    <!-- Add Upstream Modal -->
+    <CardBoxModal
+      v-model="isAddUpstreamModalActive"
+      title="Add Upstream"
+      button="success"
+      button-label="Add Upstream"
+      has-cancel
+      @confirm="addUpstream"
+    >
+      <div class="space-y-4">
+        <FormField label="Name">
+          <FormControl v-model="newUpstream.name" placeholder="my-pool" />
         </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Distribution Strategy">
+            <FormControl v-model="newUpstream.strategy" :options="strategyOptions" />
+          </FormField>
+          <FormField>
+            <FormCheckRadio v-model="newUpstream.enabled" label="Enabled" name="new_upstream_enabled" />
+          </FormField>
+        </div>
+        <div class="border-t pt-4">
+          <FormField>
+            <FormCheckRadio v-model="newUpstream.sticky_enabled" label="Enable session affinity (sticky)" name="new_upstream_sticky" />
+          </FormField>
+          <p class="text-xs text-slate-500 mb-2">Stickiness pins a client to one backend across requests. ip_hash and header are stateless; cookie sets a Set-Cookie header.</p>
+          <template v-if="newUpstream.sticky_enabled">
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Sticky Mode">
+                <FormControl v-model="newUpstream.sticky.mode" :options="stickyModeOptions" />
+              </FormField>
+              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" label="Cookie Name">
+                <FormControl v-model="newUpstream.sticky.cookie_name" placeholder="redock_lb" />
+              </FormField>
+              <FormField v-if="newUpstream.sticky.mode?.value === 'header'" label="Header Name">
+                <FormControl v-model="newUpstream.sticky.header_name" placeholder="X-Session-Id" />
+              </FormField>
+              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" label="Cookie TTL (seconds, 0 = session)">
+                <FormControl v-model.number="newUpstream.sticky.ttl_seconds" type="number" min="0" placeholder="0" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4">
+          <h4 class="font-semibold mb-2">Targets</h4>
+          <p class="text-xs text-slate-500 mb-2">Pick services to receive traffic. Weights only matter for the Weighted strategy (and weight-aware sticky modes).</p>
+          <div v-for="(t, idx) in newUpstream.targets" :key="'nu-t-' + idx" class="flex gap-2 items-end mb-2">
+            <FormField label="Service" class="flex-1">
+              <FormControl v-model="t.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
+            </FormField>
+            <FormField label="Weight" class="w-24">
+              <FormControl v-model.number="t.weight" type="number" min="1" placeholder="1" />
+            </FormField>
+            <BaseButton :icon="mdiDelete" color="danger" small @click="removeUpstreamTarget(newUpstream, idx)" />
+          </div>
+          <BaseButton label="Add target" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(newUpstream)" />
+        </div>
+      </div>
+    </CardBoxModal>
+
+    <!-- Edit Upstream Modal -->
+    <CardBoxModal
+      v-model="isEditUpstreamModalActive"
+      title="Edit Upstream"
+      button="success"
+      button-label="Update Upstream"
+      has-cancel
+      @confirm="updateUpstream"
+    >
+      <div v-if="editingUpstream" class="space-y-4">
+        <FormField label="Name">
+          <FormControl v-model="editingUpstream.name" placeholder="my-pool" />
+        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Distribution Strategy">
+            <FormControl v-model="editingUpstream.strategy" :options="strategyOptions" />
+          </FormField>
+          <FormField>
+            <FormCheckRadio v-model="editingUpstream.enabled" label="Enabled" name="edit_upstream_enabled" />
+          </FormField>
+        </div>
+        <div class="border-t pt-4">
+          <FormField>
+            <FormCheckRadio v-model="editingUpstream.sticky_enabled" label="Enable session affinity (sticky)" name="edit_upstream_sticky" />
+          </FormField>
+          <template v-if="editingUpstream.sticky_enabled">
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Sticky Mode">
+                <FormControl v-model="editingUpstream.sticky.mode" :options="stickyModeOptions" />
+              </FormField>
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" label="Cookie Name">
+                <FormControl v-model="editingUpstream.sticky.cookie_name" placeholder="redock_lb" />
+              </FormField>
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'header'" label="Header Name">
+                <FormControl v-model="editingUpstream.sticky.header_name" placeholder="X-Session-Id" />
+              </FormField>
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" label="Cookie TTL (seconds, 0 = session)">
+                <FormControl v-model.number="editingUpstream.sticky.ttl_seconds" type="number" min="0" placeholder="0" />
+              </FormField>
+            </div>
+          </template>
+        </div>
+        <div class="border-t pt-4">
+          <h4 class="font-semibold mb-2">Targets</h4>
+          <div v-for="(t, idx) in editingUpstream.targets" :key="'eu-t-' + idx" class="flex gap-2 items-end mb-2">
+            <FormField label="Service" class="flex-1">
+              <FormControl v-model="t.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
+            </FormField>
+            <FormField label="Weight" class="w-24">
+              <FormControl v-model.number="t.weight" type="number" min="1" placeholder="1" />
+            </FormField>
+            <BaseButton :icon="mdiDelete" color="danger" small @click="removeUpstreamTarget(editingUpstream, idx)" />
+          </div>
+          <BaseButton label="Add target" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(editingUpstream)" />
+        </div>
       </div>
     </CardBoxModal>
 
@@ -1570,8 +2176,8 @@ onUnmounted(() => {
         <FormField label="Route Name">
           <FormControl v-model="newRoute.name" placeholder="my-route" />
         </FormField>
-        <FormField label="Service">
-          <FormControl v-model="newRoute.service_id" :options="services.length ? services.map(s => ({ value: s.id, label: s.name })) : []" />
+        <FormField label="Upstream (backend pool)">
+          <FormControl v-model="newRoute.upstream_id" :options="upstreamOptions" />
         </FormField>
         <FormField label="Paths (comma-separated)">
           <FormControl v-model="newRoute.paths" placeholder="/api, /api/*" />
@@ -1584,6 +2190,9 @@ onUnmounted(() => {
         </FormField>
         <FormField label="Methods (comma-separated, optional)">
           <FormControl v-model="newRoute.methods" placeholder="GET, POST, PUT" />
+        </FormField>
+        <FormField label="Request Timeout (seconds, optional)">
+          <FormControl v-model.number="newRoute.timeout" type="number" min="0" placeholder="0 = inherit from service / global" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
@@ -1598,6 +2207,12 @@ onUnmounted(() => {
         </FormField>
         <FormField>
           <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
+        </FormField>
+        <FormField>
+          <FormCheckRadio v-model="newRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="new_route_lets_encrypt" />
+          <p class="text-xs text-gray-500 mt-1">
+            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Let's Encrypt Gateway Settings'te etkinse, kaydedince sertifika arka planda otomatik yeniden alınır.
+          </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
@@ -1614,9 +2229,41 @@ onUnmounted(() => {
             <div v-for="(entry, idx) in newRoute.auth_headers" :key="'ah-' + idx" class="flex gap-2 items-end mb-2">
               <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
               <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
-              <BaseButton label="" color="danger" small @click="newRoute.auth_headers.splice(idx, 1)" :icon="mdiDelete" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.auth_headers.splice(idx, 1)" />
             </div>
-            <BaseButton label="Add header" color="info" small @click="newRoute.auth_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+            <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.auth_headers.push({ key: '', value: '' })" />
+          </div>
+        </template>
+        <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'basic'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Basic auth users</h4>
+            <p class="text-xs text-slate-500 mb-2">Browser will show a native login prompt. Passwords are stored as bcrypt hashes.</p>
+            <FormField label="Realm">
+              <FormControl v-model="newRoute.basic_auth_realm" placeholder="Restricted" />
+            </FormField>
+            <div v-for="(u, idx) in newRoute.basic_auth_users" :key="'bu-' + idx" class="flex gap-2 items-end mb-2 mt-2">
+              <FormControl v-model="u.username" placeholder="Username" class="flex-1" />
+              <FormControl v-model="u.password" type="password" placeholder="Password" class="flex-1" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.basic_auth_users.splice(idx, 1)" />
+            </div>
+            <BaseButton label="Add user" color="info" small :icon="mdiPlus" @click="newRoute.basic_auth_users.push({ username: '', password: '', password_hash: '' })" />
+          </div>
+        </template>
+        <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'jwt'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">JWT (HS256)</h4>
+            <p class="text-xs text-slate-500 mb-2">Tokens must be signed with the shared secret using HS256/HS384/HS512. Issuer and audience are optional but checked if set.</p>
+            <FormField label="Secret">
+              <FormControl v-model="newRoute.jwt.secret" type="password" placeholder="Shared HMAC secret" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Issuer (optional)">
+                <FormControl v-model="newRoute.jwt.issuer" placeholder="iss claim" />
+              </FormField>
+              <FormField label="Audience (optional)">
+                <FormControl v-model="newRoute.jwt.audience" placeholder="aud claim" />
+              </FormField>
+            </div>
           </div>
         </template>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
@@ -1661,38 +2308,10 @@ onUnmounted(() => {
           <div v-for="(entry, idx) in newRoute.response_headers" :key="'rh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
             <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
-            <BaseButton label="" color="danger" small @click="newRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+            <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.response_headers.splice(idx, 1)" />
           </div>
-          <BaseButton label="Add header" color="info" small @click="newRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.response_headers.push({ key: '', value: '' })" />
         </div>
-      </div>
-    </CardBoxModal>
-
-    <!-- Let's Encrypt Modal -->
-    <CardBoxModal 
-      v-model="isLetsEncryptModalActive" 
-      title="Configure Let's Encrypt" 
-      button="success" 
-      button-label="Save Configuration"
-      has-cancel
-      @confirm="saveLetsEncrypt"
-    >
-      <div class="space-y-4">
-        <FormField>
-          <FormCheckRadio v-model="letsEncryptConfig.enabled" label="Enable Let's Encrypt" name="le_enabled" />
-        </FormField>
-        <FormField label="Email Address">
-          <FormControl v-model="letsEncryptConfig.email" type="email" placeholder="admin@example.com" />
-        </FormField>
-        <FormField label="Domains (comma-separated)">
-          <FormControl v-model="letsEncryptConfig.domains" placeholder="example.com, www.example.com" />
-        </FormField>
-        <FormField>
-          <FormCheckRadio v-model="letsEncryptConfig.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
-        </FormField>
-        <FormField label="Renew Before Expiry (days)">
-          <FormControl v-model="letsEncryptConfig.renew_before_days" type="number" placeholder="30" />
-        </FormField>
       </div>
     </CardBoxModal>
 
@@ -1720,6 +2339,32 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="gatewayConfig.access_log_enabled" label="Enable Access Logging" name="access_log" />
         </FormField>
+
+        <!-- Let's Encrypt / SSL -->
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3 flex items-center gap-2">
+            <BaseIcon :path="mdiLock" size="18" />
+            Let's Encrypt (SSL)
+          </h4>
+          <FormField>
+            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.enabled" label="Enable Let's Encrypt" name="le_enabled" />
+          </FormField>
+          <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <FormField label="Email Address">
+              <FormControl v-model="gatewayConfig.lets_encrypt.email" type="email" placeholder="admin@example.com" />
+            </FormField>
+            <FormField label="Renew Before Expiry (days)">
+              <FormControl v-model.number="gatewayConfig.lets_encrypt.renew_before_days" type="number" min="1" placeholder="30" />
+            </FormField>
+          </div>
+          <FormField>
+            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
+          </FormField>
+          <p class="text-xs text-gray-500">
+            Sertifika domain'leri, <strong>Routes</strong> sekmesinde "Let's Encrypt" işaretli route'ların Host'larından otomatik toplanır. Etkinleştirip kaydettikten sonra Certificates sekmesinden "Request Certificate" ile sertifikayı alın.
+          </p>
+        </div>
+
         <div class="border-t pt-4 mt-4">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <FormField label="Top Client Limit">
@@ -1742,6 +2387,48 @@ onUnmounted(() => {
           <p class="text-xs text-slate-500 mt-2">
             Controls how many clients are stored for analytics and manual blocking (up to 1000).
           </p>
+        </div>
+        <div class="border-t pt-4 mt-4">
+          <h4 class="font-semibold mb-3">Timeouts (seconds)</h4>
+          <p class="text-xs text-slate-500 mb-3">
+            Global defaults. Per-route timeout overrides per-service, which overrides the request timeout below.
+            Server Write must be ≥ the longest expected request, otherwise it caps everything.
+          </p>
+          <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <FormField label="Request Timeout (overall)">
+              <FormControl v-model.number="gatewayConfig.timeouts.request_timeout_seconds" type="number" min="0" placeholder="0 = disabled" />
+            </FormField>
+            <FormField label="Server Read">
+              <FormControl v-model.number="gatewayConfig.timeouts.server_read_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Server Write">
+              <FormControl v-model.number="gatewayConfig.timeouts.server_write_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Server Idle">
+              <FormControl v-model.number="gatewayConfig.timeouts.server_idle_seconds" type="number" min="0" placeholder="60" />
+            </FormField>
+            <FormField label="Shutdown">
+              <FormControl v-model.number="gatewayConfig.timeouts.shutdown_seconds" type="number" min="0" placeholder="10" />
+            </FormField>
+            <FormField label="Health Check">
+              <FormControl v-model.number="gatewayConfig.timeouts.health_check_seconds" type="number" min="0" placeholder="5" />
+            </FormField>
+            <FormField label="Upstream Dial">
+              <FormControl v-model.number="gatewayConfig.timeouts.upstream_dial_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Upstream Keep-Alive">
+              <FormControl v-model.number="gatewayConfig.timeouts.upstream_keep_alive_seconds" type="number" min="0" placeholder="30" />
+            </FormField>
+            <FormField label="Upstream Idle Conn">
+              <FormControl v-model.number="gatewayConfig.timeouts.upstream_idle_conn_seconds" type="number" min="0" placeholder="90" />
+            </FormField>
+            <FormField label="TLS Handshake">
+              <FormControl v-model.number="gatewayConfig.timeouts.tls_handshake_seconds" type="number" min="0" placeholder="10" />
+            </FormField>
+            <FormField label="Expect-Continue">
+              <FormControl v-model.number="gatewayConfig.timeouts.expect_continue_seconds" type="number" min="0" placeholder="1" />
+            </FormField>
+          </div>
         </div>
       </div>
     </CardBoxModal>
@@ -1771,8 +2458,8 @@ onUnmounted(() => {
           <FormField label="Protocol">
             <FormControl v-model="editingService.protocol" :options="['http', 'https']" />
           </FormField>
-          <FormField label="Timeout (seconds)">
-            <FormControl v-model="editingService.timeout" type="number" placeholder="30" />
+          <FormField label="Request Timeout (seconds, 0 = global default)">
+            <FormControl v-model.number="editingService.timeout" type="number" min="0" placeholder="0" />
           </FormField>
         </div>
         <FormField label="Base Path (optional)">
@@ -1781,9 +2468,19 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="editingService.enabled" label="Enabled" name="edit_service_enabled" />
         </FormField>
-        <FormField label="Health Check Path">
-          <FormControl v-model="editingService.health_check.path" placeholder="/health" />
-        </FormField>
+        <div class="grid grid-cols-2 gap-4">
+          <FormField label="Health Check Path">
+            <FormControl v-model="editingService.health_check.path" placeholder="/health" />
+          </FormField>
+          <FormField label="Health Check Interval (seconds)">
+            <FormControl
+              v-model.number="editingService.health_check.interval"
+              type="number"
+              min="1"
+              placeholder="5"
+            />
+          </FormField>
+        </div>
       </div>
     </CardBoxModal>
 
@@ -1800,8 +2497,8 @@ onUnmounted(() => {
         <FormField label="Route Name">
           <FormControl v-model="editingRoute.name" placeholder="my-route" />
         </FormField>
-        <FormField label="Service">
-          <FormControl v-model="editingRoute.service_id" :options="services.length ? services.map(s => ({ value: s.id, label: s.name })) : []" />
+        <FormField label="Upstream (backend pool)">
+          <FormControl v-model="editingRoute.upstream_id" :options="upstreamOptions" />
         </FormField>
         <FormField label="Paths (comma-separated)">
           <FormControl v-model="editingRoute.paths" placeholder="/api, /api/*" />
@@ -1814,6 +2511,9 @@ onUnmounted(() => {
         </FormField>
         <FormField label="Methods (comma-separated, optional)">
           <FormControl v-model="editingRoute.methods" placeholder="GET, POST, PUT" />
+        </FormField>
+        <FormField label="Request Timeout (seconds, optional)">
+          <FormControl v-model.number="editingRoute.timeout" type="number" min="0" placeholder="0 = inherit from service / global" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
@@ -1829,6 +2529,12 @@ onUnmounted(() => {
         <FormField>
           <FormCheckRadio v-model="editingRoute.observability_enabled" label="Send Observability Logs" name="edit_route_observability" />
         </FormField>
+        <FormField>
+          <FormCheckRadio v-model="editingRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="edit_route_lets_encrypt" />
+          <p class="text-xs text-gray-500 mt-1">
+            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Let's Encrypt Gateway Settings'te etkinse, kaydedince sertifika arka planda otomatik yeniden alınır.
+          </p>
+        </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
             <FormCheckRadio v-model="editingRoute.rate_limit_enabled" label="Enable Rate Limiting" name="edit_rate_limit" />
@@ -1840,6 +2546,38 @@ onUnmounted(() => {
         <FormField v-if="editingRoute.auth_required" label="Auth Type">
           <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
         </FormField>
+        <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'basic'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">Basic auth users</h4>
+            <p class="text-xs text-slate-500 mb-2">Leave password blank to keep the existing one. Browser shows a native login prompt.</p>
+            <FormField label="Realm">
+              <FormControl v-model="editingRoute.basic_auth_realm" placeholder="Restricted" />
+            </FormField>
+            <div v-for="(u, idx) in (editingRoute.basic_auth_users || [])" :key="'ebu-' + idx" class="flex gap-2 items-end mb-2 mt-2">
+              <FormControl v-model="u.username" placeholder="Username" class="flex-1" />
+              <FormControl v-model="u.password" type="password" :placeholder="u.password_hash ? '••• (unchanged)' : 'Password'" class="flex-1" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="(editingRoute.basic_auth_users || []).splice(idx, 1)" />
+            </div>
+            <BaseButton label="Add user" color="info" small :icon="mdiPlus" @click="(editingRoute.basic_auth_users = editingRoute.basic_auth_users || []).push({ username: '', password: '', password_hash: '' })" />
+          </div>
+        </template>
+        <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'jwt'">
+          <div class="border-t pt-4 mt-4">
+            <h4 class="font-semibold mb-3">JWT (HS256)</h4>
+            <p class="text-xs text-slate-500 mb-2">Tokens must be signed with the shared secret using HS256/HS384/HS512. Issuer and audience are optional but checked if set.</p>
+            <FormField label="Secret">
+              <FormControl v-model="editingRoute.jwt.secret" type="password" placeholder="Shared HMAC secret" />
+            </FormField>
+            <div class="grid grid-cols-2 gap-4">
+              <FormField label="Issuer (optional)">
+                <FormControl v-model="editingRoute.jwt.issuer" placeholder="iss claim" />
+              </FormField>
+              <FormField label="Audience (optional)">
+                <FormControl v-model="editingRoute.jwt.audience" placeholder="aud claim" />
+              </FormField>
+            </div>
+          </div>
+        </template>
         <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'header'">
           <div class="border-t pt-4 mt-4">
             <h4 class="font-semibold mb-3">Required headers</h4>
@@ -1847,9 +2585,9 @@ onUnmounted(() => {
             <div v-for="(entry, idx) in (editingRoute.auth_headers || [])" :key="'eah-' + idx" class="flex gap-2 items-end mb-2">
               <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
               <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
-              <BaseButton label="" color="danger" small @click="(editingRoute.auth_headers || []).splice(idx, 1)" :icon="mdiDelete" />
+              <BaseButton label="" color="danger" small :icon="mdiDelete" @click="(editingRoute.auth_headers || []).splice(idx, 1)" />
             </div>
-            <BaseButton label="Add header" color="info" small @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" :icon="mdiPlus" />
+            <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" />
           </div>
         </template>
         <div v-if="editingRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
@@ -1894,9 +2632,9 @@ onUnmounted(() => {
           <div v-for="(entry, idx) in editingRoute.response_headers" :key="'erh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
             <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
-            <BaseButton label="" color="danger" small @click="editingRoute.response_headers.splice(idx, 1)" :icon="mdiDelete" />
+            <BaseButton label="" color="danger" small :icon="mdiDelete" @click="editingRoute.response_headers.splice(idx, 1)" />
           </div>
-          <BaseButton label="Add header" color="info" small @click="editingRoute.response_headers.push({ key: '', value: '' })" :icon="mdiPlus" />
+          <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="editingRoute.response_headers.push({ key: '', value: '' })" />
         </div>
       </div>
     </CardBoxModal>

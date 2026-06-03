@@ -407,3 +407,67 @@ func DeleteCloudflareDNSRecord(c *fiber.Ctx) error {
 	})
 }
 
+// PurgeCloudflareCache purges the edge cache for a zone (all content or specific URLs)
+func PurgeCloudflareCache(c *fiber.Ctx) error {
+	manager := cloudflare.GetCloudflareManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Cloudflare manager not initialized",
+		})
+	}
+
+	zoneIDParam := c.Params("zone_id")
+	if zoneIDParam == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Zone ID is required",
+		})
+	}
+
+	var body struct {
+		Everything bool     `json:"everything"`
+		Files      []string `json:"files"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Invalid request body: " + err.Error(),
+		})
+	}
+
+	if !body.Everything && len(body.Files) == 0 {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Provide files to purge or set everything=true",
+		})
+	}
+
+	// Convert DB ID to Cloudflare Zone ID if needed
+	cloudflareZoneID := zoneIDParam
+	var zoneDBID uint
+	if _, err := fmt.Sscanf(zoneIDParam, "%d", &zoneDBID); err == nil {
+		db, _ := manager.GetDB()
+		zone, _ := memory.FindByID[*cloudflare.CloudflareZone](db, "cloudflare_zones", zoneDBID)
+		if zone == nil {
+			return c.Status(fiber.StatusNotFound).JSON(fiber.Map{
+				"error": true,
+				"msg":   "Zone not found",
+			})
+		}
+		cloudflareZoneID = zone.ZoneID
+	}
+
+	if err := manager.PurgeCache(cloudflareZoneID, body.Everything, body.Files); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Failed to purge cache: " + err.Error(),
+		})
+	}
+
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   "Cache purged successfully",
+	})
+}
+

@@ -7,7 +7,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/stretchr/testify/assert"
+	"golang.org/x/crypto/bcrypt"
 )
 
 func TestMatchPath(t *testing.T) {
@@ -130,7 +132,7 @@ func TestGatewayMatchRoute(t *testing.T) {
 			{
 				ID:        "route1",
 				Name:      "API Route",
-				ServiceID: "svc1",
+				UpstreamID: "up1",
 				Paths:     []string{"/api"},
 				Methods:   []string{"GET", "POST"},
 				Enabled:   true,
@@ -139,7 +141,7 @@ func TestGatewayMatchRoute(t *testing.T) {
 			{
 				ID:        "route2",
 				Name:      "Observability Route",
-				ServiceID: "svc2",
+				UpstreamID: "up2",
 				Paths:     []string{"/observability"},
 				Hosts:     []string{"metrics.example.com"},
 				Enabled:   true,
@@ -148,7 +150,7 @@ func TestGatewayMatchRoute(t *testing.T) {
 			{
 				ID:        "route3",
 				Name:      "Disabled Route",
-				ServiceID: "svc3",
+				UpstreamID: "up3",
 				Paths:     []string{"/disabled"},
 				Enabled:   false,
 				Priority:  200,
@@ -233,54 +235,81 @@ func TestGatewayMatchRoute(t *testing.T) {
 func TestGatewayCheckAuth(t *testing.T) {
 	g := &Gateway{}
 
+	// helpers
+	bcryptHash := func(pw string) string {
+		h, err := bcrypt.GenerateFromPassword([]byte(pw), bcrypt.MinCost)
+		if err != nil {
+			t.Fatalf("bcrypt: %v", err)
+		}
+		return string(h)
+	}
+	signHS256 := func(secret string, claims jwt.MapClaims) string {
+		tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		s, err := tok.SignedString([]byte(secret))
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+		return s
+	}
+
+	jwtSecret := "supersecret"
+	validToken := signHS256(jwtSecret, jwt.MapClaims{
+		"iss": "issuer-a",
+		"aud": "aud-a",
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+	expiredToken := signHS256(jwtSecret, jwt.MapClaims{
+		"exp": time.Now().Add(-time.Hour).Unix(),
+	})
+	wrongSecretToken := signHS256("other-secret", jwt.MapClaims{
+		"exp": time.Now().Add(time.Hour).Unix(),
+	})
+
+	basicRoute := &Route{
+		AuthRequired:   true,
+		AuthType:       "basic",
+		BasicAuthUsers: []BasicAuthUser{{Username: "user", PasswordHash: bcryptHash("pass")}},
+	}
+	jwtRoute := &Route{
+		AuthRequired: true,
+		AuthType:     "jwt",
+		JWT:          &JWTConfig{Secret: jwtSecret, Issuer: "issuer-a", Audience: "aud-a"},
+	}
+	jwtRouteNoSecret := &Route{AuthRequired: true, AuthType: "jwt", JWT: &JWTConfig{}}
+
 	tests := []struct {
 		name     string
 		route    *Route
 		headers  map[string]string
 		expected bool
 	}{
-		{
-			name:     "No auth required",
-			route:    &Route{AuthRequired: false},
-			headers:  map[string]string{},
-			expected: true,
-		},
-		{
-			name:     "Basic auth success",
-			route:    &Route{AuthRequired: true, AuthType: "basic"},
-			headers:  map[string]string{"Authorization": "Basic dXNlcjpwYXNz"},
-			expected: true,
-		},
-		{
-			name:     "Basic auth failure - no header",
-			route:    &Route{AuthRequired: true, AuthType: "basic"},
-			headers:  map[string]string{},
-			expected: false,
-		},
-		{
-			name:     "JWT auth success",
-			route:    &Route{AuthRequired: true, AuthType: "jwt"},
-			headers:  map[string]string{"Authorization": "Bearer eyJhbGciOiJIUzI1NiJ9.e30.test"},
-			expected: true,
-		},
-		{
-			name:     "JWT auth failure - no token",
-			route:    &Route{AuthRequired: true, AuthType: "jwt"},
-			headers:  map[string]string{},
-			expected: false,
-		},
-		{
-			name:     "Header auth success",
-			route:    &Route{AuthRequired: true, AuthType: "header", AuthHeaders: []AuthHeader{{Key: "X-API-Key", Value: "my-api-key"}}},
-			headers:  map[string]string{"X-API-Key": "my-api-key"},
-			expected: true,
-		},
-		{
-			name:     "Header auth failure - missing header",
-			route:    &Route{AuthRequired: true, AuthType: "header", AuthHeaders: []AuthHeader{{Key: "X-API-Key", Value: "my-api-key"}}},
-			headers:  map[string]string{},
-			expected: false,
-		},
+		{"No auth required", &Route{AuthRequired: false}, nil, true},
+
+		// basic
+		{"Basic ok", basicRoute, map[string]string{"Authorization": "Basic dXNlcjpwYXNz"}, true},      // user:pass
+		{"Basic wrong password", basicRoute, map[string]string{"Authorization": "Basic dXNlcjp4eHg="}, false}, // user:xxx
+		{"Basic unknown user", basicRoute, map[string]string{"Authorization": "Basic Zm9vOnBhc3M="}, false},   // foo:pass
+		{"Basic no header", basicRoute, nil, false},
+		{"Basic with no users configured",
+			&Route{AuthRequired: true, AuthType: "basic"},
+			map[string]string{"Authorization": "Basic dXNlcjpwYXNz"},
+			false},
+
+		// jwt
+		{"JWT valid", jwtRoute, map[string]string{"Authorization": "Bearer " + validToken}, true},
+		{"JWT expired", jwtRoute, map[string]string{"Authorization": "Bearer " + expiredToken}, false},
+		{"JWT wrong secret", jwtRoute, map[string]string{"Authorization": "Bearer " + wrongSecretToken}, false},
+		{"JWT garbage", jwtRoute, map[string]string{"Authorization": "Bearer not-a-jwt"}, false},
+		{"JWT no header", jwtRoute, nil, false},
+		{"JWT no secret configured", jwtRouteNoSecret, map[string]string{"Authorization": "Bearer " + validToken}, false},
+
+		// header
+		{"Header ok",
+			&Route{AuthRequired: true, AuthType: "header", AuthHeaders: []AuthHeader{{Key: "X-API-Key", Value: "my-api-key"}}},
+			map[string]string{"X-API-Key": "my-api-key"}, true},
+		{"Header missing",
+			&Route{AuthRequired: true, AuthType: "header", AuthHeaders: []AuthHeader{{Key: "X-API-Key", Value: "my-api-key"}}},
+			nil, false},
 	}
 
 	for _, test := range tests {
@@ -289,9 +318,23 @@ func TestGatewayCheckAuth(t *testing.T) {
 			req.Header.Set(k, v)
 		}
 
-		result := g.checkAuth(req, test.route)
-		assert.Equal(t, test.expected, result, test.name)
+		allowed, _ := g.checkAuth(req, test.route)
+		assert.Equal(t, test.expected, allowed, test.name)
 	}
+}
+
+func TestCheckAuthSendsBasicChallenge(t *testing.T) {
+	g := &Gateway{}
+	route := &Route{
+		AuthRequired:   true,
+		AuthType:       "basic",
+		BasicAuthRealm: "MyZone",
+		BasicAuthUsers: []BasicAuthUser{{Username: "u", PasswordHash: "$2a$04$invalid"}},
+	}
+	req := httptest.NewRequest("GET", "/test", nil)
+	allowed, challenge := g.checkAuth(req, route)
+	assert.False(t, allowed)
+	assert.Contains(t, challenge, `Basic realm="MyZone"`)
 }
 
 func TestGatewayAddDeleteService(t *testing.T) {
@@ -346,11 +389,14 @@ func TestGatewayAddDeleteRoute(t *testing.T) {
 	tmpDir := t.TempDir()
 
 	g := &Gateway{
-		services:      make(map[string]*Service),
-		serviceHealth: make(map[string]*ServiceHealth),
+		services:         make(map[string]*Service),
+		upstreams:        map[string]*Upstream{"up1": {ID: "up1", Enabled: true, Targets: []UpstreamTarget{{ServiceID: "svc1", Weight: 1}}}},
+		upstreamRuntimes: make(map[string]*upstreamRuntime),
+		serviceHealth:    make(map[string]*ServiceHealth),
 		config: &GatewayConfig{
-			Services: []Service{},
-			Routes:   []Route{},
+			Services:  []Service{},
+			Upstreams: []Upstream{{ID: "up1", Enabled: true, Targets: []UpstreamTarget{{ServiceID: "svc1", Weight: 1}}}},
+			Routes:    []Route{},
 		},
 		routes:  make([]*Route, 0),
 		workDir: tmpDir,
@@ -361,11 +407,11 @@ func TestGatewayAddDeleteRoute(t *testing.T) {
 
 	// Add a route
 	route := Route{
-		ID:        "route1",
-		Name:      "Test Route",
-		ServiceID: "svc1",
-		Paths:     []string{"/api"},
-		Enabled:   true,
+		ID:         "route1",
+		Name:       "Test Route",
+		UpstreamID: "up1",
+		Paths:      []string{"/api"},
+		Enabled:    true,
 	}
 
 	err := g.AddRoute(route)
@@ -440,12 +486,21 @@ func TestProxyIntegration(t *testing.T) {
 				Enabled:  true,
 			},
 		},
+		upstreams: map[string]*Upstream{
+			"up-backend": {
+				ID:       "up-backend",
+				Strategy: StrategyRoundRobin,
+				Enabled:  true,
+				Targets:  []UpstreamTarget{{ServiceID: "backend", Weight: 1}},
+			},
+		},
+		upstreamRuntimes: make(map[string]*upstreamRuntime),
 		routes: []*Route{
 			{
-				ID:        "test-route",
-				ServiceID: "backend",
-				Paths:     []string{"/api"},
-				Enabled:   true,
+				ID:         "test-route",
+				UpstreamID: "up-backend",
+				Paths:      []string{"/api"},
+				Enabled:    true,
 			},
 		},
 		serviceHealth: make(map[string]*ServiceHealth),

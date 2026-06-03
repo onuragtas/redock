@@ -72,6 +72,7 @@ func compactPorts() {
 		_ = RemoveTunnelDomainFromGateway(d)
 		d.Port = newPort
 		d.GatewayServiceID = ""
+		d.GatewayUpstreamID = ""
 		d.GatewayRouteID = ""
 		d.GatewayUDPServiceID = ""
 		d.GatewayUDPRouteID = ""

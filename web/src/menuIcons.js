@@ -4,6 +4,7 @@
  */
 import {
   mdiAccountGroup,
+  mdiArchive,
   mdiBugCheck,
   mdiCloud,
   mdiConsole,
@@ -12,6 +13,7 @@ import {
   mdiEmail,
   mdiDownload,
   mdiHome,
+  mdiIncognito,
   mdiLan,
   mdiLanConnect,
   mdiLaptop,
@@ -34,6 +36,7 @@ export const menuIconMap = {
   mdiServerNetwork,
   mdiEmail,
   mdiCloud,
+  mdiIncognito,
   mdiLan,
   mdiConsole,
   mdiLanConnect,
@@ -41,7 +44,8 @@ export const menuIconMap = {
   mdiScriptText,
   mdiBugCheck,
   mdiDownload,
-  mdiAccountGroup
+  mdiAccountGroup,
+  mdiArchive
 }
 
 export default menuIconMap

@@ -21,7 +21,7 @@ func (p *program) Stop(s service.Service) error {
 	if globalDB != nil {
 		_ = globalDB.Close()
 	}
-	
+
 	return nil
 }
 
@@ -32,9 +32,9 @@ func (p *program) run() {
 }
 
 func main() {
-	if getProcessOwner() != "root" {
-		log.Fatalln("Please run this command as root user.")
-	}
+	// if getProcessOwner() != "root" {
+	// 	log.Fatalln("Please run this command as root user.")
+	// }
 
 	action := flag.String("action", "", "Use this flag to perform an action on the service. [install|start|stop|uninstall]")
 	flag.Parse()

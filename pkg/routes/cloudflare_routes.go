@@ -20,6 +20,9 @@ func CloudflareRoutes(app *fiber.App) {
 	cloudflare.Get("/accounts/:account_id/zones", controllers.GetCloudflareZones)
 	cloudflare.Get("/zones", controllers.GetCloudflareZones)
 
+	// Cache
+	cloudflare.Post("/zones/:zone_id/purge-cache", controllers.PurgeCloudflareCache)
+
 	// DNS records
 	cloudflare.Get("/zones/:zone_id/dns", controllers.GetCloudflareDNSRecords)
 	cloudflare.Post("/zones/:zone_id/dns", controllers.CreateCloudflareDNSRecord)
