@@ -28,6 +28,14 @@ const (
 	udpBackendPortOffset  = 10000 // Gateway 0.0.0.0:Port UDP -> daemon 127.0.0.1:(Port+10000)
 	tcpBackendPortOffset  = 20000 // Gateway 0.0.0.0:Port TCP -> daemon 127.0.0.1:(Port+20000)
 	httpBackendPortOffset = 30000 // HTTP backend daemon 127.0.0.1:(Port+30000); böylece 0.0.0.0:Port gateway'e kalır (PORTS.md)
+	// clientReadTimeout reaps a dead/half-open client connection: clients PING every
+	// few seconds, so if no frame arrives within this window the return path is gone
+	// and we close + unbind so the domain doesn't stay zombie-bound.
+	clientReadTimeout = 60 * time.Second
+	// bindFlapGuard: if a domain was (re)bound within this window, a competing BIND
+	// from a different connection is rejected instead of kicking the incumbent. This
+	// breaks the per-second bind ping-pong when two clients fight over one domain.
+	bindFlapGuard = 5 * time.Second
 )
 
 // Kontrol komutları (client -> server): "BIND <subdomain|full_domain>\n", "PING\n", "CLOSE_STREAM <id>\n"
@@ -65,6 +73,7 @@ var (
 	clients               map[net.Conn]*Client
 	boundDomainsMu        sync.RWMutex
 	boundDomains          map[string]*Client // fullDomain -> client that receives traffic for this domain
+	lastBoundAt           map[string]time.Time // fullDomain -> last (re)bind time, for flap guard
 	daemonRunning         bool
 	backendListenersMu       sync.Mutex
 	backendListeners         map[int]net.Listener // port -> TCP listener (HTTP backend)
@@ -84,6 +93,7 @@ var (
 func init() {
 	clients = make(map[net.Conn]*Client)
 	boundDomains = make(map[string]*Client)
+	lastBoundAt = make(map[string]time.Time)
 	backendListeners = make(map[int]net.Listener)
 	backendTCPListeners = make(map[int]net.Listener)
 	backendUDPConns = make(map[int]*net.UDPConn)
@@ -284,6 +294,7 @@ func unbindAllDomainsForClient(c *Client) {
 	for fullDomain, bound := range boundDomains {
 		if bound == c {
 			delete(boundDomains, fullDomain)
+			delete(lastBoundAt, fullDomain)
 			log.Printf("tunnel_server: unbound domain %s (client disconnected)", fullDomain)
 		}
 	}
@@ -292,9 +303,15 @@ func unbindAllDomainsForClient(c *Client) {
 // serveClient runs the read loop: length-prefixed frames, control (BIND/PING) and data (3.3).
 func serveClient(c *Client, br *bufio.Reader) {
 	for {
+		// Reap dead/half-open connections: reset the deadline on every frame (incl.
+		// PINGs). If the client stops sending, the read times out and we unbind the
+		// domain instead of holding it zombie-bound forever.
+		_ = c.Conn.SetReadDeadline(time.Now().Add(clientReadTimeout))
 		payload, err := readFrame(br)
 		if err != nil {
-			if err != io.EOF {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				log.Printf("tunnel_server: client userID=%d idle %v, closing (dead connection)", c.UserID, clientReadTimeout)
+			} else if err != io.EOF {
 				log.Printf("tunnel_server: client read frame userID=%d: %v", c.UserID, err)
 			}
 			return
@@ -462,7 +479,19 @@ func handleBind(c *Client, domainArg string) {
 	}
 	boundDomainsMu.Lock()
 	prev := boundDomains[d.FullDomain]
+	// Flap guard: if the domain was (re)bound very recently by a different live
+	// connection, this is two clients fighting over one domain. Reject the newcomer
+	// (it backs off) and keep the incumbent, instead of kicking it and triggering an
+	// endless per-second bind ping-pong. A stable incumbent (last bind older than the
+	// guard window) or a freed domain still allows a normal takeover/reconnect.
+	if prev != nil && prev != c && time.Since(lastBoundAt[d.FullDomain]) < bindFlapGuard {
+		boundDomainsMu.Unlock()
+		log.Printf("tunnel_server: domain %s bind rejected (flap guard; held by userID=%d)", d.FullDomain, prev.UserID)
+		_ = writeControlFrameToClient(c, "BIND_FAILED domain busy, retry later\n")
+		return
+	}
 	boundDomains[d.FullDomain] = c
+	lastBoundAt[d.FullDomain] = time.Now()
 	boundDomainsMu.Unlock()
 	if prev != nil && prev != c {
 		log.Printf("tunnel_server: domain %s rebound, closing previous client userID=%d", d.FullDomain, prev.UserID)
@@ -578,6 +607,7 @@ func DisconnectDomain(fullDomain string) {
 	c := boundDomains[fullDomain]
 	if c != nil {
 		delete(boundDomains, fullDomain)
+		delete(lastBoundAt, fullDomain)
 	}
 	boundDomainsMu.Unlock()
 	if c != nil {
