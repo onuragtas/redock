@@ -2,11 +2,13 @@ package tunnel_server
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"redock/api_gateway"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,8 +171,52 @@ func acceptLoop() {
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+// daemonTLSConfig serves the gateway's certificate to TLS clients. Built lazily
+// so it picks up Let's Encrypt renewals (LoadX509KeyPair per handshake).
+var daemonTLSConfig = &tls.Config{
+	GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		gw := api_gateway.GetGateway()
+		if gw == nil {
+			return nil, fmt.Errorf("gateway not initialized")
+		}
+		cfg := gw.GetConfig()
+		if cfg == nil || cfg.TLSCertFile == "" || cfg.TLSKeyFile == "" {
+			return nil, fmt.Errorf("no certificate configured")
+		}
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		return &cert, nil
+	},
+}
+
+// prefixConn lets us peek the first byte of a connection (for TLS detection)
+// without consuming it, by buffering all reads through a bufio.Reader.
+type prefixConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (p *prefixConn) Read(b []byte) (int, error) { return p.r.Read(b) }
+
+func handleConnection(raw net.Conn) {
+	defer raw.Close()
+
+	// Detect TLS vs plaintext: a TLS handshake record starts with 0x16. This
+	// lets the client wrap the connection in TLS to traverse firewalls/DPI that
+	// drop raw traffic on the daemon port, while plaintext (loopback) still works.
+	raw.SetReadDeadline(time.Now().Add(30 * time.Second))
+	pc := &prefixConn{Conn: raw, r: bufio.NewReader(raw)}
+	first, err := pc.r.Peek(1)
+	raw.SetReadDeadline(time.Time{})
+	if err != nil {
+		return
+	}
+	var conn net.Conn = pc
+	if first[0] == 0x16 {
+		conn = tls.Server(pc, daemonTLSConfig)
+	}
 
 	// Auth: first line = JWT access token
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))

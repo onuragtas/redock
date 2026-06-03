@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -59,6 +60,13 @@ type Config struct {
 	HostRewrite string
 	// KeepaliveInterval is the interval for PING keepalive and TCP keepalive. Zero disables both.
 	KeepaliveInterval time.Duration
+	// UseTLS wraps the daemon connection in TLS so it traverses firewalls/DPI
+	// that drop raw traffic on the daemon port. The daemon auto-detects TLS vs
+	// plaintext, so this is opt-in per connection.
+	UseTLS bool
+	// TLSServerName is the SNI / certificate name to validate when UseTLS is set.
+	// Empty skips verification (use for loopback where the cert won't match).
+	TLSServerName string
 }
 
 // Client is a tunnel client connected to the daemon.
@@ -77,6 +85,17 @@ type Client struct {
 	udpSocketsMu sync.RWMutex
 }
 
+// isLoopbackHost reports whether host is a loopback address/name (no TLS needed).
+func isLoopbackHost(host string) bool {
+	if host == "" || host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
 // ConnectOnce connects to the daemon, performs auth and BIND, and returns the client.
 // The caller should call Run() (e.g. in a goroutine) and Close() when done.
 func ConnectOnce(cfg Config) (*Client, error) {
@@ -91,17 +110,45 @@ func ConnectOnce(cfg Config) (*Client, error) {
 	if cfg.ServerAddr == "" || token == "" || cfg.Domain == "" {
 		return nil, fmt.Errorf("client: ServerAddr, Token and Domain are required")
 	}
-	conn, err := net.DialTimeout("tcp", cfg.ServerAddr, 15*time.Second)
+	rawConn, err := net.DialTimeout("tcp", cfg.ServerAddr, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("client: dial: %w", err)
 	}
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
+	if tcpConn, ok := rawConn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
 		if cfg.KeepaliveInterval > 0 {
 			tcpConn.SetKeepAlivePeriod(cfg.KeepaliveInterval)
 		}
 	}
+	// Decide TLS: explicit opt-in, or auto for any non-loopback address (so a new
+	// remote path can never accidentally connect in plaintext and get firewalled).
+	host, _, _ := net.SplitHostPort(cfg.ServerAddr)
+	useTLS := cfg.UseTLS
+	serverName := cfg.TLSServerName
+	if !useTLS && !isLoopbackHost(host) {
+		useTLS = true
+		if serverName == "" {
+			serverName = host
+		}
+	}
+
+	var conn net.Conn = rawConn
+	if useTLS {
+		// Wrap in TLS so firewalls/DPI treat it like HTTPS. Handshake under the
+		// dial deadline so a black-holing firewall fails fast instead of hanging.
+		rawConn.SetDeadline(time.Now().Add(15 * time.Second))
+		tlsConn := tls.Client(rawConn, &tls.Config{
+			ServerName:         serverName,
+			InsecureSkipVerify: serverName == "", // loopback: cert won't match
+		})
+		if err := tlsConn.Handshake(); err != nil {
+			rawConn.Close()
+			return nil, fmt.Errorf("client: tls handshake: %w", err)
+		}
+		rawConn.SetDeadline(time.Time{})
+		conn = tlsConn
+	}
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	br := bufio.NewReaderSize(conn, maxAuthLineLen)
 	log.Printf("tunnel_client: out auth token len=%d", len(token))
 	if _, err := conn.Write([]byte(token + "\n")); err != nil {

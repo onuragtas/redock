@@ -1285,6 +1285,7 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 	if serverDaemonAddr == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "could not parse server base_url"})
 	}
+	serverHost, _, _ := net.SplitHostPort(serverDaemonAddr)
 	key := proxyTunnelKey(body.ServerID, data.Domain)
 	if existing, ok := activeTunnels.Load(key); ok {
 		if runner, _ := existing.(*tunnelRunner); runner != nil {
@@ -1297,15 +1298,18 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		keepaliveInterval = 0
 	}
 	cfg := client.Config{
-		ServerAddr:         serverDaemonAddr,
-		Token:              cred.AccessToken,
-		Domain:             data.Domain,
-		LocalHttpAddr:      localHTTP,
-		LocalTCPAddr:       localTCP,
-		LocalUDPAddr:       localUDP,
-		SourceBindIP:       strings.TrimSpace(data.SourceBindIp),
-		HostRewrite:        strings.TrimSpace(data.HostRewrite),
-		KeepaliveInterval:  keepaliveInterval,
+		ServerAddr:        serverDaemonAddr,
+		Token:             cred.AccessToken,
+		Domain:            data.Domain,
+		LocalHttpAddr:     localHTTP,
+		LocalTCPAddr:      localTCP,
+		LocalUDPAddr:      localUDP,
+		SourceBindIP:      strings.TrimSpace(data.SourceBindIp),
+		HostRewrite:       strings.TrimSpace(data.HostRewrite),
+		KeepaliveInterval: keepaliveInterval,
+		// TLS so the federation connection looks like HTTPS and traverses firewalls.
+		UseTLS:        true,
+		TLSServerName: serverHost,
 	}
 	stopCh := make(chan struct{})
 	runner := &tunnelRunner{stop: stopCh}

@@ -139,6 +139,7 @@ func assignmentToConfig(baseURL, clientID string, a *tunnel_server.TunnelAgentAs
 	if serverDaemon == "" {
 		return client.Config{}, false
 	}
+	serverHost, _, _ := net.SplitHostPort(serverDaemon)
 	// Agent tunnels usually traverse NAT/firewall; force an aggressive keepalive
 	// (<= agentMaxKeepalive) so the idle return path is never dropped.
 	keepalive := time.Duration(a.KeepaliveIntervalSeconds) * time.Second
@@ -157,6 +158,9 @@ func assignmentToConfig(baseURL, clientID string, a *tunnel_server.TunnelAgentAs
 		SourceBindIP:      strings.TrimSpace(a.SourceBindIp),
 		HostRewrite:       strings.TrimSpace(a.HostRewrite),
 		KeepaliveInterval: keepalive,
+		// TLS so the connection looks like HTTPS and traverses firewalls/DPI.
+		UseTLS:        true,
+		TLSServerName: serverHost,
 	}, true
 }
 
