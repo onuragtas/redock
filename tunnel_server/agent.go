@@ -85,6 +85,30 @@ func FindAgentByID(id uint) (*TunnelAgent, error) {
 	return memory.FindByID[*TunnelAgent](GetDB(), TableTunnelAgents, id)
 }
 
+// AgentAssignmentForDomain returns the agent assignment that owns the given full
+// domain, or nil if the domain isn't agent-managed.
+func AgentAssignmentForDomain(fullDomain string) *TunnelAgentAssignment {
+	if fullDomain == "" {
+		return nil
+	}
+	for _, as := range memory.FindAll[*TunnelAgentAssignment](GetDB(), TableTunnelAgentAssignments) {
+		if as.Domain == fullDomain {
+			return as
+		}
+	}
+	return nil
+}
+
+// AgentDomainActive reports whether an agent-managed domain should currently be
+// bound (assignment enabled + auto-connect). Non-agent domains are always active.
+func AgentDomainActive(fullDomain string) bool {
+	a := AgentAssignmentForDomain(fullDomain)
+	if a == nil {
+		return true // not agent-managed
+	}
+	return a.Enabled && a.AutoConnect
+}
+
 func FindAgentByClientID(clientID string) *TunnelAgent {
 	if clientID == "" {
 		return nil

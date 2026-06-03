@@ -257,6 +257,11 @@ func TunnelUpdateAgentAssignment(c *fiber.Ctx) error {
 	if err := tunnel_server.UpdateAssignment(a); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "msg": err.Error()})
 	}
+	// If now disabled / auto-connect off, drop the live tunnel immediately (the
+	// daemon also rejects re-binds, so it stays down without relying on the poll).
+	if a.Domain != "" && (!a.Enabled || !a.AutoConnect) {
+		tunnel_server.DisconnectDomain(a.Domain)
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{"error": false, "data": a})
 }
 
@@ -269,8 +274,10 @@ func TunnelDeleteAgentAssignment(c *fiber.Ctx) error {
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "invalid assignment id"})
 	}
-	// Tear down the auto-generated domain (gateway + DNS) along with the assignment.
+	// Tear down the auto-generated domain (gateway + DNS) along with the assignment,
+	// and drop the live tunnel immediately.
 	if a, err := tunnel_server.FindAssignmentByID(uint(asgID)); err == nil && a != nil && a.Domain != "" {
+		tunnel_server.DisconnectDomain(a.Domain)
 		deleteManagedTunnelDomainByFull(a.Domain)
 	}
 	if err := tunnel_server.DeleteAssignmentByID(uint(asgID)); err != nil {

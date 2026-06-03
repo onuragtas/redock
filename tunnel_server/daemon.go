@@ -454,6 +454,12 @@ func handleBind(c *Client, domainArg string) {
 		_ = writeControlFrameToClient(c, "BIND_FAILED forbidden\n")
 		return
 	}
+	// Reject binds for agent domains whose assignment is disabled / auto-connect off,
+	// so a disabled tunnel can't (re)bind regardless of the client's poll loop.
+	if !AgentDomainActive(d.FullDomain) {
+		_ = writeControlFrameToClient(c, "BIND_FAILED assignment disabled\n")
+		return
+	}
 	boundDomainsMu.Lock()
 	prev := boundDomains[d.FullDomain]
 	boundDomains[d.FullDomain] = c
@@ -562,6 +568,22 @@ func GetClientByDomain(fullDomain string) *Client {
 // IsDomainBound returns true if a tunnel client is currently bound to the domain (aktif).
 func IsDomainBound(fullDomain string) bool {
 	return GetClientByDomain(fullDomain) != nil
+}
+
+// DisconnectDomain immediately closes the client connection bound to the domain
+// (used when an assignment is disabled/removed so the tunnel drops at once
+// instead of waiting for the client's poll loop). No-op if nothing is bound.
+func DisconnectDomain(fullDomain string) {
+	boundDomainsMu.Lock()
+	c := boundDomains[fullDomain]
+	if c != nil {
+		delete(boundDomains, fullDomain)
+	}
+	boundDomainsMu.Unlock()
+	if c != nil {
+		_ = c.Conn.Close()
+		log.Printf("tunnel_server: disconnected domain %s (assignment disabled/removed)", fullDomain)
+	}
 }
 
 // BoundClientUserID returns the tunnel user ID of the client bound to the domain, or 0 if none.
