@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/crypto/acme"
@@ -351,6 +352,82 @@ func (g *Gateway) collectLetsEncryptDomains() []string {
 		}
 	}
 	return domains
+}
+
+// certCoversDomains reports whether the on-disk certificate already includes
+// every domain in want as a SAN. Used to skip redundant ACME requests.
+func (g *Gateway) certCoversDomains(want []string) bool {
+	if len(want) == 0 {
+		return true
+	}
+	certPath := g.GetConfig().TLSCertFile
+	if certPath == "" {
+		return false
+	}
+	data, err := os.ReadFile(certPath)
+	if err != nil {
+		return false
+	}
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return false
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return false
+	}
+	have := make(map[string]bool, len(cert.DNSNames))
+	for _, d := range cert.DNSNames {
+		have[strings.ToLower(strings.TrimSpace(d))] = true
+	}
+	for _, d := range want {
+		if !have[strings.ToLower(strings.TrimSpace(d))] {
+			return false
+		}
+	}
+	return true
+}
+
+// ReissueCertificateIfNeeded re-issues the certificate in the background when a
+// route's Let's Encrypt settings change introduce a host the current cert does
+// not yet cover. It is a no-op when Let's Encrypt is disabled, there are no
+// domains, the cert already covers them, or another re-issue is already running.
+// Removed domains are not actively dropped here (the cert keeps the extra SAN
+// until the next renewal) to stay within ACME rate limits.
+func (g *Gateway) ReissueCertificateIfNeeded() {
+	config := g.GetConfig()
+	if config.LetsEncrypt == nil || !config.LetsEncrypt.Enabled {
+		return
+	}
+	want := g.collectLetsEncryptDomains()
+	if len(want) == 0 || g.certCoversDomains(want) {
+		return
+	}
+	if !atomic.CompareAndSwapInt32(&g.certReissuing, 0, 1) {
+		return // a re-issue is already in flight
+	}
+	go func() {
+		defer atomic.StoreInt32(&g.certReissuing, 0)
+
+		// Wait for the gateway to be serving so the ACME HTTP-01 challenge can be answered.
+		const pollInterval = 200 * time.Millisecond
+		const maxWait = 15 * time.Second
+		deadline := time.Now().Add(maxWait)
+		for !g.IsRunning() {
+			if time.Now().After(deadline) {
+				log.Printf("API Gateway: gateway not running, skipping auto certificate re-issue for %v", want)
+				return
+			}
+			time.Sleep(pollInterval)
+		}
+		// Small settle delay so freshly added routes/DNS are reachable.
+		time.Sleep(3 * time.Second)
+
+		log.Printf("API Gateway: route SSL change detected, re-issuing certificate for %v", want)
+		if err := g.RequestCertificate(); err != nil {
+			log.Printf("API Gateway: auto certificate re-issue failed: %v", err)
+		}
+	}()
 }
 
 func (g *Gateway) requestCertificateWithLEConfig(leConfig *LetsEncryptConfig, domains []string) error {

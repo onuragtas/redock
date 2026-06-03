@@ -2209,7 +2209,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <FormField>
           <FormCheckRadio v-model="newRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="new_route_lets_encrypt" />
           <p class="text-xs text-gray-500 mt-1">
-            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Etkinleştirme/e-posta için Gateway Settings'i kullanın, sonra Certificates sekmesinden "Request Certificate" deyin.
+            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Let's Encrypt Gateway Settings'te etkinse, kaydedince sertifika arka planda otomatik yeniden alınır.
           </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">
@@ -2530,7 +2530,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <FormField>
           <FormCheckRadio v-model="editingRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="edit_route_lets_encrypt" />
           <p class="text-xs text-gray-500 mt-1">
-            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Etkinleştirme/e-posta için Gateway Settings'i kullanın, sonra Certificates sekmesinden "Request Certificate" deyin.
+            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Let's Encrypt Gateway Settings'te etkinse, kaydedince sertifika arka planda otomatik yeniden alınır.
           </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">

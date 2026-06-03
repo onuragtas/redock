@@ -65,6 +65,8 @@ func APIGatewayUpdateConfig(c *fiber.Ctx) error {
 		})
 	}
 
+	gw.ReissueCertificateIfNeeded()
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "Configuration updated successfully",
@@ -524,6 +526,8 @@ func APIGatewayAddRoute(c *fiber.Ctx) error {
 		})
 	}
 
+	gw.ReissueCertificateIfNeeded()
+
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "Route added successfully",
@@ -570,6 +574,8 @@ func APIGatewayUpdateRoute(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+
+	gw.ReissueCertificateIfNeeded()
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,

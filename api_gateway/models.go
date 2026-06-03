@@ -406,6 +406,7 @@ type Gateway struct {
 	clientStatsMu     sync.RWMutex
 	persistentBlocks  map[string]BlockedClient
 	blockListMu       sync.Mutex
+	certReissuing     int32 // atomic guard so only one auto re-issue runs at a time
 }
 
 // gatewayStatsTracker tracks gateway statistics
