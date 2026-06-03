@@ -803,9 +803,12 @@ func (g *Gateway) startLocked() error {
 		return fmt.Errorf("failed to listen on %s: %w", httpAddr, err)
 	}
 
+	// Capture server+listener into locals so a concurrent stop (which nils
+	// g.httpServer) can't turn this into a nil-pointer Serve panic.
+	httpSrv, httpLn := g.httpServer, g.httpListener
 	go func() {
 		log.Printf("API Gateway: HTTP server listening on %s", httpAddr)
-		if err := g.httpServer.Serve(g.httpListener); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.Serve(httpLn); err != nil && err != http.ErrServerClosed {
 			log.Printf("API Gateway: HTTP server error: %v", err)
 		}
 	}()
@@ -844,9 +847,10 @@ func (g *Gateway) startLocked() error {
 		if err != nil {
 			log.Printf("API Gateway: Failed to listen on %s: %v", httpsAddr, err)
 		} else {
+			httpsSrv, httpsLn := g.httpsServer, g.httpsListener
 			go func() {
 				log.Printf("API Gateway: HTTPS server listening on %s", httpsAddr)
-				if err := g.httpsServer.Serve(g.httpsListener); err != nil && err != http.ErrServerClosed {
+				if err := httpsSrv.Serve(httpsLn); err != nil && err != http.ErrServerClosed {
 					log.Printf("API Gateway: HTTPS server error: %v", err)
 				}
 			}()
