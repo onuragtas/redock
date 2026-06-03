@@ -624,7 +624,8 @@ func GetDomainByInternalHttpPort(internalPort int) *TunnelDomain {
 
 // needHTTPForDomain returns true if domain uses HTTP/HTTPS backend.
 func needHTTPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
+	h, _, _ := protoNeeds(d.Protocol)
+	return h
 }
 
 // internalUDPPort returns the port the daemon listens on for UDP backend (gateway forwards to this).
@@ -660,7 +661,8 @@ func GetDomainByInternalTCPPort(internalPort int) *TunnelDomain {
 }
 
 func needTCPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
+	_, t, _ := protoNeeds(d.Protocol)
+	return t
 }
 
 // --- Backend TCP listeners (3.3: gateway proxies to 127.0.0.1:port, we accept and forward to client) ---
@@ -680,7 +682,8 @@ func startAllBackendListeners() {
 }
 
 func needUDPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
+	_, _, u := protoNeeds(d.Protocol)
+	return u
 }
 
 // StartBackendListener starts listening on 127.0.0.1:(port+30000) for HTTP backend so 0.0.0.0:port stays free for gateway TCP/UDP.
