@@ -233,10 +233,167 @@ const onZoneChange = async (zoneId) => {
   }
 };
 
+// --- Remote agents (control plane) ---
+const agents = ref([]);
+const agentAssignments = ref({}); // agentId -> assignments[]
+const expandedAgentId = ref(null);
+const isAssignmentModalActive = ref(false);
+const assignmentMode = ref("create"); // create | edit
+const assignmentAgentId = ref(null);
+const assignmentSaving = ref(false);
+
+const blankAssignment = () => ({
+  id: null,
+  domain: "",
+  local_http_ip: "127.0.0.1",
+  local_http_port: 80,
+  local_tcp_ip: "",
+  local_tcp_port: "",
+  local_udp_ip: "",
+  local_udp_port: "",
+  source_bind_ip: "",
+  host_rewrite: "",
+  keepalive_interval_seconds: 30,
+  auto_connect: true,
+  enabled: true
+});
+const assignmentForm = ref(blankAssignment());
+
+const loadAgents = async () => {
+  try {
+    const res = await ApiService.tunnelAgentsList();
+    agents.value = res?.data?.data || [];
+  } catch (e) {
+    console.error("Failed to load agents:", e);
+  }
+};
+
+const loadAgentAssignments = async (agentId) => {
+  try {
+    const res = await ApiService.tunnelAgentAssignmentsList(agentId);
+    agentAssignments.value = { ...agentAssignments.value, [agentId]: res?.data?.data || [] };
+  } catch (e) {
+    console.error("Failed to load assignments:", e);
+  }
+};
+
+const toggleAgent = async (agent) => {
+  if (expandedAgentId.value === agent.id) {
+    expandedAgentId.value = null;
+    return;
+  }
+  expandedAgentId.value = agent.id;
+  await loadAgentAssignments(agent.id);
+};
+
+const deleteAgent = async (agent) => {
+  if (!confirm(`Delete agent '${agent.label || agent.client_id}' and all its assignments?`)) return;
+  try {
+    await ApiService.tunnelAgentDelete(agent.id);
+    toast.success("Agent deleted");
+    await loadAgents();
+  } catch (e) {
+    toast.error("Failed to delete agent: " + (e.response?.data?.msg || e.message));
+  }
+};
+
+const openCreateAssignment = (agent) => {
+  assignmentMode.value = "create";
+  assignmentAgentId.value = agent.id;
+  assignmentForm.value = blankAssignment();
+  isAssignmentModalActive.value = true;
+};
+
+const openEditAssignment = (agentId, a) => {
+  assignmentMode.value = "edit";
+  assignmentAgentId.value = agentId;
+  assignmentForm.value = {
+    id: a.id,
+    domain: a.domain,
+    local_http_ip: a.local_http_ip || "",
+    local_http_port: a.local_http_port || "",
+    local_tcp_ip: a.local_tcp_ip || "",
+    local_tcp_port: a.local_tcp_port || "",
+    local_udp_ip: a.local_udp_ip || "",
+    local_udp_port: a.local_udp_port || "",
+    source_bind_ip: a.source_bind_ip || "",
+    host_rewrite: a.host_rewrite || "",
+    keepalive_interval_seconds: a.keepalive_interval_seconds ?? 30,
+    auto_connect: !!a.auto_connect,
+    enabled: !!a.enabled
+  };
+  isAssignmentModalActive.value = true;
+};
+
+const saveAssignment = async () => {
+  const f = assignmentForm.value;
+  const httpP = parseInt(f.local_http_port) || 0;
+  const tcpP = parseInt(f.local_tcp_port) || 0;
+  const udpP = parseInt(f.local_udp_port) || 0;
+  if (httpP <= 0 && tcpP <= 0 && udpP <= 0) {
+    toast.warning("Enter at least one local target (HTTP/TCP/UDP ip+port)");
+    return;
+  }
+  assignmentSaving.value = true;
+  try {
+    const payload = {
+      local_http_ip: (f.local_http_ip || "").trim(),
+      local_http_port: parseInt(f.local_http_port) || 0,
+      local_tcp_ip: (f.local_tcp_ip || "").trim(),
+      local_tcp_port: parseInt(f.local_tcp_port) || 0,
+      local_udp_ip: (f.local_udp_ip || "").trim(),
+      local_udp_port: parseInt(f.local_udp_port) || 0,
+      source_bind_ip: (f.source_bind_ip || "").trim(),
+      host_rewrite: (f.host_rewrite || "").trim(),
+      keepalive_interval_seconds: parseInt(f.keepalive_interval_seconds) || 0,
+      auto_connect: !!f.auto_connect,
+      enabled: !!f.enabled
+    };
+    if (assignmentMode.value === "edit") {
+      await ApiService.tunnelAgentAssignmentUpdate(assignmentAgentId.value, f.id, payload);
+    } else {
+      await ApiService.tunnelAgentAssignmentCreate(assignmentAgentId.value, payload);
+    }
+    isAssignmentModalActive.value = false;
+    await loadAgentAssignments(assignmentAgentId.value);
+    toast.success("Assignment saved (client applies within ~20s)");
+  } catch (e) {
+    toast.error("Save failed: " + (e.response?.data?.msg || e.message));
+  } finally {
+    assignmentSaving.value = false;
+  }
+};
+
+const toggleAssignmentAutoConnect = async (agentId, a) => {
+  try {
+    await ApiService.tunnelAgentAssignmentUpdate(agentId, a.id, { auto_connect: !a.auto_connect });
+    await loadAgentAssignments(agentId);
+  } catch (e) {
+    toast.error("Update failed: " + (e.response?.data?.msg || e.message));
+  }
+};
+
+const deleteAssignment = async (agentId, a) => {
+  if (!confirm(`Delete assignment for '${a.domain}'?`)) return;
+  try {
+    await ApiService.tunnelAgentAssignmentDelete(agentId, a.id);
+    await loadAgentAssignments(agentId);
+    toast.success("Assignment deleted");
+  } catch (e) {
+    toast.error("Delete failed: " + (e.response?.data?.msg || e.message));
+  }
+};
+
+const formatSeen = (ts) => {
+  if (!ts) return "—";
+  return new Date(ts).toLocaleString();
+};
+
 onMounted(() => {
   loadConfig();
   loadZones();
   tunnelList();
+  loadAgents();
 });
 </script>
 
@@ -577,7 +734,158 @@ onMounted(() => {
         </div>
       </div>
     </CardBox>
+
+    <!-- Remote Agents (control plane) -->
+    <CardBox>
+      <SectionTitleLineWithButton :icon="mdiServerNetwork" title="Remote Agents" main>
+        <BaseButton :icon="mdiRefresh" color="info" small label="Refresh" @click="loadAgents" />
+      </SectionTitleLineWithButton>
+
+      <div v-if="agents.length === 0" class="text-center py-10 text-slate-500">
+        No agents registered yet. A client appears here once it registers with this server.
+      </div>
+
+      <div v-else class="space-y-3">
+        <div
+          v-for="agent in agents"
+          :key="agent.id"
+          class="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden"
+        >
+          <div class="flex items-center justify-between p-4 gap-3">
+            <div class="flex items-center gap-3 min-w-0">
+              <BaseIcon
+                :path="mdiCircle"
+                size="14"
+                :class="agent.online ? 'text-green-500' : 'text-slate-400'"
+              />
+              <div class="min-w-0">
+                <div class="font-semibold truncate">
+                  {{ agent.label || agent.client_id }}
+                  <span class="text-xs text-slate-400 font-normal">({{ agent.online ? "online" : "offline" }})</span>
+                </div>
+                <div class="text-xs text-slate-500 truncate">
+                  {{ agent.client_id }} · last seen: {{ formatSeen(agent.last_seen_at) }}
+                </div>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <BaseButton :icon="mdiConnection" color="success" small label="Assign tunnel" @click="openCreateAssignment(agent)" />
+              <BaseButton
+                :icon="expandedAgentId === agent.id ? mdiChevronLeft : mdiChevronRight"
+                color="lightDark"
+                small
+                @click="toggleAgent(agent)"
+              />
+              <BaseButton :icon="mdiDelete" color="danger" small @click="deleteAgent(agent)" />
+            </div>
+          </div>
+
+          <div v-if="expandedAgentId === agent.id" class="border-t border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-800/40">
+            <div v-if="!(agentAssignments[agent.id] || []).length" class="text-sm text-slate-500 py-2">
+              No tunnels assigned. Use "Assign tunnel" to add one.
+            </div>
+            <table v-else class="min-w-full text-sm">
+              <thead>
+                <tr class="text-left text-slate-500">
+                  <th class="py-1 pr-3">Domain</th>
+                  <th class="py-1 pr-3">Target (HTTP/TCP/UDP)</th>
+                  <th class="py-1 pr-3">Auto</th>
+                  <th class="py-1 pr-3 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="a in agentAssignments[agent.id]" :key="a.id" class="border-t border-slate-200 dark:border-slate-700">
+                  <td class="py-2 pr-3 font-mono">{{ a.domain }}</td>
+                  <td class="py-2 pr-3 font-mono text-xs text-slate-500">
+                    <span v-if="a.local_http_port">{{ a.local_http_ip }}:{{ a.local_http_port }} (http)</span>
+                    <span v-if="a.local_tcp_port"> · {{ a.local_tcp_ip }}:{{ a.local_tcp_port }} (tcp)</span>
+                    <span v-if="a.local_udp_port"> · {{ a.local_udp_ip }}:{{ a.local_udp_port }} (udp)</span>
+                  </td>
+                  <td class="py-2 pr-3">
+                    <button
+                      type="button"
+                      class="px-2 py-0.5 rounded text-xs font-medium"
+                      :class="a.auto_connect ? 'bg-green-100 text-green-700 dark:bg-green-900/40 dark:text-green-300' : 'bg-slate-200 text-slate-500 dark:bg-slate-700'"
+                      @click="toggleAssignmentAutoConnect(agent.id, a)"
+                    >
+                      {{ a.auto_connect ? "ON" : "OFF" }}
+                    </button>
+                  </td>
+                  <td class="py-2 pr-3 text-right">
+                    <div class="inline-flex gap-2">
+                      <BaseButton :icon="mdiRefresh" color="info" small title="Edit" @click="openEditAssignment(agent.id, a)" />
+                      <BaseButton :icon="mdiDelete" color="danger" small title="Delete" @click="deleteAssignment(agent.id, a)" />
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </CardBox>
   </div>
+
+  <!-- Assignment Create/Edit Modal -->
+  <CardBoxModal
+    v-model="isAssignmentModalActive"
+    :title="assignmentMode === 'edit' ? 'Edit Tunnel Assignment' : 'Assign Tunnel'"
+    :button-label="assignmentSaving ? 'Saving...' : 'Save'"
+    has-cancel
+    @confirm="saveAssignment"
+  >
+    <div class="space-y-3">
+      <p v-if="assignmentMode === 'edit'" class="text-xs text-slate-500">
+        Domain: <span class="font-mono">{{ assignmentForm.domain }}</span>
+      </p>
+      <p v-else class="text-xs text-slate-500">
+        The domain is auto-generated (random subdomain). Just enter the local target the client will forward to.
+      </p>
+      <div class="grid grid-cols-2 gap-3">
+        <FormField label="HTTP IP">
+          <FormControl v-model="assignmentForm.local_http_ip" placeholder="127.0.0.1" />
+        </FormField>
+        <FormField label="HTTP Port">
+          <FormControl v-model="assignmentForm.local_http_port" type="number" placeholder="80" />
+        </FormField>
+        <FormField label="TCP IP">
+          <FormControl v-model="assignmentForm.local_tcp_ip" placeholder="(optional)" />
+        </FormField>
+        <FormField label="TCP Port">
+          <FormControl v-model="assignmentForm.local_tcp_port" type="number" placeholder="" />
+        </FormField>
+        <FormField label="UDP IP">
+          <FormControl v-model="assignmentForm.local_udp_ip" placeholder="(optional)" />
+        </FormField>
+        <FormField label="UDP Port">
+          <FormControl v-model="assignmentForm.local_udp_port" type="number" placeholder="" />
+        </FormField>
+      </div>
+      <p class="text-xs text-slate-500">
+        This ip:port is the target the client forwards to on its own network. At least one (HTTP/TCP/UDP) must be set.
+      </p>
+      <div class="grid grid-cols-2 gap-3">
+        <FormField label="Source Bind IP">
+          <FormControl v-model="assignmentForm.source_bind_ip" placeholder="(optional)" />
+        </FormField>
+        <FormField label="Keepalive (s)">
+          <FormControl v-model="assignmentForm.keepalive_interval_seconds" type="number" placeholder="30" />
+        </FormField>
+      </div>
+      <FormField label="Host Rewrite">
+        <FormControl v-model="assignmentForm.host_rewrite" placeholder="(optional, HTTP Host override)" />
+      </FormField>
+      <label class="inline-flex items-center gap-2 cursor-pointer">
+        <input v-model="assignmentForm.auto_connect" type="checkbox" class="form-checkbox" />
+        <span class="text-sm">Auto-connect (client opens it automatically)</span>
+      </label>
+      <br />
+      <label class="inline-flex items-center gap-2 cursor-pointer">
+        <input v-model="assignmentForm.enabled" type="checkbox" class="form-checkbox" />
+        <span class="text-sm">Enabled</span>
+      </label>
+    </div>
+  </CardBoxModal>
 
   <!-- Delete Confirmation Modal -->
   <CardBoxModal

@@ -56,4 +56,18 @@ func TunnelApiRoutes(a *fiber.App) {
 	tunnel.Post("/start", controllers.TunnelStart)
 	tunnel.Post("/stop", controllers.TunnelStop)
 	tunnel.Post("/renew", controllers.TunnelRenew)
+	tunnel.Get("/client-configs", controllers.TunnelListClientConfigs)
+	tunnel.Post("/auto-start", controllers.TunnelSetAutoStart)
+
+	// Remote agent management (control plane).
+	// Agent-facing (auth: X-Agent-Secret or tunnel user token):
+	tunnel.Post("/agent/register", controllers.TunnelAgentRegister)
+	tunnel.Get("/agent/assignments", controllers.TunnelAgentAssignments)
+	// Admin-facing (auth: tunnel token or Redock JWT):
+	tunnel.Get("/agents", controllers.TunnelListAgents)
+	tunnel.Delete("/agents/:id", controllers.TunnelDeleteAgent)
+	tunnel.Get("/agents/:id/assignments", controllers.TunnelListAgentAssignments)
+	tunnel.Post("/agents/:id/assignments", controllers.TunnelCreateAgentAssignment)
+	tunnel.Put("/agents/:id/assignments/:asgId", controllers.TunnelUpdateAgentAssignment)
+	tunnel.Delete("/agents/:id/assignments/:asgId", controllers.TunnelDeleteAgentAssignment)
 }

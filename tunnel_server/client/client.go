@@ -29,8 +29,12 @@ const (
 type Config struct {
 	// ServerAddr is the daemon address (e.g. "host:8443").
 	ServerAddr string
-	// Token is the JWT access token for auth.
+	// Token is the JWT access token for auth (used when TokenProvider is nil).
 	Token string
+	// TokenProvider, if set, is called on every (re)connect to obtain a fresh
+	// token. Use this for long-running tunnels whose token would otherwise
+	// expire (e.g. admin/auto-start tunnels minting a new token each connect).
+	TokenProvider func() (string, error)
 	// Domain is subdomain or full domain to bind (e.g. "myapp" or "myapp.tnpx.org").
 	Domain string
 	// LocalHttpAddr is the destination for HTTP/HTTPS tunneled traffic (e.g. "127.0.0.1:8080"). Empty to disable or fall back to LocalTCPAddr.
@@ -66,7 +70,15 @@ type Client struct {
 // ConnectOnce connects to the daemon, performs auth and BIND, and returns the client.
 // The caller should call Run() (e.g. in a goroutine) and Close() when done.
 func ConnectOnce(cfg Config) (*Client, error) {
-	if cfg.ServerAddr == "" || cfg.Token == "" || cfg.Domain == "" {
+	token := cfg.Token
+	if cfg.TokenProvider != nil {
+		t, err := cfg.TokenProvider()
+		if err != nil {
+			return nil, fmt.Errorf("client: token provider: %w", err)
+		}
+		token = t
+	}
+	if cfg.ServerAddr == "" || token == "" || cfg.Domain == "" {
 		return nil, fmt.Errorf("client: ServerAddr, Token and Domain are required")
 	}
 	conn, err := net.DialTimeout("tcp", cfg.ServerAddr, 15*time.Second)
@@ -81,8 +93,8 @@ func ConnectOnce(cfg Config) (*Client, error) {
 		}
 	}
 	br := bufio.NewReaderSize(conn, maxAuthLineLen)
-	log.Printf("tunnel_client: out auth token len=%d", len(cfg.Token))
-	if _, err := conn.Write([]byte(cfg.Token + "\n")); err != nil {
+	log.Printf("tunnel_client: out auth token len=%d", len(token))
+	if _, err := conn.Write([]byte(token + "\n")); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("client: write token: %w", err)
 	}

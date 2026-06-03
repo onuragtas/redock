@@ -555,6 +555,39 @@ class ApiService {
     return this.post('/api/v1/tunnel/renew', data);
   }
 
+  static async tunnelClientConfigs() {
+    return this.get('/api/v1/tunnel/client-configs');
+  }
+
+  static async tunnelSetAutoStart(domain, autoStart) {
+    return this.post('/api/v1/tunnel/auto-start', { Domain: domain, AutoStart: autoStart });
+  }
+
+  // Remote agent management (server-side admin).
+  static async tunnelAgentsList() {
+    return this.get('/api/v1/tunnel/agents');
+  }
+
+  static async tunnelAgentDelete(id) {
+    return this.delete(`/api/v1/tunnel/agents/${id}`);
+  }
+
+  static async tunnelAgentAssignmentsList(agentId) {
+    return this.get(`/api/v1/tunnel/agents/${agentId}/assignments`);
+  }
+
+  static async tunnelAgentAssignmentCreate(agentId, data) {
+    return this.post(`/api/v1/tunnel/agents/${agentId}/assignments`, data);
+  }
+
+  static async tunnelAgentAssignmentUpdate(agentId, asgId, data) {
+    return this.put(`/api/v1/tunnel/agents/${agentId}/assignments/${asgId}`, data);
+  }
+
+  static async tunnelAgentAssignmentDelete(agentId, asgId) {
+    return this.delete(`/api/v1/tunnel/agents/${agentId}/assignments/${asgId}`);
+  }
+
   static async localProxyCreate(data) {
     return await this.post('/api/v1/local_proxy/create', data);
   }
