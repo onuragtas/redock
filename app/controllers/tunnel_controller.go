@@ -461,22 +461,6 @@ func runTunnelClientKeyed(key string, cfg client.Config) {
 	}()
 }
 
-// stopTunnelByKey stops and removes a tracked tunnel runner by key.
-func stopTunnelByKey(key string) {
-	if existing, ok := activeTunnels.Load(key); ok {
-		if runner, _ := existing.(*tunnelRunner); runner != nil {
-			runner.Stop()
-		}
-		activeTunnels.Delete(key)
-	}
-}
-
-// tunnelRunning reports whether a runner is tracked under key.
-func tunnelRunning(key string) bool {
-	_, ok := activeTunnels.Load(key)
-	return ok
-}
-
 // clientConfigToDaemonConfig builds a client.Config from persisted settings.
 // Returns ok=false when no local target is configured. Auto-start tunnels mint a
 // fresh local/admin token on every reconnect (TokenProvider) so they never die

@@ -14,6 +14,7 @@ import (
 	"os/user"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"redock/tunnel_server"
@@ -76,19 +77,70 @@ func agentIdentity() (hostname, osUser string) {
 	return hostname, osUser
 }
 
-// agentLoop keeps a single remote server's assignments reconciled into tunnels.
+// agentTunnel is one running agent-managed tunnel.
+type agentTunnel struct {
+	sig  string        // assignment signature; a change triggers a restart
+	stop chan struct{} // closed to stop the reconnect loop
+}
+
+// agentTunnels is the process-wide registry of agent-managed tunnels, keyed by
+// domain. It is shared by every agentLoop so that — no matter how many loops or
+// servers are configured — a domain is bound by exactly one runner. This is the
+// single guarantee that prevents two connections fighting over one server-side
+// binding (the per-second BIND ping-pong).
+var (
+	agentTunnelsMu sync.Mutex
+	agentTunnels   = map[string]*agentTunnel{}
+)
+
+// ensureAgentTunnel guarantees a single up-to-date runner for domain. It is
+// idempotent: concurrent loops calling it with the same signature do nothing, and
+// a changed signature restarts the runner. It also makes the domain exclusively
+// agent-managed by evicting any foreign runner (persisted/manual auto-tunnel) and
+// dropping its persisted config so it can't be auto-started again.
+func ensureAgentTunnel(domain, sig string, cfg client.Config, baseURL string) {
+	agentTunnelsMu.Lock()
+	defer agentTunnelsMu.Unlock()
+	if t := agentTunnels[domain]; t != nil {
+		if t.sig == sig {
+			return // already running with the same settings
+		}
+		close(t.stop) // settings changed -> restart
+		delete(agentTunnels, domain)
+	}
+	stopRunnersForDomainExcept(domain, "")               // evict foreign runners (none of ours live in activeTunnels)
+	_ = tunnel_server.DeleteClientConfigByDomain(domain) // never auto-start this domain locally again
+	log.Printf("tunnel agent: opening %s -> %s", domain, baseURL)
+	t := &agentTunnel{sig: sig, stop: make(chan struct{})}
+	agentTunnels[domain] = t
+	go func() { _ = client.RunWithReconnect(cfg, t.stop) }()
+}
+
+// stopAgentTunnel stops the runner for domain if present.
+func stopAgentTunnel(domain string) {
+	agentTunnelsMu.Lock()
+	defer agentTunnelsMu.Unlock()
+	if t := agentTunnels[domain]; t != nil {
+		close(t.stop)
+		delete(agentTunnels, domain)
+		log.Printf("tunnel agent: closing %s", domain)
+	}
+}
+
+// agentLoop reconciles one server's assignments into running tunnels every poll.
+// Runners are held in the shared agentTunnels registry (keyed by domain), so any
+// number of loops converge on one runner per domain. `mine` tracks the domains
+// this loop currently wants, so it only tears down what it previously brought up.
 func agentLoop(baseURL, clientID string) {
-	running := map[string]string{} // domain -> signature of the running tunnel
-	keyOf := func(domain string) string { return "agent:" + baseURL + ":" + domain }
+	mine := map[string]bool{}
 
 	for {
-		// Register / heartbeat (also confirms the server is reachable).
+		// Register / heartbeat: refreshes the daemon token and confirms reachability.
 		if _, err := agentRegister(baseURL, clientID); err != nil {
 			log.Printf("tunnel agent: register %s: %v (retry)", baseURL, err)
 			time.Sleep(agentPollInterval)
 			continue
 		}
-
 		assignments, err := agentFetchAssignments(baseURL, clientID)
 		if err != nil {
 			log.Printf("tunnel agent: assignments %s: %v", baseURL, err)
@@ -96,7 +148,8 @@ func agentLoop(baseURL, clientID string) {
 			continue
 		}
 
-		desired := map[string]string{}
+		// Reconcile to the desired state: start/refresh every active assignment.
+		want := map[string]bool{}
 		for _, a := range assignments {
 			if !a.Enabled || !a.AutoConnect || strings.TrimSpace(a.Domain) == "" {
 				continue
@@ -105,29 +158,17 @@ func agentLoop(baseURL, clientID string) {
 			if !ok {
 				continue
 			}
-			sig := assignmentSignature(a)
-			desired[a.Domain] = sig
-			if running[a.Domain] != sig || !tunnelRunning(keyOf(a.Domain)) {
-				log.Printf("tunnel agent: opening %s -> %s", a.Domain, baseURL)
-				runTunnelClientKeyed(keyOf(a.Domain), cfg)
-				running[a.Domain] = sig
-			}
-			// Continuously enforce a single runner for this agent-managed domain.
-			// A stale persisted auto-tunnel (key = domain) or a manually started one
-			// would otherwise keep its own connection and fight the agent runner over
-			// the single server-side binding, causing an endless rebind loop. This
-			// runs every poll (not just when (re)starting) so a conflicting runner
-			// that appears later is evicted too.
-			stopRunnersForDomainExcept(a.Domain, keyOf(a.Domain))
+			want[a.Domain] = true
+			ensureAgentTunnel(a.Domain, assignmentSignature(a), cfg, baseURL)
 		}
 
-		for d := range running {
-			if _, ok := desired[d]; !ok {
-				log.Printf("tunnel agent: closing %s (unassigned)", d)
-				stopTunnelByKey(keyOf(d))
-				delete(running, d)
+		// Tear down domains this loop previously managed but no longer wants.
+		for domain := range mine {
+			if !want[domain] {
+				stopAgentTunnel(domain)
 			}
 		}
+		mine = want
 
 		time.Sleep(agentPollInterval)
 	}
