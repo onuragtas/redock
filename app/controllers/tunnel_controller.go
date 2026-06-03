@@ -24,12 +24,38 @@ var activeTunnels sync.Map
 
 // tunnelRunner allows stopping the reconnect loop (close stop channel once).
 type tunnelRunner struct {
-	stop chan struct{}
-	once sync.Once
+	stop   chan struct{}
+	once   sync.Once
+	domain string // bound domain; used to enforce one runner per domain
 }
 
 func (r *tunnelRunner) Stop() {
 	r.once.Do(func() { close(r.stop) })
+}
+
+// stopRunnersForDomainExcept stops and removes every tracked runner bound to
+// domain whose key differs from exceptKey. A domain can only be bound by one
+// client at a time on the server (a second BIND kicks the first), so two local
+// runners for the same domain — e.g. a persisted auto-tunnel and an agent
+// assignment — would otherwise fight forever, each kicking the other's bind in a
+// per-second reconnect loop. This guarantees a single live runner per domain.
+func stopRunnersForDomainExcept(domain, exceptKey string) {
+	if domain == "" {
+		return
+	}
+	activeTunnels.Range(func(k, v interface{}) bool {
+		key, _ := k.(string)
+		if key == exceptKey {
+			return true
+		}
+		runner, _ := v.(*tunnelRunner)
+		if runner != nil && runner.domain == domain {
+			log.Printf("tunnel: stopping duplicate runner %q for domain %s", key, domain)
+			runner.Stop()
+			activeTunnels.Delete(key)
+		}
+		return true
+	})
 }
 
 // requireTunnelServerBearer returns tunnel user ID if Authorization: Bearer <token> is valid (tunnel_server OAuth2).
@@ -422,8 +448,12 @@ func runTunnelClientKeyed(key string, cfg client.Config) {
 		}
 		activeTunnels.Delete(key)
 	}
+	// Drop any other runner already bound to this domain (e.g. a stale persisted
+	// auto-tunnel) so the new runner doesn't fight it over the single server-side
+	// binding.
+	stopRunnersForDomainExcept(cfg.Domain, key)
 	stopCh := make(chan struct{})
-	runner := &tunnelRunner{stop: stopCh}
+	runner := &tunnelRunner{stop: stopCh, domain: cfg.Domain}
 	activeTunnels.Store(key, runner)
 	go func() {
 		_ = client.RunWithReconnect(cfg, stopCh)
@@ -1311,8 +1341,9 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		UseTLS:        true,
 		TLSServerName: serverHost,
 	}
+	stopRunnersForDomainExcept(cfg.Domain, key)
 	stopCh := make(chan struct{})
-	runner := &tunnelRunner{stop: stopCh}
+	runner := &tunnelRunner{stop: stopCh, domain: cfg.Domain}
 	activeTunnels.Store(key, runner)
 	go func() {
 		_ = client.RunWithReconnect(cfg, stopCh)
