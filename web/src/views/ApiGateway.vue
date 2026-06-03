@@ -424,7 +424,7 @@ const formatUptime = (seconds) => {
 const loadData = async () => {
   loading.value = true
   try {
-    const [statusRes, statsRes, servicesRes, upstreamsRes, routesRes, healthRes, certRes, renewerRes] = await Promise.all([
+    const [statusRes, statsRes, servicesRes, upstreamsRes, routesRes, healthRes, certRes, renewerRes, observabilityRes] = await Promise.all([
       ApiService.apiGatewayStatus().catch(() => ({ data: { data: {} } })),
       ApiService.apiGatewayStats().catch(() => ({ data: { data: {} } })),
       ApiService.apiGatewayListServices().catch(() => ({ data: { data: [] } })),
@@ -432,7 +432,8 @@ const loadData = async () => {
       ApiService.apiGatewayListRoutes().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayHealth().catch(() => ({ data: { data: [] } })),
       ApiService.apiGatewayCertificateInfo().catch(() => ({ data: { data: {} } })),
-      ApiService.apiGatewayRenewerStatus().catch(() => ({ data: { data: {} } }))
+      ApiService.apiGatewayRenewerStatus().catch(() => ({ data: { data: {} } })),
+      ApiService.apiGatewayGetObservabilityStatus().catch(() => ({ data: { data: {} } }))
     ])
 
     status.value = statusRes.data.data || {}
@@ -443,6 +444,7 @@ const loadData = async () => {
     serviceHealth.value = healthRes.data.data || []
     certificateInfo.value = certRes.data.data || {}
     renewerStatus.value = renewerRes.data.data || {}
+    observabilityConfig.value = normalizeObservabilityConfig(observabilityRes.data.data?.config || {})
   } catch (error) {
     console.error('Failed to load API Gateway data:', error)
   } finally {
