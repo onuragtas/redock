@@ -89,15 +89,21 @@ const clientConfigs = ref({});
 
 const toast = useToast();
 
+// Whether a tunnel's protocol enables a transport ("all" or a "+"-combo like "http+tcp").
+function protoHas(tunnel, kind) {
+  const p = (tunnel.protocol || "").toLowerCase();
+  return p === "all" || p.includes(kind);
+}
+
 // Connection info from outside: address and short description per protocol
 function getConnectionLines(tunnel) {
   const domain = tunnel.domain || "";
   const port = tunnel.port;
   const protocol = (tunnel.protocol || "all").toLowerCase();
   const lines = [];
-  const hasHTTP = protocol === "http" || protocol === "https" || protocol === "all";
-  const hasTCP = protocol === "tcp" || protocol === "tcp+udp" || protocol === "all";
-  const hasUDP = protocol === "udp" || protocol === "tcp+udp" || protocol === "all";
+  const hasHTTP = protocol === "all" || protocol.includes("http");
+  const hasTCP = protocol === "all" || protocol.includes("tcp");
+  const hasUDP = protocol === "all" || protocol.includes("udp");
   if (hasHTTP) {
     lines.push(
       { label: "HTTP (Web)", value: `http://${domain}`, desc: "Open this URL in a browser or send HTTP requests." },
@@ -948,25 +954,25 @@ onMounted(async () => {
                       Port: {{ tunnel.port }}
                     </span>
                     <span
-                      v-if="['tcp', 'tcp+udp', 'all'].includes(tunnel.protocol)"
+                      v-if="protoHas(tunnel, 'tcp')"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                     >
                       TCP
                     </span>
                     <span
-                      v-if="['udp', 'tcp+udp', 'all'].includes(tunnel.protocol)"
+                      v-if="protoHas(tunnel, 'udp')"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300"
                     >
                       UDP
                     </span>
                     <span
-                      v-if="['http', 'https', 'all'].includes(tunnel.protocol)"
+                      v-if="protoHas(tunnel, 'http')"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
                     >
                       HTTP
                     </span>
                     <span
-                      v-if="['https', 'all'].includes(tunnel.protocol)"
+                      v-if="tunnel.protocol === 'https' || tunnel.protocol === 'all'"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
                     >
                       HTTPS

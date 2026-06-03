@@ -166,23 +166,23 @@ type agentAssignmentBody struct {
 	Enabled                  *bool  `json:"enabled"`
 }
 
-// protocolForAssignment derives the tunnel protocol from which local targets are set.
+// protocolForAssignment derives the tunnel protocol from which local targets are
+// set, as a "+"-joined combination (e.g. "http+tcp"). All three → "all".
 func protocolForAssignment(b *agentAssignmentBody) string {
-	http := b.LocalHttpPort > 0
-	tcp := b.LocalTcpPort > 0
-	udp := b.LocalUdpPort > 0
-	switch {
-	case http && !tcp && !udp:
-		return "http"
-	case tcp && !http && !udp:
-		return "tcp"
-	case udp && !http && !tcp:
-		return "udp"
-	case tcp && udp && !http:
-		return "tcp+udp"
-	default:
+	parts := make([]string, 0, 3)
+	if b.LocalHttpPort > 0 {
+		parts = append(parts, "http")
+	}
+	if b.LocalTcpPort > 0 {
+		parts = append(parts, "tcp")
+	}
+	if b.LocalUdpPort > 0 {
+		parts = append(parts, "udp")
+	}
+	if len(parts) == 0 || len(parts) == 3 {
 		return "all"
 	}
+	return strings.Join(parts, "+")
 }
 
 func applyAssignmentBody(a *tunnel_server.TunnelAgentAssignment, b *agentAssignmentBody) {

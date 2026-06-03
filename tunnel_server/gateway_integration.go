@@ -4,10 +4,21 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 	"time"
 
 	"redock/api_gateway"
 )
+
+// protoNeeds reports which transports a tunnel protocol string enables. It
+// accepts "all" plus any "+"-joined combination of http/https/tcp/udp
+// (e.g. "http+tcp"), so partial combinations don't fall back to "all".
+func protoNeeds(p string) (http, tcp, udp bool) {
+	if p == "all" {
+		return true, true, true
+	}
+	return strings.Contains(p, "http"), strings.Contains(p, "tcp"), strings.Contains(p, "udp")
+}
 
 const (
 	gatewayServicePrefix    = "tunnel-s-"
@@ -28,9 +39,7 @@ func AddTunnelDomainToGateway(d *TunnelDomain) error {
 		return fmt.Errorf("api_gateway not initialized")
 	}
 	idStr := strconv.FormatUint(uint64(d.ID), 10)
-	needHTTP := d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
-	needTCP := d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
-	needUDP := d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
+	needHTTP, needTCP, needUDP := protoNeeds(d.Protocol)
 
 	cfg := gw.GetConfigCopy()
 	if cfg == nil {
@@ -219,16 +228,14 @@ func SetTunnelRouteHostRewrite(d *TunnelDomain, hostRewrite string) error {
 
 // RemoveTunnelDomainFromGateway removes api_gateway Route(s), Service(s), UDPRoute and TCPRoute for the tunnel domain.
 func RemoveTunnelDomainFromGateway(d *TunnelDomain) error {
-	// Backend HTTP dinleyiciyi durdur (http/https/all)
-	if d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all" {
+	needHTTP, needTCP, needUDP := protoNeeds(d.Protocol)
+	if needHTTP {
 		StopBackendListener(d.Port)
 	}
-	// Backend raw TCP dinleyiciyi durdur (tcp/tcp+udp/all)
-	if d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all" {
+	if needTCP {
 		StopBackendTCPListener(internalTcpPort(d.Port))
 	}
-	// Backend UDP dinleyiciyi durdur (udp/tcp+udp/all)
-	if d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all" {
+	if needUDP {
 		StopBackendUDPListener(internalUDPPort(d.Port))
 	}
 	gw := api_gateway.GetGateway()
