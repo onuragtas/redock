@@ -152,6 +152,17 @@ func SaveCredential(c *TunnelServerCredential) error {
 	return memory.Create[*TunnelServerCredential](GetDB(), TableTunnelCreds, c)
 }
 
+// AllCredentials returns every stored tunnel server credential.
+func AllCredentials() []*TunnelServerCredential {
+	return memory.FindAll[*TunnelServerCredential](GetDB(), TableTunnelCreds)
+}
+
+// UpdateCredential persists changes to an existing credential (matched by ID).
+func UpdateCredential(c *TunnelServerCredential) error {
+	c.BaseURL = normalizeBaseURL(c.BaseURL)
+	return memory.Update[*TunnelServerCredential](GetDB(), TableTunnelCreds, c)
+}
+
 // DeleteCredentialByID deletes a credential by ID.
 func DeleteCredentialByID(id uint) error {
 	return memory.Delete[*TunnelServerCredential](GetDB(), TableTunnelCreds, id)

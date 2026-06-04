@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"redock/api_gateway"
 	"redock/app/cache_models"
+	"redock/app/controllers"
 	"redock/app/models"
 	"redock/cloudflare"
 	"redock/deployment"
@@ -102,6 +103,16 @@ func initialize() {
 	localproxy.GetLocalProxyManager().StartAll()
 	api_gateway.GetGateway().StartAll()
 	network.ApplyPersistedAliases(globalDB)
+
+	// Auto-start persisted tunnel clients flagged AutoStart, once the tunnel
+	// daemon and gateway routes are up. Backgrounded so boot is not blocked.
+	go func() {
+		time.Sleep(3 * time.Second)
+		controllers.StartPersistedAutoTunnels()
+		// Remote-managed agents: register with their servers and open assigned
+		// tunnels. Runs without a logged-in user (uses stored credentials/secret).
+		controllers.StartTunnelAgents()
+	}()
 }
 
 // registerEntities registers all entity types with the database
@@ -178,6 +189,9 @@ func registerEntities(db *memory.Database) error {
 			return memory.Register[*tunnel_server.TunnelServerCredential](db, "tunnel_server_credentials")
 		}},
 		{"tunnel_servers", func() error { return memory.Register[*tunnel_server.TunnelServer](db, "tunnel_servers") }},
+		{"tunnel_client_configs", func() error { return memory.Register[*tunnel_server.TunnelClientConfig](db, tunnel_server.TableTunnelClientConfigs) }},
+		{"tunnel_agents", func() error { return memory.Register[*tunnel_server.TunnelAgent](db, tunnel_server.TableTunnelAgents) }},
+		{"tunnel_agent_assignments", func() error { return memory.Register[*tunnel_server.TunnelAgentAssignment](db, tunnel_server.TableTunnelAgentAssignments) }},
 		{"network_ip_aliases", func() error { return memory.Register[*network.PersistedIPAlias](db, network.TableIPAliases) }},
 	}
 

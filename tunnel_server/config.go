@@ -16,6 +16,7 @@ type TunnelServerConfig struct {
 	PortRangeStart      int    `json:"port_range_start"`      // e.g. 9100
 	TunnelListenAddr    string `json:"tunnel_listen_addr"`   // e.g. ":8443" (TLS TCP or wss)
 	UnusedDomainTTLDays int    `json:"unused_domain_ttl_days"` // delete domains not used for this many days (0 = disable)
+	AgentClientID       string `json:"agent_client_id"`        // client-side: stable id this redock reports when self-registering as a remote agent
 }
 
 // DefaultConfig returns a default tunnel server config (no ID, for creating first row).

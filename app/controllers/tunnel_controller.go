@@ -3,6 +3,7 @@ package controllers
 import (
 	"encoding/json"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -23,12 +24,38 @@ var activeTunnels sync.Map
 
 // tunnelRunner allows stopping the reconnect loop (close stop channel once).
 type tunnelRunner struct {
-	stop chan struct{}
-	once sync.Once
+	stop   chan struct{}
+	once   sync.Once
+	domain string // bound domain; used to enforce one runner per domain
 }
 
 func (r *tunnelRunner) Stop() {
 	r.once.Do(func() { close(r.stop) })
+}
+
+// stopRunnersForDomainExcept stops and removes every tracked runner bound to
+// domain whose key differs from exceptKey. A domain can only be bound by one
+// client at a time on the server (a second BIND kicks the first), so two local
+// runners for the same domain — e.g. a persisted auto-tunnel and an agent
+// assignment — would otherwise fight forever, each kicking the other's bind in a
+// per-second reconnect loop. This guarantees a single live runner per domain.
+func stopRunnersForDomainExcept(domain, exceptKey string) {
+	if domain == "" {
+		return
+	}
+	activeTunnels.Range(func(k, v interface{}) bool {
+		key, _ := k.(string)
+		if key == exceptKey {
+			return true
+		}
+		runner, _ := v.(*tunnelRunner)
+		if runner != nil && runner.domain == domain {
+			log.Printf("tunnel: stopping duplicate runner %q for domain %s", key, domain)
+			runner.Stop()
+			activeTunnels.Delete(key)
+		}
+		return true
+	})
 }
 
 // requireTunnelServerBearer returns tunnel user ID if Authorization: Bearer <token> is valid (tunnel_server OAuth2).
@@ -358,40 +385,134 @@ func TunnelStart(c *fiber.Ctx) error {
 	if localHTTP == "" && localTCP == "" && localUDP == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "at least one of: LocalHttpIp+LocalHttpPort, LocalTcpIp+LocalTcpPort, LocalUdpIp+LocalUdpPort, or legacy LocalIp+LocalPort / DestinationIp+DestinationPort required"})
 	}
-	// Stop existing tunnel for this domain if any
-	if existing, ok := activeTunnels.Load(body.Domain); ok {
-		if runner, _ := existing.(*tunnelRunner); runner != nil {
-			runner.Stop()
-		}
-		activeTunnels.Delete(body.Domain)
-	}
 	keepaliveInterval := time.Duration(body.KeepaliveIntervalSeconds) * time.Second
 	if body.KeepaliveIntervalSeconds < 0 {
 		keepaliveInterval = 0
 	}
 	cfg := client.Config{
-		ServerAddr:         daemonAddr(),
-		Token:              token,
-		Domain:             body.Domain,
-		LocalHttpAddr:      localHTTP,
-		LocalTCPAddr:       localTCP,
-		LocalUDPAddr:       localUDP,
-		SourceBindIP:       strings.TrimSpace(body.SourceBindIp),
-		HostRewrite:        strings.TrimSpace(body.HostRewrite),
-		KeepaliveInterval:  keepaliveInterval,
+		ServerAddr:        daemonAddr(),
+		Token:             token,
+		Domain:            body.Domain,
+		LocalHttpAddr:     localHTTP,
+		LocalTCPAddr:      localTCP,
+		LocalUDPAddr:      localUDP,
+		SourceBindIP:      strings.TrimSpace(body.SourceBindIp),
+		HostRewrite:       strings.TrimSpace(body.HostRewrite),
+		KeepaliveInterval: keepaliveInterval,
 	}
-	stopCh := make(chan struct{})
-	runner := &tunnelRunner{stop: stopCh}
-	activeTunnels.Store(body.Domain, runner)
-	go func() {
-		_ = client.RunWithReconnect(cfg, stopCh)
-		activeTunnels.Delete(body.Domain)
-	}()
+	// Admin/local tunnels mint a fresh token on every reconnect so they keep
+	// running past the 24h token expiry.
+	if isAdmin {
+		cfg.TokenProvider = func() (string, error) { return tunnel_server.GenerateTunnelToken(0) }
+	}
+
+	// Persist the entered settings so they survive restarts (preserve AutoStart).
+	pc := tunnel_server.FindClientConfigByDomain(body.Domain)
+	if pc == nil {
+		pc = &tunnel_server.TunnelClientConfig{Domain: body.Domain}
+	}
+	pc.DomainID = body.DomainId
+	pc.LocalHttpIp = body.LocalHttpIp
+	pc.LocalHttpPort = body.LocalHttpPort
+	pc.LocalTcpIp = body.LocalTcpIp
+	pc.LocalTcpPort = body.LocalTcpPort
+	pc.LocalUdpIp = body.LocalUdpIp
+	pc.LocalUdpPort = body.LocalUdpPort
+	pc.SourceBindIp = strings.TrimSpace(body.SourceBindIp)
+	pc.HostRewrite = strings.TrimSpace(body.HostRewrite)
+	pc.KeepaliveIntervalSeconds = body.KeepaliveIntervalSeconds
+	if err := tunnel_server.UpsertClientConfig(pc); err != nil {
+		log.Printf("tunnel_client: persist config for %s: %v", body.Domain, err)
+	}
+
+	runTunnelClient(cfg)
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
 		"data":  []interface{}{},
 	})
+}
+
+// runTunnelClient (re)starts the reconnect loop for cfg.Domain, replacing any
+// existing runner and tracking it in activeTunnels.
+func runTunnelClient(cfg client.Config) {
+	runTunnelClientKeyed(cfg.Domain, cfg)
+}
+
+// runTunnelClientKeyed is like runTunnelClient but tracks the runner under an
+// explicit key (e.g. "agent:<baseURL>:<domain>" for remote-managed tunnels).
+func runTunnelClientKeyed(key string, cfg client.Config) {
+	if existing, ok := activeTunnels.Load(key); ok {
+		if runner, _ := existing.(*tunnelRunner); runner != nil {
+			runner.Stop()
+		}
+		activeTunnels.Delete(key)
+	}
+	// Drop any other runner already bound to this domain (e.g. a stale persisted
+	// auto-tunnel) so the new runner doesn't fight it over the single server-side
+	// binding.
+	stopRunnersForDomainExcept(cfg.Domain, key)
+	stopCh := make(chan struct{})
+	runner := &tunnelRunner{stop: stopCh, domain: cfg.Domain}
+	activeTunnels.Store(key, runner)
+	go func() {
+		_ = client.RunWithReconnect(cfg, stopCh)
+		activeTunnels.Delete(key)
+	}()
+}
+
+// clientConfigToDaemonConfig builds a client.Config from persisted settings.
+// Returns ok=false when no local target is configured. Auto-start tunnels mint a
+// fresh local/admin token on every reconnect (TokenProvider) so they never die
+// on the 24h token expiry.
+func clientConfigToDaemonConfig(pc *tunnel_server.TunnelClientConfig) (client.Config, bool) {
+	localHTTP := ""
+	if pc.LocalHttpIp != "" && pc.LocalHttpPort > 0 {
+		localHTTP = net.JoinHostPort(pc.LocalHttpIp, strconv.Itoa(pc.LocalHttpPort))
+	}
+	localTCP := ""
+	if pc.LocalTcpIp != "" && pc.LocalTcpPort > 0 {
+		localTCP = net.JoinHostPort(pc.LocalTcpIp, strconv.Itoa(pc.LocalTcpPort))
+	}
+	localUDP := ""
+	if pc.LocalUdpIp != "" && pc.LocalUdpPort > 0 {
+		localUDP = net.JoinHostPort(pc.LocalUdpIp, strconv.Itoa(pc.LocalUdpPort))
+	}
+	if localHTTP == "" && localTCP == "" && localUDP == "" {
+		return client.Config{}, false
+	}
+	keepalive := time.Duration(pc.KeepaliveIntervalSeconds) * time.Second
+	if pc.KeepaliveIntervalSeconds < 0 {
+		keepalive = 0
+	}
+	return client.Config{
+		ServerAddr:        daemonAddr(),
+		TokenProvider:     func() (string, error) { return tunnel_server.GenerateTunnelToken(0) },
+		Domain:            pc.Domain,
+		LocalHttpAddr:     localHTTP,
+		LocalTCPAddr:      localTCP,
+		LocalUDPAddr:      localUDP,
+		SourceBindIP:      strings.TrimSpace(pc.SourceBindIp),
+		HostRewrite:       strings.TrimSpace(pc.HostRewrite),
+		KeepaliveInterval: keepalive,
+	}, true
+}
+
+// StartPersistedAutoTunnels starts every saved tunnel client config flagged
+// AutoStart. Called once at boot; each tunnel mints its own token per connect.
+func StartPersistedAutoTunnels() {
+	for _, pc := range tunnel_server.AllClientConfigs() {
+		if !pc.AutoStart {
+			continue
+		}
+		cfg, ok := clientConfigToDaemonConfig(pc)
+		if !ok {
+			log.Printf("tunnel auto-start: %s has no local target, skipping", pc.Domain)
+			continue
+		}
+		log.Printf("tunnel auto-start: starting %s", pc.Domain)
+		runTunnelClient(cfg)
+	}
 }
 
 // TunnelStop accepts POST /tunnel/stop. Body: DomainId, Domain. Closes the tunnel client for that domain.
@@ -419,6 +540,51 @@ func TunnelStop(c *fiber.Ctx) error {
 		"error": false,
 		"msg":   nil,
 		"data":  fiber.Map{},
+	})
+}
+
+// TunnelListClientConfigs accepts GET /tunnel/client-configs. Returns the saved
+// per-domain start settings (ip/port/etc) and auto-start flag so the UI can
+// pre-fill the start form and show the auto-start toggle.
+func TunnelListClientConfigs(c *fiber.Ctx) error {
+	if _, _, ok := getTunnelServerAuth(c); !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Authorization: Bearer <token> required (tunnel token or Redock JWT)",
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"data":  tunnel_server.AllClientConfigs(),
+	})
+}
+
+// TunnelSetAutoStart accepts POST /tunnel/auto-start. Body: Domain, AutoStart.
+// Persists the auto-start flag for a domain (started automatically on boot).
+func TunnelSetAutoStart(c *fiber.Ctx) error {
+	if _, _, ok := getTunnelServerAuth(c); !ok {
+		return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Authorization: Bearer <token> required (tunnel token or Redock JWT)",
+		})
+	}
+	var body struct {
+		Domain    string `json:"Domain"`
+		AutoStart bool   `json:"AutoStart"`
+	}
+	if err := c.BodyParser(&body); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	if strings.TrimSpace(body.Domain) == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "Domain required"})
+	}
+	if err := tunnel_server.SetClientConfigAutoStart(body.Domain, body.AutoStart); err != nil {
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{"error": true, "msg": err.Error()})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  fiber.Map{"Domain": body.Domain, "AutoStart": body.AutoStart},
 	})
 }
 
@@ -587,7 +753,12 @@ func TunnelServerListDomains(c *fiber.Ctx) error {
 		}
 		ownerLabel := ownerEmail
 		if ownerLabel == "" && d.UserID == 0 {
-			ownerLabel = "admin"
+			// Agent-assigned domains: show the agent (os_user@hostname) instead of "admin".
+			if ag := tunnel_server.FindAgentByAssignedDomain(d.FullDomain); ag != nil {
+				ownerLabel = ag.Label()
+			} else {
+				ownerLabel = "admin"
+			}
 		}
 		item := fiber.Map{
 			"id":             d.ID,
@@ -650,6 +821,83 @@ func domainStatusSummary(active, started bool) string {
 	return "Idle (not connected)"
 }
 
+// createManagedTunnelDomain generates a random subdomain, persists the domain,
+// and wires up the API gateway route + Cloudflare DNS. Shared by the domain
+// create endpoint and the remote-agent assignment flow (domains are always
+// auto-generated, never typed).
+func createManagedTunnelDomain(userID uint, protocol string) (*tunnel_server.TunnelDomain, error) {
+	cfg := tunnel_server.GetConfig()
+	if cfg == nil {
+		return nil, fmt.Errorf("tunnel server config not loaded")
+	}
+	subdomain, err := tunnel_server.GenerateRandomSubdomain()
+	if err != nil || subdomain == "" {
+		return nil, fmt.Errorf("could not generate unique subdomain: %v", err)
+	}
+	port, err := tunnel_server.NextPortForDomain()
+	if err != nil {
+		return nil, err
+	}
+	protocol = strings.TrimSpace(protocol)
+	if protocol == "" {
+		protocol = "all"
+	}
+	d := &tunnel_server.TunnelDomain{
+		UserID:     userID,
+		Subdomain:  subdomain,
+		FullDomain: tunnel_server.FullDomainFor(subdomain, cfg.DomainSuffix),
+		Port:       port,
+		Protocol:   protocol,
+	}
+	if err := tunnel_server.CreateDomain(d); err != nil {
+		return nil, err
+	}
+	if err := tunnel_server.AddTunnelDomainToGateway(d); err != nil {
+		_ = tunnel_server.DeleteDomainByID(d.ID)
+		return nil, fmt.Errorf("API Gateway: %w", err)
+	}
+	if cfg.CloudflareZoneID != "" {
+		serverIP := cfg.ServerPublicIP
+		if serverIP == "" {
+			if mgr := email_server.GetManager(); mgr != nil {
+				serverIP = mgr.GetConfig().IPAddress
+			}
+		}
+		if serverIP == "" {
+			serverIP = tunnel_server.DetectPublicIP()
+		}
+		if serverIP != "" {
+			recordID, err := tunnel_server.CreateTunnelDNSRecord(cfg.CloudflareZoneID, d.FullDomain, serverIP)
+			if err != nil {
+				_ = tunnel_server.RemoveTunnelDomainFromGateway(d)
+				_ = tunnel_server.DeleteDomainByID(d.ID)
+				return nil, fmt.Errorf("Cloudflare: %w", err)
+			}
+			d.CloudflareRecordID = recordID
+		}
+	}
+	if err := tunnel_server.UpdateDomain(d); err != nil {
+		return nil, err
+	}
+	return d, nil
+}
+
+// deleteManagedTunnelDomainByFull tears down a managed domain (gateway + DNS +
+// record) given its full domain. No-op if not found.
+func deleteManagedTunnelDomainByFull(fullDomain string) {
+	d := tunnel_server.FindDomainByFullDomain(fullDomain)
+	if d == nil {
+		return
+	}
+	_ = tunnel_server.RemoveTunnelDomainFromGateway(d)
+	if d.CloudflareRecordID != "" {
+		if cfg := tunnel_server.GetConfig(); cfg != nil && cfg.CloudflareZoneID != "" {
+			_ = tunnel_server.DeleteTunnelDNSRecord(cfg.CloudflareZoneID, d.CloudflareRecordID)
+		}
+	}
+	_ = tunnel_server.DeleteDomainByID(d.ID)
+}
+
 // TunnelServerCreateDomain creates a domain (OAuth2 Bearer = tunnel user; Redock JWT = admin, UserID 0).
 func TunnelServerCreateDomain(c *fiber.Ctx) error {
 	userID, isAdmin, ok := getTunnelServerAuth(c)
@@ -673,81 +921,8 @@ func TunnelServerCreateDomain(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
-	cfg := tunnel_server.GetConfig()
-	if cfg == nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "tunnel server config not loaded",
-		})
-	}
-	subdomain, err := tunnel_server.GenerateRandomSubdomain()
-	if err != nil || subdomain == "" {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "could not generate unique subdomain: " + err.Error(),
-		})
-	}
-	port, err := tunnel_server.NextPortForDomain()
+	d, err := createManagedTunnelDomain(domainUserID, body.Protocol)
 	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-	protocol := strings.TrimSpace(body.Protocol)
-	if protocol == "" {
-		protocol = "all"
-	}
-	fullDomain := tunnel_server.FullDomainFor(subdomain, cfg.DomainSuffix)
-	d := &tunnel_server.TunnelDomain{
-		UserID:     domainUserID,
-		Subdomain:  subdomain,
-		FullDomain: fullDomain,
-		Port:       port,
-		Protocol:   protocol,
-	}
-	if err := tunnel_server.CreateDomain(d); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	// API Gateway: Route + Service (HTTP) ve gerekirse UDPRoute + Service (UDP)
-	if err := tunnel_server.AddTunnelDomainToGateway(d); err != nil {
-		_ = tunnel_server.DeleteDomainByID(d.ID)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "API Gateway: " + err.Error(),
-		})
-	}
-
-	// Cloudflare: A record for full_domain when zone is set; public IP from tunnel config, else email config, else auto-detect (same as email)
-	if cfg.CloudflareZoneID != "" {
-		serverIP := cfg.ServerPublicIP
-		if serverIP == "" {
-			if mgr := email_server.GetManager(); mgr != nil {
-				serverIP = mgr.GetConfig().IPAddress
-			}
-		}
-		if serverIP == "" {
-			serverIP = tunnel_server.DetectPublicIP()
-		}
-		if serverIP != "" {
-			recordID, err := tunnel_server.CreateTunnelDNSRecord(cfg.CloudflareZoneID, d.FullDomain, serverIP)
-			if err != nil {
-				_ = tunnel_server.RemoveTunnelDomainFromGateway(d)
-				_ = tunnel_server.DeleteDomainByID(d.ID)
-				return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-					"error": true,
-					"msg":   "Cloudflare: " + err.Error(),
-				})
-			}
-			d.CloudflareRecordID = recordID
-		}
-	}
-
-	if err := tunnel_server.UpdateDomain(d); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
 			"msg":   err.Error(),
@@ -820,6 +995,14 @@ func TunnelServerDeleteDomain(c *fiber.Ctx) error {
 			"msg":   err.Error(),
 		})
 	}
+	// Stop any running tunnel and drop its persisted client config.
+	if existing, ok := activeTunnels.Load(d.FullDomain); ok {
+		if runner, _ := existing.(*tunnelRunner); runner != nil {
+			runner.Stop()
+		}
+		activeTunnels.Delete(d.FullDomain)
+	}
+	_ = tunnel_server.DeleteClientConfigByDomain(d.FullDomain)
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "deleted",
@@ -1116,6 +1299,7 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 	if serverDaemonAddr == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": "could not parse server base_url"})
 	}
+	serverHost, _, _ := net.SplitHostPort(serverDaemonAddr)
 	key := proxyTunnelKey(body.ServerID, data.Domain)
 	if existing, ok := activeTunnels.Load(key); ok {
 		if runner, _ := existing.(*tunnelRunner); runner != nil {
@@ -1128,18 +1312,22 @@ func TunnelProxyStart(c *fiber.Ctx) error {
 		keepaliveInterval = 0
 	}
 	cfg := client.Config{
-		ServerAddr:         serverDaemonAddr,
-		Token:              cred.AccessToken,
-		Domain:             data.Domain,
-		LocalHttpAddr:      localHTTP,
-		LocalTCPAddr:       localTCP,
-		LocalUDPAddr:       localUDP,
-		SourceBindIP:       strings.TrimSpace(data.SourceBindIp),
-		HostRewrite:        strings.TrimSpace(data.HostRewrite),
-		KeepaliveInterval:  keepaliveInterval,
+		ServerAddr:        serverDaemonAddr,
+		Token:             cred.AccessToken,
+		Domain:            data.Domain,
+		LocalHttpAddr:     localHTTP,
+		LocalTCPAddr:      localTCP,
+		LocalUDPAddr:      localUDP,
+		SourceBindIP:      strings.TrimSpace(data.SourceBindIp),
+		HostRewrite:       strings.TrimSpace(data.HostRewrite),
+		KeepaliveInterval: keepaliveInterval,
+		// TLS so the federation connection looks like HTTPS and traverses firewalls.
+		UseTLS:        true,
+		TLSServerName: serverHost,
 	}
+	stopRunnersForDomainExcept(cfg.Domain, key)
 	stopCh := make(chan struct{})
-	runner := &tunnelRunner{stop: stopCh}
+	runner := &tunnelRunner{stop: stopCh, domain: cfg.Domain}
 	activeTunnels.Store(key, runner)
 	go func() {
 		_ = client.RunWithReconnect(cfg, stopCh)

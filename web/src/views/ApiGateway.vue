@@ -851,11 +851,11 @@ const removeUpstreamTarget = (form, idx) => {
 const requestCertificate = async () => {
   try {
     await ApiService.apiGatewayRequestCertificate()
-    toast.success('Sertifika başarıyla alındı. HTTPS kullanılabilir.')
+    toast.success('Certificate issued successfully. HTTPS is now available.')
     await loadData()
   } catch (error) {
-    const msg = error.response?.data?.msg || error.message || 'Sertifika alınamadı'
-    toast.error('Sertifika hatası: ' + msg)
+    const msg = error.response?.data?.msg || error.message || 'Failed to issue certificate'
+    toast.error('Certificate error: ' + msg)
     console.error('Failed to request certificate:', error)
   }
 }
@@ -1870,10 +1870,10 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
               />
             </div>
             <p v-if="!certificateInfo.lets_encrypt" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              Sertifika almak için önce <strong>Gateway Settings</strong> içinden Let's Encrypt'i etkinleştirip e-posta girin.
+              To get a certificate, first enable Let's Encrypt and enter an email under <strong>Gateway Settings</strong>.
             </p>
             <p v-else-if="!certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              Henüz Let's Encrypt seçili route yok. <strong>Routes</strong> sekmesinde, host'u tanımlı bir route'ta "Let's Encrypt" kutusunu işaretleyin. Domain bu sunucuya (HTTP 80) yönlenmiş olmalı.
+              No Let's Encrypt routes yet. In the <strong>Routes</strong> tab, check the "Let's Encrypt" box on a route that has a host set. The domain must point to this server (HTTP 80).
             </p>
           </div>
         </div>
@@ -2211,7 +2211,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <FormField>
           <FormCheckRadio v-model="newRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="new_route_lets_encrypt" />
           <p class="text-xs text-gray-500 mt-1">
-            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Let's Encrypt Gateway Settings'te etkinse, kaydedince sertifika arka planda otomatik yeniden alınır.
+            Adds this route's Hosts to the certificate. The host field must be set and the domain must point to this server (HTTP 80). If Let's Encrypt is enabled in Gateway Settings, the certificate is re-issued automatically in the background on save.
           </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">
@@ -2361,7 +2361,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
             <FormCheckRadio v-model="gatewayConfig.lets_encrypt.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
           </FormField>
           <p class="text-xs text-gray-500">
-            Sertifika domain'leri, <strong>Routes</strong> sekmesinde "Let's Encrypt" işaretli route'ların Host'larından otomatik toplanır. Etkinleştirip kaydettikten sonra Certificates sekmesinden "Request Certificate" ile sertifikayı alın.
+            Certificate domains are collected automatically from the Hosts of routes with "Let's Encrypt" checked in the <strong>Routes</strong> tab. After enabling and saving, issue the certificate via "Request Certificate" in the Certificates tab.
           </p>
         </div>
 
@@ -2532,7 +2532,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <FormField>
           <FormCheckRadio v-model="editingRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="edit_route_lets_encrypt" />
           <p class="text-xs text-gray-500 mt-1">
-            Bu route'un Host'larını sertifikaya ekler. Host alanı dolu olmalı ve domain bu sunucuya (HTTP 80) yönlenmiş olmalı. Let's Encrypt Gateway Settings'te etkinse, kaydedince sertifika arka planda otomatik yeniden alınır.
+            Adds this route's Hosts to the certificate. The host field must be set and the domain must point to this server (HTTP 80). If Let's Encrypt is enabled in Gateway Settings, the certificate is re-issued automatically in the background on save.
           </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">

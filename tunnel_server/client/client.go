@@ -2,6 +2,7 @@ package client
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
@@ -25,12 +26,26 @@ const (
 	backendBufSize   = 32 * 1024
 )
 
+// defaultKeepalive is used when Config.KeepaliveInterval is unset (0). Keepalive
+// is always on so NAT/firewall conntrack never drops an idle tunnel.
+const defaultKeepalive = 15 * time.Second
+
+// readTimeoutFactor sets the read deadline to keepalive*factor. If no frame
+// (including PONG) arrives within that window the connection is treated as dead
+// (e.g. the NAT/firewall dropped the server→client return path) and the client
+// reconnects instead of sitting on a zombie connection.
+const readTimeoutFactor = 3
+
 // Config holds tunnel client configuration.
 type Config struct {
 	// ServerAddr is the daemon address (e.g. "host:8443").
 	ServerAddr string
-	// Token is the JWT access token for auth.
+	// Token is the JWT access token for auth (used when TokenProvider is nil).
 	Token string
+	// TokenProvider, if set, is called on every (re)connect to obtain a fresh
+	// token. Use this for long-running tunnels whose token would otherwise
+	// expire (e.g. admin/auto-start tunnels minting a new token each connect).
+	TokenProvider func() (string, error)
 	// Domain is subdomain or full domain to bind (e.g. "myapp" or "myapp.tnpx.org").
 	Domain string
 	// LocalHttpAddr is the destination for HTTP/HTTPS tunneled traffic (e.g. "127.0.0.1:8080"). Empty to disable or fall back to LocalTCPAddr.
@@ -45,6 +60,13 @@ type Config struct {
 	HostRewrite string
 	// KeepaliveInterval is the interval for PING keepalive and TCP keepalive. Zero disables both.
 	KeepaliveInterval time.Duration
+	// UseTLS wraps the daemon connection in TLS so it traverses firewalls/DPI
+	// that drop raw traffic on the daemon port. The daemon auto-detects TLS vs
+	// plaintext, so this is opt-in per connection.
+	UseTLS bool
+	// TLSServerName is the SNI / certificate name to validate when UseTLS is set.
+	// Empty skips verification (use for loopback where the cert won't match).
+	TLSServerName string
 }
 
 // Client is a tunnel client connected to the daemon.
@@ -63,26 +85,73 @@ type Client struct {
 	udpSocketsMu sync.RWMutex
 }
 
+// isLoopbackHost reports whether host is a loopback address/name (no TLS needed).
+func isLoopbackHost(host string) bool {
+	if host == "" || host == "localhost" {
+		return true
+	}
+	if ip := net.ParseIP(host); ip != nil {
+		return ip.IsLoopback()
+	}
+	return false
+}
+
 // ConnectOnce connects to the daemon, performs auth and BIND, and returns the client.
 // The caller should call Run() (e.g. in a goroutine) and Close() when done.
 func ConnectOnce(cfg Config) (*Client, error) {
-	if cfg.ServerAddr == "" || cfg.Token == "" || cfg.Domain == "" {
+	token := cfg.Token
+	if cfg.TokenProvider != nil {
+		t, err := cfg.TokenProvider()
+		if err != nil {
+			return nil, fmt.Errorf("client: token provider: %w", err)
+		}
+		token = t
+	}
+	if cfg.ServerAddr == "" || token == "" || cfg.Domain == "" {
 		return nil, fmt.Errorf("client: ServerAddr, Token and Domain are required")
 	}
-	conn, err := net.DialTimeout("tcp", cfg.ServerAddr, 15*time.Second)
+	rawConn, err := net.DialTimeout("tcp", cfg.ServerAddr, 15*time.Second)
 	if err != nil {
 		return nil, fmt.Errorf("client: dial: %w", err)
 	}
-	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
-	if tcpConn, ok := conn.(*net.TCPConn); ok {
+	if tcpConn, ok := rawConn.(*net.TCPConn); ok {
 		tcpConn.SetKeepAlive(true)
 		if cfg.KeepaliveInterval > 0 {
 			tcpConn.SetKeepAlivePeriod(cfg.KeepaliveInterval)
 		}
 	}
+	// Decide TLS: explicit opt-in, or auto for any non-loopback address (so a new
+	// remote path can never accidentally connect in plaintext and get firewalled).
+	host, _, _ := net.SplitHostPort(cfg.ServerAddr)
+	useTLS := cfg.UseTLS
+	serverName := cfg.TLSServerName
+	if !useTLS && !isLoopbackHost(host) {
+		useTLS = true
+		if serverName == "" {
+			serverName = host
+		}
+	}
+
+	var conn net.Conn = rawConn
+	if useTLS {
+		// Wrap in TLS so firewalls/DPI treat it like HTTPS. Handshake under the
+		// dial deadline so a black-holing firewall fails fast instead of hanging.
+		rawConn.SetDeadline(time.Now().Add(15 * time.Second))
+		tlsConn := tls.Client(rawConn, &tls.Config{
+			ServerName:         serverName,
+			InsecureSkipVerify: serverName == "", // loopback: cert won't match
+		})
+		if err := tlsConn.Handshake(); err != nil {
+			rawConn.Close()
+			return nil, fmt.Errorf("client: tls handshake: %w", err)
+		}
+		rawConn.SetDeadline(time.Time{})
+		conn = tlsConn
+	}
+	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
 	br := bufio.NewReaderSize(conn, maxAuthLineLen)
-	log.Printf("tunnel_client: out auth token len=%d", len(cfg.Token))
-	if _, err := conn.Write([]byte(cfg.Token + "\n")); err != nil {
+	log.Printf("tunnel_client: out auth token len=%d", len(token))
+	if _, err := conn.Write([]byte(token + "\n")); err != nil {
 		conn.Close()
 		return nil, fmt.Errorf("client: write token: %w", err)
 	}
@@ -196,28 +265,38 @@ func RunWithReconnect(cfg Config, stop <-chan struct{}) error {
 }
 
 func (c *Client) run() error {
-	if c.cfg.KeepaliveInterval > 0 {
-		done := make(chan struct{})
-		defer close(done)
-		go func() {
-			ticker := time.NewTicker(c.cfg.KeepaliveInterval)
-			defer ticker.Stop()
-			for {
-				select {
-				case <-done:
-					return
-				case <-c.closed:
-					return
-				case <-ticker.C:
-					_ = c.sendControl("PING\n")
-				}
-			}
-		}()
+	keepalive := c.cfg.KeepaliveInterval
+	if keepalive <= 0 {
+		keepalive = defaultKeepalive
 	}
+	// Read deadline well above the keepalive cycle: every PING gets a PONG that
+	// resets it, so it only fires when the return path is actually dead.
+	readTimeout := keepalive * readTimeoutFactor
+
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		ticker := time.NewTicker(keepalive)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-done:
+				return
+			case <-c.closed:
+				return
+			case <-ticker.C:
+				_ = c.sendControl("PING\n")
+			}
+		}
+	}()
+
 	for {
+		_ = c.conn.SetReadDeadline(time.Now().Add(readTimeout))
 		payload, err := c.readFrame()
 		if err != nil {
-			if err != io.EOF {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				log.Printf("tunnel_client: no frame for %v, connection dead; reconnecting", readTimeout)
+			} else if err != io.EOF {
 				log.Printf("tunnel_client: read frame: %v", err)
 			}
 			return err

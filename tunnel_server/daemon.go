@@ -2,11 +2,13 @@ package tunnel_server
 
 import (
 	"bufio"
+	"crypto/tls"
 	"encoding/binary"
 	"fmt"
 	"io"
 	"log"
 	"net"
+	"redock/api_gateway"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +28,14 @@ const (
 	udpBackendPortOffset  = 10000 // Gateway 0.0.0.0:Port UDP -> daemon 127.0.0.1:(Port+10000)
 	tcpBackendPortOffset  = 20000 // Gateway 0.0.0.0:Port TCP -> daemon 127.0.0.1:(Port+20000)
 	httpBackendPortOffset = 30000 // HTTP backend daemon 127.0.0.1:(Port+30000); böylece 0.0.0.0:Port gateway'e kalır (PORTS.md)
+	// clientReadTimeout reaps a dead/half-open client connection: clients PING every
+	// few seconds, so if no frame arrives within this window the return path is gone
+	// and we close + unbind so the domain doesn't stay zombie-bound.
+	clientReadTimeout = 60 * time.Second
+	// bindFlapGuard: if a domain was (re)bound within this window, a competing BIND
+	// from a different connection is rejected instead of kicking the incumbent. This
+	// breaks the per-second bind ping-pong when two clients fight over one domain.
+	bindFlapGuard = 5 * time.Second
 )
 
 // Kontrol komutları (client -> server): "BIND <subdomain|full_domain>\n", "PING\n", "CLOSE_STREAM <id>\n"
@@ -63,6 +73,7 @@ var (
 	clients               map[net.Conn]*Client
 	boundDomainsMu        sync.RWMutex
 	boundDomains          map[string]*Client // fullDomain -> client that receives traffic for this domain
+	lastBoundAt           map[string]time.Time // fullDomain -> last (re)bind time, for flap guard
 	daemonRunning         bool
 	backendListenersMu       sync.Mutex
 	backendListeners         map[int]net.Listener // port -> TCP listener (HTTP backend)
@@ -82,6 +93,7 @@ var (
 func init() {
 	clients = make(map[net.Conn]*Client)
 	boundDomains = make(map[string]*Client)
+	lastBoundAt = make(map[string]time.Time)
 	backendListeners = make(map[int]net.Listener)
 	backendTCPListeners = make(map[int]net.Listener)
 	backendUDPConns = make(map[int]*net.UDPConn)
@@ -169,8 +181,52 @@ func acceptLoop() {
 	}
 }
 
-func handleConnection(conn net.Conn) {
-	defer conn.Close()
+// daemonTLSConfig serves the gateway's certificate to TLS clients. Built lazily
+// so it picks up Let's Encrypt renewals (LoadX509KeyPair per handshake).
+var daemonTLSConfig = &tls.Config{
+	GetCertificate: func(*tls.ClientHelloInfo) (*tls.Certificate, error) {
+		gw := api_gateway.GetGateway()
+		if gw == nil {
+			return nil, fmt.Errorf("gateway not initialized")
+		}
+		cfg := gw.GetConfig()
+		if cfg == nil || cfg.TLSCertFile == "" || cfg.TLSKeyFile == "" {
+			return nil, fmt.Errorf("no certificate configured")
+		}
+		cert, err := tls.LoadX509KeyPair(cfg.TLSCertFile, cfg.TLSKeyFile)
+		if err != nil {
+			return nil, err
+		}
+		return &cert, nil
+	},
+}
+
+// prefixConn lets us peek the first byte of a connection (for TLS detection)
+// without consuming it, by buffering all reads through a bufio.Reader.
+type prefixConn struct {
+	net.Conn
+	r *bufio.Reader
+}
+
+func (p *prefixConn) Read(b []byte) (int, error) { return p.r.Read(b) }
+
+func handleConnection(raw net.Conn) {
+	defer raw.Close()
+
+	// Detect TLS vs plaintext: a TLS handshake record starts with 0x16. This
+	// lets the client wrap the connection in TLS to traverse firewalls/DPI that
+	// drop raw traffic on the daemon port, while plaintext (loopback) still works.
+	raw.SetReadDeadline(time.Now().Add(30 * time.Second))
+	pc := &prefixConn{Conn: raw, r: bufio.NewReader(raw)}
+	first, err := pc.r.Peek(1)
+	raw.SetReadDeadline(time.Time{})
+	if err != nil {
+		return
+	}
+	var conn net.Conn = pc
+	if first[0] == 0x16 {
+		conn = tls.Server(pc, daemonTLSConfig)
+	}
 
 	// Auth: first line = JWT access token
 	conn.SetReadDeadline(time.Now().Add(30 * time.Second))
@@ -238,6 +294,7 @@ func unbindAllDomainsForClient(c *Client) {
 	for fullDomain, bound := range boundDomains {
 		if bound == c {
 			delete(boundDomains, fullDomain)
+			delete(lastBoundAt, fullDomain)
 			log.Printf("tunnel_server: unbound domain %s (client disconnected)", fullDomain)
 		}
 	}
@@ -246,9 +303,15 @@ func unbindAllDomainsForClient(c *Client) {
 // serveClient runs the read loop: length-prefixed frames, control (BIND/PING) and data (3.3).
 func serveClient(c *Client, br *bufio.Reader) {
 	for {
+		// Reap dead/half-open connections: reset the deadline on every frame (incl.
+		// PINGs). If the client stops sending, the read times out and we unbind the
+		// domain instead of holding it zombie-bound forever.
+		_ = c.Conn.SetReadDeadline(time.Now().Add(clientReadTimeout))
 		payload, err := readFrame(br)
 		if err != nil {
-			if err != io.EOF {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				log.Printf("tunnel_server: client userID=%d idle %v, closing (dead connection)", c.UserID, clientReadTimeout)
+			} else if err != io.EOF {
 				log.Printf("tunnel_server: client read frame userID=%d: %v", c.UserID, err)
 			}
 			return
@@ -408,9 +471,27 @@ func handleBind(c *Client, domainArg string) {
 		_ = writeControlFrameToClient(c, "BIND_FAILED forbidden\n")
 		return
 	}
+	// Reject binds for agent domains whose assignment is disabled / auto-connect off,
+	// so a disabled tunnel can't (re)bind regardless of the client's poll loop.
+	if !AgentDomainActive(d.FullDomain) {
+		_ = writeControlFrameToClient(c, "BIND_FAILED assignment disabled\n")
+		return
+	}
 	boundDomainsMu.Lock()
 	prev := boundDomains[d.FullDomain]
+	// Flap guard: if the domain was (re)bound very recently by a different live
+	// connection, this is two clients fighting over one domain. Reject the newcomer
+	// (it backs off) and keep the incumbent, instead of kicking it and triggering an
+	// endless per-second bind ping-pong. A stable incumbent (last bind older than the
+	// guard window) or a freed domain still allows a normal takeover/reconnect.
+	if prev != nil && prev != c && time.Since(lastBoundAt[d.FullDomain]) < bindFlapGuard {
+		boundDomainsMu.Unlock()
+		log.Printf("tunnel_server: domain %s bind rejected (flap guard; held by userID=%d)", d.FullDomain, prev.UserID)
+		_ = writeControlFrameToClient(c, "BIND_FAILED domain busy, retry later\n")
+		return
+	}
 	boundDomains[d.FullDomain] = c
+	lastBoundAt[d.FullDomain] = time.Now()
 	boundDomainsMu.Unlock()
 	if prev != nil && prev != c {
 		log.Printf("tunnel_server: domain %s rebound, closing previous client userID=%d", d.FullDomain, prev.UserID)
@@ -518,6 +599,23 @@ func IsDomainBound(fullDomain string) bool {
 	return GetClientByDomain(fullDomain) != nil
 }
 
+// DisconnectDomain immediately closes the client connection bound to the domain
+// (used when an assignment is disabled/removed so the tunnel drops at once
+// instead of waiting for the client's poll loop). No-op if nothing is bound.
+func DisconnectDomain(fullDomain string) {
+	boundDomainsMu.Lock()
+	c := boundDomains[fullDomain]
+	if c != nil {
+		delete(boundDomains, fullDomain)
+		delete(lastBoundAt, fullDomain)
+	}
+	boundDomainsMu.Unlock()
+	if c != nil {
+		_ = c.Conn.Close()
+		log.Printf("tunnel_server: disconnected domain %s (assignment disabled/removed)", fullDomain)
+	}
+}
+
 // BoundClientUserID returns the tunnel user ID of the client bound to the domain, or 0 if none.
 func BoundClientUserID(fullDomain string) uint {
 	c := GetClientByDomain(fullDomain)
@@ -556,7 +654,8 @@ func GetDomainByInternalHttpPort(internalPort int) *TunnelDomain {
 
 // needHTTPForDomain returns true if domain uses HTTP/HTTPS backend.
 func needHTTPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "http" || d.Protocol == "https" || d.Protocol == "all"
+	h, _, _ := protoNeeds(d.Protocol)
+	return h
 }
 
 // internalUDPPort returns the port the daemon listens on for UDP backend (gateway forwards to this).
@@ -592,7 +691,8 @@ func GetDomainByInternalTCPPort(internalPort int) *TunnelDomain {
 }
 
 func needTCPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "tcp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
+	_, t, _ := protoNeeds(d.Protocol)
+	return t
 }
 
 // --- Backend TCP listeners (3.3: gateway proxies to 127.0.0.1:port, we accept and forward to client) ---
@@ -612,7 +712,8 @@ func startAllBackendListeners() {
 }
 
 func needUDPForDomain(d *TunnelDomain) bool {
-	return d.Protocol == "udp" || d.Protocol == "tcp+udp" || d.Protocol == "all"
+	_, _, u := protoNeeds(d.Protocol)
+	return u
 }
 
 // StartBackendListener starts listening on 127.0.0.1:(port+30000) for HTTP backend so 0.0.0.0:port stays free for gateway TCP/UDP.

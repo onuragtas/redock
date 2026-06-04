@@ -31,6 +31,7 @@ import {
   mdiMagnify,
   mdiPlay,
   mdiPlus,
+  mdiRefreshAuto,
   mdiRefresh,
   mdiServer,
   mdiStop,
@@ -83,7 +84,16 @@ const start = ref({
   keepaliveIntervalSeconds: 30
 });
 
+// Persisted per-domain start settings (local daemon only), keyed by domain.
+const clientConfigs = ref({});
+
 const toast = useToast();
+
+// Whether a tunnel's protocol enables a transport ("all" or a "+"-combo like "http+tcp").
+function protoHas(tunnel, kind) {
+  const p = (tunnel.protocol || "").toLowerCase();
+  return p === "all" || p.includes(kind);
+}
 
 // Connection info from outside: address and short description per protocol
 function getConnectionLines(tunnel) {
@@ -91,9 +101,9 @@ function getConnectionLines(tunnel) {
   const port = tunnel.port;
   const protocol = (tunnel.protocol || "all").toLowerCase();
   const lines = [];
-  const hasHTTP = protocol === "http" || protocol === "https" || protocol === "all";
-  const hasTCP = protocol === "tcp" || protocol === "tcp+udp" || protocol === "all";
-  const hasUDP = protocol === "udp" || protocol === "tcp+udp" || protocol === "all";
+  const hasHTTP = protocol === "all" || protocol.includes("http");
+  const hasTCP = protocol === "all" || protocol.includes("tcp");
+  const hasUDP = protocol === "all" || protocol.includes("udp");
   if (hasHTTP) {
     lines.push(
       { label: "HTTP (Web)", value: `http://${domain}`, desc: "Open this URL in a browser or send HTTP requests." },
@@ -243,15 +253,34 @@ const tunnelList = async () => {
   try {
     const response = await ApiService.tunnelDomainsList(selectedServerId.value);
     const data = response?.data?.data || [];
-    proxies.value = data.map((d) => ({
-      id: d.id,
-      domain: d.full_domain || d.subdomain,
-      port: d.port,
-      protocol: d.protocol || "all",
-      started: !!d.started,
-      created_at: d.created_at,
-      UpdatedAt: d.updated_at || d.created_at
-    }));
+
+    // Saved start settings + auto-start flag (local daemon only).
+    const cfgMap = {};
+    if (!selectedServerId.value) {
+      try {
+        const cfgRes = await ApiService.tunnelClientConfigs();
+        for (const cfg of cfgRes?.data?.data || []) {
+          if (cfg?.domain) cfgMap[cfg.domain] = cfg;
+        }
+      } catch (e) {
+        console.error("Failed to load tunnel client configs:", e);
+      }
+    }
+    clientConfigs.value = cfgMap;
+
+    proxies.value = data.map((d) => {
+      const domain = d.full_domain || d.subdomain;
+      return {
+        id: d.id,
+        domain,
+        port: d.port,
+        protocol: d.protocol || "all",
+        started: !!d.started,
+        autoStart: !!cfgMap[domain]?.auto_start,
+        created_at: d.created_at,
+        UpdatedAt: d.updated_at || d.created_at
+      };
+    });
     login.value = true;
   } catch (error) {
     console.error("Failed to load tunnel list:", error);
@@ -294,7 +323,38 @@ const addSubmit = async () => {
 
 const startModal = (data) => {
   startDomain.value = data;
+  // Pre-fill from previously saved settings so values don't need re-entering.
+  const saved = clientConfigs.value[data.domain];
+  if (saved) {
+    start.value = {
+      localHttpIp: saved.local_http_ip || "127.0.0.1",
+      localHttpPort: saved.local_http_port || "",
+      localTcpIp: saved.local_tcp_ip || "127.0.0.1",
+      localTcpPort: saved.local_tcp_port || "",
+      localUdpIp: saved.local_udp_ip || "127.0.0.1",
+      localUdpPort: saved.local_udp_port || "",
+      sourceBindIp: saved.source_bind_ip || "",
+      hostRewrite: saved.host_rewrite || "",
+      keepaliveIntervalSeconds:
+        saved.keepalive_interval_seconds != null ? saved.keepalive_interval_seconds : 30
+    };
+  }
   isStartModalActive.value = true;
+};
+
+const toggleAutoStart = async (item) => {
+  const next = !item.autoStart;
+  try {
+    await ApiService.tunnelSetAutoStart(item.domain, next);
+    item.autoStart = next;
+    if (clientConfigs.value[item.domain]) {
+      clientConfigs.value[item.domain].auto_start = next;
+    }
+    toast.success(next ? `Auto-start enabled: ${item.domain}` : `Auto-start disabled: ${item.domain}`);
+  } catch (error) {
+    console.error("Failed to toggle auto-start:", error);
+    toast.error("Failed to update auto-start: " + (error.response?.data?.msg || error.message));
+  }
 };
 
 const startSubmit = async () => {
@@ -894,25 +954,25 @@ onMounted(async () => {
                       Port: {{ tunnel.port }}
                     </span>
                     <span
-                      v-if="['tcp', 'tcp+udp', 'all'].includes(tunnel.protocol)"
+                      v-if="protoHas(tunnel, 'tcp')"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300"
                     >
                       TCP
                     </span>
                     <span
-                      v-if="['udp', 'tcp+udp', 'all'].includes(tunnel.protocol)"
+                      v-if="protoHas(tunnel, 'udp')"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-cyan-100 text-cyan-800 dark:bg-cyan-900/40 dark:text-cyan-300"
                     >
                       UDP
                     </span>
                     <span
-                      v-if="['http', 'https', 'all'].includes(tunnel.protocol)"
+                      v-if="protoHas(tunnel, 'http')"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-emerald-100 text-emerald-800 dark:bg-emerald-900/40 dark:text-emerald-300"
                     >
                       HTTP
                     </span>
                     <span
-                      v-if="['https', 'all'].includes(tunnel.protocol)"
+                      v-if="tunnel.protocol === 'https' || tunnel.protocol === 'all'"
                       class="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 dark:bg-blue-900/40 dark:text-blue-300"
                     >
                       HTTPS
@@ -980,6 +1040,14 @@ onMounted(async () => {
           </div>
           <div class="mt-6 flex flex-wrap items-center justify-end gap-2">
             <BaseButton
+              v-if="!selectedServerId"
+              :icon="mdiRefreshAuto"
+              :color="tunnel.autoStart ? 'success' : 'lightDark'"
+              small
+              :title="tunnel.autoStart ? 'Auto-start on (click to turn off)' : 'Auto-start off (click to turn on)'"
+              @click="toggleAutoStart(tunnel)"
+            />
+            <BaseButton
               :icon="tunnel.started ? mdiStop : mdiPlay"
               :color="tunnel.started ? 'danger' : 'success'"
               small
@@ -990,7 +1058,7 @@ onMounted(async () => {
               :icon="mdiAutorenew"
               color="info"
               small
-              title="Yenile"
+              title="Renew"
               @click="renewTunnel(tunnel)"
             />
             <BaseButton
