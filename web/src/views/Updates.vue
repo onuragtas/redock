@@ -9,8 +9,10 @@ import BaseIcon from '@/components/BaseIcon.vue'
 import ModalConfirm from '@/components/ModalConfirm.vue'
 import ApiService from '@/services/ApiService'
 import { useToast } from 'vue-toastification'
+import { useI18n } from 'vue-i18n'
 
 const toast = useToast()
+const { t } = useI18n()
 
 const loading = ref(false)
 const updating = ref(false)
@@ -35,7 +37,7 @@ const fetchUpdates = async () => {
       toast.error(response.data.msg)
     }
   } catch (error) {
-    toast.error('Failed to fetch updates: ' + error.message)
+    toast.error(t('up.fetchFailed') + error.message)
   } finally {
     loading.value = false
   }
@@ -76,7 +78,7 @@ const applyUpdate = async () => {
       updating.value = false
     }
   } catch (error) {
-    toast.error('Failed to apply update: ' + error.message)
+    toast.error(t('up.applyFailed') + error.message)
     updating.value = false
   }
 }
@@ -93,13 +95,9 @@ const getModalConfig = computed(() => {
   
   return {
     type: isBeta ? 'warning' : isRecommended ? 'success' : 'info',
-    title: isBeta ? '🧪 Beta Update' : isRecommended ? '⭐ Recommended Update' : '📦 Update Confirmation',
-    message: `Are you sure you want to update to ${selectedUpdate.value}?\n\n${
-      isBeta 
-        ? '⚠️ This is a beta version and may contain bugs.\n' 
-        : ''
-    }The server will restart automatically (30 seconds downtime).`,
-    confirmText: isBeta ? 'Try Beta' : 'Update Now'
+    title: isBeta ? t('up.modalBetaTitle') : isRecommended ? t('up.modalRecommendedTitle') : t('up.modalConfirmTitle'),
+    message: t('up.confirmUpdateTo', { version: selectedUpdate.value }) + '\n\n' + (isBeta ? t('up.betaMayContainBugs') + '\n' : '') + t('up.serverRestartAuto'),
+    confirmText: isBeta ? t('up.tryBeta') : t('up.updateNow')
   }
 })
 
@@ -137,8 +135,8 @@ onMounted(() => {
 <template>
   <SectionMain>
     <div class="mb-6">
-      <h1 class="text-3xl font-bold mb-2">System Updates</h1>
-      <p class="text-gray-600 dark:text-gray-400">Manage software updates and switch between stable and beta versions</p>
+      <h1 class="text-3xl font-bold mb-2">{{ t('up.title') }}</h1>
+      <p class="text-gray-600 dark:text-gray-400">{{ t('up.subtitle') }}</p>
     </div>
 
     <!-- Current Version Card -->
@@ -149,14 +147,14 @@ onMounted(() => {
             <BaseIcon :path="mdiCheckCircle" w="w-8" h="h-8" />
           </div>
           <div>
-            <div class="text-sm text-gray-600 dark:text-gray-400">Current Version</div>
+            <div class="text-sm text-gray-600 dark:text-gray-400">{{ t('up.currentVersion') }}</div>
             <div class="text-2xl font-bold">{{ currentVersion.current_version }}</div>
             <div class="flex items-center gap-2 mt-1">
               <span
                 class="px-2 py-0.5 text-xs rounded-full"
                 :class="currentVersionBadge"
               >
-                {{ currentVersion.is_beta ? 'Beta' : 'Stable' }}
+                {{ currentVersion.is_beta ? t('up.beta') : t('up.stable') }}
               </span>
             </div>
           </div>
@@ -164,7 +162,7 @@ onMounted(() => {
         <BaseButton
           :icon="mdiRefresh"
           color="info"
-          label="Check for Updates"
+          :label="t('up.checkForUpdates')"
           :disabled="loading || updating"
           rounded-full
           @click="fetchUpdates"
@@ -179,9 +177,9 @@ onMounted(() => {
           <BaseIcon :path="mdiRefresh" class="text-yellow-600" w="w-8" h="h-8" />
         </div>
         <div class="flex-1">
-          <div class="font-semibold text-yellow-900 dark:text-yellow-100">Update in Progress</div>
+          <div class="font-semibold text-yellow-900 dark:text-yellow-100">{{ t('up.updateInProgress') }}</div>
           <div class="text-sm text-yellow-700 dark:text-yellow-300">
-            Server will restart in {{ countdown }} seconds...
+            {{ t('up.serverRestartIn', { n: countdown }) }}
           </div>
           <div class="mt-2 h-2 bg-yellow-200 dark:bg-yellow-800 rounded-full overflow-hidden">
             <div
@@ -195,7 +193,7 @@ onMounted(() => {
 
     <!-- Available Updates -->
     <div v-if="availableUpdates.length > 0">
-      <h2 class="text-xl font-semibold mb-4">Available Updates ({{ availableUpdates.length }})</h2>
+      <h2 class="text-xl font-semibold mb-4">{{ t('up.availableUpdates', { count: availableUpdates.length }) }}</h2>
       
       <div class="space-y-4">
         <CardBox
@@ -220,20 +218,20 @@ onMounted(() => {
                       class="px-2 py-0.5 text-xs rounded-full"
                       :class="getVersionBadge(update)"
                     >
-                      {{ update.type === 'beta' ? '🧪 Beta' : '✅ Stable' }}
+                      {{ update.type === 'beta' ? t('up.betaTag') : t('up.stableTag') }}
                     </span>
                     <span
                       v-if="update.recommended"
                       class="px-2 py-0.5 text-xs rounded-full bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-300 font-semibold"
                     >
-                      ⭐ Recommended
+                      {{ t('up.recommendedTag') }}
                     </span>
                   </div>
                   <div class="text-sm text-gray-600 dark:text-gray-400 mt-1">
                     {{ update.name }}
                   </div>
                   <div class="text-xs text-gray-500 dark:text-gray-500 mt-1">
-                    Released: {{ formatDate(update.published_at) }}
+                    {{ t('up.released') }} {{ formatDate(update.published_at) }}
                   </div>
                 </div>
               </div>
@@ -252,7 +250,7 @@ onMounted(() => {
               <BaseButton
                 :icon="mdiDownload"
                 :color="update.recommended ? 'success' : update.type === 'beta' ? 'warning' : 'info'"
-                :label="update.recommended ? 'Update Now' : update.type === 'beta' ? 'Try Beta' : 'Update'"
+                :label="update.recommended ? t('up.updateNow') : update.type === 'beta' ? t('up.tryBeta') : t('up.update')"
                 :disabled="updating || loading"
                 rounded-full
                 @click="confirmUpdate(update.tag)"
@@ -266,10 +264,7 @@ onMounted(() => {
             class="mt-4 p-3 bg-orange-50 dark:bg-orange-900/20 border border-orange-200 dark:border-orange-800 rounded-lg flex items-start gap-2"
           >
             <BaseIcon :path="mdiAlertCircle" class="text-orange-600 flex-shrink-0" w="w-5" h="h-5" />
-            <div class="text-xs text-orange-800 dark:text-orange-200">
-              <strong>Beta Warning:</strong> This is a pre-release version that may contain bugs. 
-              Not recommended for production use. You can always switch back to stable versions.
-            </div>
+            <div class="text-xs text-orange-800 dark:text-orange-200" v-html="t('up.betaWarning')"></div>
           </div>
         </CardBox>
       </div>
@@ -278,9 +273,9 @@ onMounted(() => {
     <!-- No Updates Available -->
     <CardBox v-else-if="!loading && currentVersion" class="text-center py-12">
       <BaseIcon :path="mdiCheckCircle" class="text-green-600 mx-auto mb-4" w="w-16" h="w-16" />
-      <h3 class="text-xl font-semibold mb-2">You're Up to Date!</h3>
+      <h3 class="text-xl font-semibold mb-2">{{ t('up.upToDate') }}</h3>
       <p class="text-gray-600 dark:text-gray-400">
-        No updates available for your current version
+        {{ t('up.noUpdatesAvail') }}
       </p>
     </CardBox>
 
@@ -289,23 +284,14 @@ onMounted(() => {
       <div class="animate-spin mx-auto mb-4">
         <BaseIcon :path="mdiRefresh" class="text-blue-600" w="w-12" h="w-12" />
       </div>
-      <p class="text-gray-600 dark:text-gray-400">Checking for updates...</p>
+      <p class="text-gray-600 dark:text-gray-400">{{ t('up.checkingUpdates') }}</p>
     </CardBox>
 
     <!-- Info Card -->
     <CardBox class="mt-6 bg-blue-50 dark:bg-blue-900/20 border-blue-200 dark:border-blue-800">
       <div class="flex items-start gap-3">
         <BaseIcon :path="mdiAlertCircle" class="text-blue-600 flex-shrink-0" w="w-5" h="h-5" />
-        <div class="text-sm text-blue-800 dark:text-blue-200">
-          <strong>About Updates:</strong>
-          <ul class="mt-2 space-y-1 list-disc list-inside">
-            <li><strong>Stable versions</strong> are thoroughly tested and recommended for production</li>
-            <li><strong>Beta versions</strong> include new features but may have bugs</li>
-            <li>The server will restart automatically after update (30 seconds downtime)</li>
-            <li>You can switch between beta and stable versions anytime</li>
-            <li>Updates are applied using graceful restart to minimize downtime</li>
-          </ul>
-        </div>
+        <div class="text-sm text-blue-800 dark:text-blue-200" v-html="t('up.aboutUpdates')"></div>
       </div>
     </CardBox>
 
@@ -316,7 +302,7 @@ onMounted(() => {
       :title="getModalConfig.title"
       :message="getModalConfig.message"
       :confirm-text="getModalConfig.confirmText"
-      cancel-text="Cancel"
+      :cancel-text="t('common.cancel')"
       @confirm="applyUpdate"
     />
   </SectionMain>

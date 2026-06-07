@@ -23,8 +23,10 @@ import {
 } from '@mdi/js';
 import { computed, onMounted, ref } from "vue";
 import { useToast } from 'vue-toastification';
+import { useI18n } from 'vue-i18n';
 
 const toast = useToast();
+const { t } = useI18n();
 
 // State
 const accounts = ref([]);
@@ -114,7 +116,7 @@ const loadAccounts = async () => {
     }
   } catch (error) {
     console.error('Failed to load accounts:', error);
-    toast.error('Failed to load Cloudflare accounts');
+    toast.error(t('cf.loadAccountsFailed'));
   }
 };
 
@@ -129,7 +131,7 @@ const loadZones = async (accountId = null) => {
     }
   } catch (error) {
     console.error('Failed to load zones:', error);
-    toast.error('Failed to load zones');
+    toast.error(t('cf.loadZonesFailed'));
   }
 };
 
@@ -144,7 +146,7 @@ const loadDNSRecords = async (zoneId) => {
     }
   } catch (error) {
     console.error('Failed to load DNS records:', error);
-    toast.error('Failed to load DNS records');
+    toast.error(t('cf.loadRecordsFailed'));
   } finally {
     loading.value = false;
   }
@@ -154,15 +156,15 @@ const addAccount = async () => {
   try {
     const response = await ApiService.post('/api/cloudflare/accounts', newAccount.value);
     if (!response.data.error) {
-      toast.success('✅ Account added successfully');
+      toast.success(t('cf.accountAdded'));
       await loadAccounts();
       isAddAccountModalActive.value = false;
       newAccount.value = { name: '', email: '', api_token: '' };
     } else {
-      toast.error('❌ ' + response.data.msg);
+      toast.error(t('cf.errorPrefix') + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('cf.errorColon') + error.message);
   }
 };
 
@@ -174,13 +176,13 @@ const deleteAccount = async (accountId) => {
   try {
     const response = await ApiService.delete(`/api/cloudflare/accounts/${accountId}`);
     if (!response.data.error) {
-      toast.success('✅ Account deleted');
+      toast.success(t('cf.accountDeleted'));
       await loadAccounts();
     } else {
-      toast.error('❌ ' + response.data.msg);
+      toast.error(t('cf.errorPrefix') + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('cf.errorColon') + error.message);
   }
 };
 
@@ -189,13 +191,13 @@ const syncZones = async (accountId) => {
   try {
     const response = await ApiService.post(`/api/cloudflare/accounts/${accountId}/sync-zones`);
     if (!response.data.error) {
-      toast.success(`✅ Synced ${response.data.data?.count || 0} zones`);
+      toast.success(t('cf.syncedZones', { count: response.data.data?.count || 0 }));
       await loadZones();
     } else {
-      toast.error('❌ ' + response.data.msg);
+      toast.error(t('cf.errorPrefix') + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('cf.errorColon') + error.message);
   } finally {
     loading.value = false;
   }
@@ -253,12 +255,12 @@ const buildRecordPayload = () => {
 
 const saveRecord = async () => {
   if (!selectedZone.value) {
-    toast.error('No zone selected');
+    toast.error(t('cf.noZoneSelected'));
     return;
   }
   const f = recordForm.value;
   if (!f.type || !f.name || !f.content) {
-    toast.error('Type, name and content are required');
+    toast.error(t('cf.recordFieldsRequired'));
     return;
   }
   recordSaving.value = true;
@@ -271,14 +273,14 @@ const saveRecord = async () => {
       ? await ApiService.put(url, payload)
       : await ApiService.post(url, payload);
     if (!response.data.error) {
-      toast.success(recordModalMode.value === 'edit' ? '✅ Record updated' : '✅ Record created');
+      toast.success(recordModalMode.value === 'edit' ? t('cf.recordUpdated') : t('cf.recordCreated'));
       isRecordModalActive.value = false;
       await loadDNSRecords(selectedZone.value.id);
     } else {
-      toast.error('❌ ' + response.data.msg);
+      toast.error(t('cf.errorPrefix') + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + (error.response?.data?.msg || error.message));
+    toast.error(t('cf.errorColon') + (error.response?.data?.msg || error.message));
   } finally {
     recordSaving.value = false;
   }
@@ -296,15 +298,15 @@ const confirmDeleteRecord = async () => {
       `/api/cloudflare/zones/${selectedZone.value.id}/dns/${recordToDelete.value.record_id}`
     );
     if (!response.data.error) {
-      toast.success('✅ Record deleted');
+      toast.success(t('cf.recordDeleted'));
       isDeleteRecordModalActive.value = false;
       recordToDelete.value = null;
       await loadDNSRecords(selectedZone.value.id);
     } else {
-      toast.error('❌ ' + response.data.msg);
+      toast.error(t('cf.errorPrefix') + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + (error.response?.data?.msg || error.message));
+    toast.error(t('cf.errorColon') + (error.response?.data?.msg || error.message));
   }
 };
 
@@ -323,11 +325,11 @@ const purgeCache = async () => {
     .filter(Boolean);
 
   if (!purgeForm.value.everything && files.length === 0) {
-    toast.error('Enter URLs to purge or enable "Purge everything"');
+    toast.error(t('cf.enterUrls'));
     return;
   }
   if (files.length > 30) {
-    toast.error('Cloudflare allows max 30 URLs per purge');
+    toast.error(t('cf.maxUrls'));
     return;
   }
 
@@ -341,14 +343,14 @@ const purgeCache = async () => {
       payload
     );
     if (!response.data.error) {
-      toast.success('✅ Cache purged successfully');
+      toast.success(t('cf.cachePurged'));
       isPurgeModalActive.value = false;
       zoneToPurge.value = null;
     } else {
-      toast.error('❌ ' + response.data.msg);
+      toast.error(t('cf.errorPrefix') + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + (error.response?.data?.msg || error.message));
+    toast.error(t('cf.errorColon') + (error.response?.data?.msg || error.message));
   } finally {
     purging.value = false;
   }
@@ -357,7 +359,7 @@ const purgeCache = async () => {
 
 <template>
   <div>
-    <SectionTitleLineWithButton :icon="mdiCloud" title="Cloudflare Management" main />
+    <SectionTitleLineWithButton :icon="mdiCloud" :title="t('cf.title')" main />
 
     <!-- Tabs (responsive: horizontal scroll on small screens) -->
     <div class="mb-6 overflow-x-auto pb-px -mx-1 px-1">
@@ -373,7 +375,7 @@ const purgeCache = async () => {
           ]"
           @click="activeTab = tab; if(tab === 'zones') loadZones()"
         >
-          {{ tab.charAt(0).toUpperCase() + tab.slice(1) }}
+          {{ t('cf.tabs.' + tab) }}
         </button>
       </div>
     </div>
@@ -382,17 +384,17 @@ const purgeCache = async () => {
     <div v-if="activeTab === 'accounts'">
       <CardBox>
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-semibold">Cloudflare Accounts</h3>
+          <h3 class="text-xl font-semibold">{{ t('cf.cfAccounts') }}</h3>
           <BaseButton
             :icon="mdiPlus"
             color="success"
-            label="Add Account"
+            :label="t('cf.addAccount')"
             @click="isAddAccountModalActive = true"
           />
         </div>
 
         <div v-if="accounts.length === 0" class="text-center py-12 text-gray-500">
-          No Cloudflare accounts yet. Add your first account with an API token!
+          {{ t('cf.noAccounts') }}
         </div>
 
         <div v-else class="space-y-4">
@@ -405,13 +407,13 @@ const purgeCache = async () => {
               <div class="flex-1">
                 <h4 class="text-lg font-semibold">{{ account.name }}</h4>
                 <p class="text-sm text-gray-500">{{ account.email }}</p>
-                <p class="text-xs text-gray-400 mt-1">Added: {{ formatDate(account.created_at) }}</p>
+                <p class="text-xs text-gray-400 mt-1">{{ t('cf.added') }}: {{ formatDate(account.created_at) }}</p>
               </div>
               <div class="flex items-center gap-2">
                 <BaseButton
                   :icon="mdiSync"
                   color="info"
-                  label="Sync Zones"
+                  :label="t('cf.syncZones')"
                   small
                   @click="syncZones(account.id)"
                 />
@@ -432,18 +434,18 @@ const purgeCache = async () => {
     <div v-if="activeTab === 'zones'">
       <CardBox>
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-semibold">Cloudflare Zones</h3>
+          <h3 class="text-xl font-semibold">{{ t('cf.cfZones') }}</h3>
           <BaseButton
             :icon="mdiRefresh"
             color="info"
-            label="Refresh"
+            :label="t('common.refresh')"
             small
             @click="loadZones()"
           />
         </div>
 
         <div v-if="zones.length === 0" class="text-center py-12 text-gray-500">
-          No zones found. Sync zones from your Cloudflare accounts first!
+          {{ t('cf.noZones') }}
         </div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -466,7 +468,7 @@ const purgeCache = async () => {
             </div>
             <BaseButton
               :icon="mdiDns"
-              label="View DNS Records"
+              :label="t('cf.viewDnsRecords')"
               color="info"
               small
               class="w-full"
@@ -474,7 +476,7 @@ const purgeCache = async () => {
             />
             <BaseButton
               :icon="mdiBroom"
-              label="Purge Cache"
+              :label="t('cf.purgeCache')"
               color="warning"
               small
               outline
@@ -492,14 +494,14 @@ const purgeCache = async () => {
         <div class="mb-6">
           <div class="flex items-center justify-between mb-3">
             <div>
-              <h3 class="text-xl font-semibold">DNS Records</h3>
+              <h3 class="text-xl font-semibold">{{ t('cf.dnsRecords') }}</h3>
               <p v-if="selectedZone" class="text-sm text-gray-500">{{ selectedZone.name }}</p>
             </div>
             <div class="flex items-center gap-2">
               <BaseButton
                 :icon="mdiPlus"
                 color="success"
-                label="Add Record"
+                :label="t('cf.addRecord')"
                 small
                 :disabled="!selectedZone"
                 @click="openCreateRecord"
@@ -507,7 +509,7 @@ const purgeCache = async () => {
               <BaseButton
                 :icon="mdiRefresh"
                 color="info"
-                label="Refresh"
+                :label="t('common.refresh')"
                 small
                 :disabled="!selectedZone"
                 @click="loadDNSRecords(selectedZone?.id)"
@@ -519,13 +521,13 @@ const purgeCache = async () => {
               <svg class="w-5 h-5 inline-block mr-2 -mt-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
               </svg>
-              <strong>Email DNS Management:</strong> Email DNS records (SPF, DKIM, DMARC, MX) are automatically created when you add a domain in the Email Server section.
+              <strong>{{ t('cf.emailDnsLabel') }}</strong> {{ t('cf.emailDnsText') }}
             </p>
           </div>
         </div>
 
         <div v-if="!selectedZone" class="text-center py-12 text-gray-500">
-          Select a zone from the Zones tab to view DNS records
+          {{ t('cf.selectZoneHint') }}
         </div>
 
         <div v-else-if="loading" class="text-center py-12">
@@ -533,19 +535,19 @@ const purgeCache = async () => {
         </div>
 
         <div v-else-if="dnsRecords.length === 0" class="text-center py-12 text-gray-500">
-          No DNS records found for this zone
+          {{ t('cf.noRecords') }}
         </div>
 
         <div v-else class="overflow-x-auto">
           <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
             <thead class="bg-gray-50 dark:bg-gray-800">
               <tr>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Type</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Name</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Content</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">TTL</th>
-                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Proxied</th>
-                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('cf.type') }}</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('common.name') }}</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('cf.content') }}</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('cf.ttl') }}</th>
+                <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">{{ t('cf.proxied') }}</th>
+                <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">{{ t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody class="bg-white dark:bg-gray-900 divide-y divide-gray-200 dark:divide-gray-700">
@@ -596,66 +598,63 @@ const purgeCache = async () => {
     <!-- DNS Record Create/Edit Modal -->
     <CardBoxModal
       v-model="isRecordModalActive"
-      :title="recordModalMode === 'edit' ? 'Edit DNS Record' : 'Add DNS Record'"
-      :button-label="recordSaving ? 'Saving...' : (recordModalMode === 'edit' ? 'Update' : 'Create')"
+      :title="recordModalMode === 'edit' ? t('cf.editRecord') : t('cf.addRecordTitle')"
+      :button-label="recordSaving ? t('common.saving') : (recordModalMode === 'edit' ? t('common.update') : t('common.create'))"
       has-cancel
       @confirm="saveRecord"
     >
-      <FormField label="Type">
+      <FormField :label="t('cf.type')">
         <FormControl
           v-model="recordForm.type"
           type="select"
           :options="RECORD_TYPES"
         />
       </FormField>
-      <FormField label="Name">
+      <FormField :label="t('common.name')">
         <FormControl
           v-model="recordForm.name"
           :placeholder="selectedZone ? selectedZone.name + '  (use @ for root, or sub.' + selectedZone.name + ')' : 'example.com'"
         />
-        <p class="text-xs text-gray-500 mt-1">
-          Tip: use the apex domain (e.g. <code>{{ selectedZone?.name || 'example.com' }}</code>) or a subdomain
-          (e.g. <code>www.{{ selectedZone?.name || 'example.com' }}</code>). Cloudflare accepts <code>@</code> as a shortcut for the root.
-        </p>
+        <p class="text-xs text-gray-500 mt-1" v-html="t('cf.nameTip', { zone: selectedZone?.name || 'example.com' })"></p>
       </FormField>
-      <FormField label="Content">
+      <FormField :label="t('cf.content')">
         <FormControl
           v-model="recordForm.content"
           :placeholder="recordForm.type === 'A' ? '192.0.2.1' : recordForm.type === 'CNAME' ? 'target.example.com' : recordForm.type === 'MX' ? 'mail.example.com' : 'value'"
         />
       </FormField>
-      <FormField v-if="typeNeedsPriority" label="Priority">
+      <FormField v-if="typeNeedsPriority" :label="t('cf.priority')">
         <FormControl v-model="recordForm.priority" type="number" placeholder="10" />
       </FormField>
-      <FormField label="TTL">
+      <FormField :label="t('cf.ttl')">
         <FormControl
           v-model="recordForm.ttl"
           type="select"
           :options="ttlOptions"
         />
       </FormField>
-      <FormField v-if="typeSupportsProxy" label="Proxy through Cloudflare">
+      <FormField v-if="typeSupportsProxy" :label="t('cf.proxyThrough')">
         <label class="inline-flex items-center gap-2 cursor-pointer">
           <input v-model="recordForm.proxied" type="checkbox" class="form-checkbox" />
-          <span class="text-sm">Proxied (orange cloud — provides CDN, WAF, hides origin IP)</span>
+          <span class="text-sm">{{ t('cf.proxiedHint') }}</span>
         </label>
       </FormField>
-      <FormField label="Comment">
-        <FormControl v-model="recordForm.comment" placeholder="Optional note about this record" />
+      <FormField :label="t('cf.comment')">
+        <FormControl v-model="recordForm.comment" :placeholder="t('cf.commentPlaceholder')" />
       </FormField>
     </CardBoxModal>
 
     <!-- DNS Record Delete Confirmation -->
     <CardBoxModal
       v-model="isDeleteRecordModalActive"
-      title="Delete DNS Record"
-      button-label="Delete"
+      :title="t('cf.deleteRecord')"
+      :button-label="t('common.delete')"
       button="danger"
       has-cancel
       @confirm="confirmDeleteRecord"
     >
       <p v-if="recordToDelete">
-        Are you sure you want to delete this DNS record?
+        {{ t('cf.deleteRecordConfirm') }}
       </p>
       <div v-if="recordToDelete" class="mt-3 p-3 bg-gray-50 dark:bg-gray-800 rounded text-sm font-mono">
         <div><strong>{{ recordToDelete.type }}</strong> {{ recordToDelete.name }}</div>
@@ -666,19 +665,19 @@ const purgeCache = async () => {
     <!-- Purge Cache Modal -->
     <CardBoxModal
       v-model="isPurgeModalActive"
-      :title="'Purge Cache' + (zoneToPurge ? ' — ' + zoneToPurge.name : '')"
-      :button-label="purging ? 'Purging...' : 'Purge'"
+      :title="t('cf.purgeCache') + (zoneToPurge ? ' — ' + zoneToPurge.name : '')"
+      :button-label="purging ? t('cf.purging') : t('cf.purge')"
       button="warning"
       has-cancel
       @confirm="purgeCache"
     >
-      <FormField label="Purge everything">
+      <FormField :label="t('cf.purgeEverything')">
         <label class="inline-flex items-center gap-2 cursor-pointer">
           <input v-model="purgeForm.everything" type="checkbox" class="form-checkbox" />
-          <span class="text-sm">Clear the entire cache for this zone</span>
+          <span class="text-sm">{{ t('cf.purgeEverythingHint') }}</span>
         </label>
       </FormField>
-      <FormField v-if="!purgeForm.everything" label="URLs to purge (one per line, max 30)">
+      <FormField v-if="!purgeForm.everything" :label="t('cf.urlsToPurge')">
         <textarea
           v-model="purgeForm.files"
           rows="5"
@@ -686,36 +685,29 @@ const purgeCache = async () => {
           placeholder="https://example.com/assets/index-abc123.js&#10;https://example.com/assets/index-abc123.css"
         ></textarea>
         <p class="text-xs text-gray-500 mt-1">
-          Enter full absolute URLs (exact match). Use this to clear specific stale assets without flushing the whole zone.
+          {{ t('cf.urlsHint') }}
         </p>
       </FormField>
-      <div v-else class="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-800 dark:text-yellow-200">
-        ⚠️ This clears <strong>all</strong> cached content for the zone. The edge will revalidate everything from your origin on the next requests.
-      </div>
+      <div v-else class="p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg text-sm text-yellow-800 dark:text-yellow-200" v-html="t('cf.purgeEverythingWarning')"></div>
     </CardBoxModal>
 
     <!-- Add Account Modal -->
     <CardBoxModal
       v-model="isAddAccountModalActive"
-      title="Add Cloudflare Account"
-      button-label="Add"
+      :title="t('cf.addAccountTitle')"
+      :button-label="t('common.add')"
       has-cancel
       @confirm="addAccount"
     >
-      <FormField label="Account Name">
+      <FormField :label="t('cf.accountName')">
         <FormControl v-model="newAccount.name" placeholder="My Cloudflare Account" required />
       </FormField>
-      <FormField label="Email">
+      <FormField :label="t('cf.email')">
         <FormControl v-model="newAccount.email" type="email" placeholder="user@example.com" required />
       </FormField>
-      <FormField label="API Token">
-        <FormControl v-model="newAccount.api_token" placeholder="Your Cloudflare API Token" required />
-        <p class="text-sm text-gray-500 mt-2">
-          Get your API token from: 
-          <a href="https://dash.cloudflare.com/profile/api-tokens" target="_blank" class="text-blue-500 hover:underline">
-            Cloudflare Dashboard → My Profile → API Tokens
-          </a>
-        </p>
+      <FormField :label="t('cf.apiToken')">
+        <FormControl v-model="newAccount.api_token" :placeholder="t('cf.apiTokenPlaceholder')" required />
+        <p class="text-sm text-gray-500 mt-2" v-html="t('cf.apiTokenHint')"></p>
       </FormField>
     </CardBoxModal>
   </div>

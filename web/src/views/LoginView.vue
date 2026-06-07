@@ -12,11 +12,13 @@ import {
   mdiLogin
 } from '@mdi/js'
 import { onMounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 
 const router = useRouter()
 const toast = useToast()
+const { t } = useI18n()
 
 // Form state
 const isRegisterMode = ref(false)
@@ -50,7 +52,7 @@ const toggleMode = () => {
 
 const handleLogin = async () => {
   if (!loginForm.value.email.trim() || !loginForm.value.password.trim()) {
-    toast.error('Please fill in all fields')
+    toast.error(t('login.fillAllFields'))
     return
   }
 
@@ -62,13 +64,13 @@ const handleLogin = async () => {
     const refresh = tokens?.refresh ?? tokens?.Refresh ?? ''
     if (access) {
       ApiService.setJWT(access, refresh)
-      toast.success('Login successful!')
+      toast.success(t('login.loginSuccess'))
       router.push('/')
     } else {
-      toast.error('Login failed. No token received.')
+      toast.error(t('login.noToken'))
     }
   } catch (error) {
-    const msg = error.response?.data?.msg || 'Login failed. Please try again.'
+    const msg = error.response?.data?.msg || t('login.loginFailed')
     toast.error(msg)
   } finally {
     loading.value = false
@@ -78,15 +80,15 @@ const handleLogin = async () => {
 const handleRegister = async () => {
   const { email, password, confirmPassword } = registerForm.value
   if (!email.trim() || !password.trim() || !confirmPassword.trim()) {
-    toast.error('Please fill in all fields')
+    toast.error(t('login.fillAllFields'))
     return
   }
   if (password !== confirmPassword) {
-    toast.error('Passwords do not match')
+    toast.error(t('login.passwordsMismatch'))
     return
   }
   if (password.length < 6) {
-    toast.error('Password must be at least 6 characters long')
+    toast.error(t('login.passwordTooShort'))
     return
   }
 
@@ -99,15 +101,15 @@ const handleRegister = async () => {
     const refresh = tokens?.refresh ?? tokens?.Refresh ?? ''
     if (access) {
       ApiService.setJWT(access, refresh)
-      toast.success('Registration successful!')
+      toast.success(t('login.registerSuccess'))
       router.push('/')
     } else {
-      toast.success('Account created. Please sign in.')
+      toast.success(t('login.accountCreated'))
       hasAnyUser.value = true
       isRegisterMode.value = false
     }
   } catch (error) {
-    const msg = error.response?.data?.msg || 'Registration failed. Please try again.'
+    const msg = error.response?.data?.msg || t('login.registerFailed')
     toast.error(msg)
   } finally {
     loading.value = false
@@ -160,7 +162,7 @@ onMounted(async () => {
           <BaseIcon :path="mdiDocker" size="32" class="text-white" />
         </div>
         <h1 class="text-3xl font-bold text-white mb-2">Redock</h1>
-        <p class="text-gray-300">DevStation - Local Development Hub</p>
+        <p class="text-gray-300">{{ t('login.subtitle') }}</p>
       </div>
 
       <!-- Auth card -->
@@ -168,10 +170,10 @@ onMounted(async () => {
         <!-- Header -->
         <div class="p-6 bg-gradient-to-r from-blue-600/20 to-purple-600/20 border-b border-gray-700">
           <h2 class="text-2xl font-bold text-white text-center">
-            {{ isRegisterMode ? 'Create Account' : 'Welcome Back' }}
+            {{ isRegisterMode ? t('login.createAccount') : t('login.welcomeBack') }}
           </h2>
           <p class="text-gray-300 text-center mt-1">
-            {{ isRegisterMode ? 'Join the Redock DevStation' : 'Sign in to your DevStation' }}
+            {{ isRegisterMode ? t('login.joinSubtitle') : t('login.signinSubtitle') }}
           </p>
         </div>
 
@@ -180,7 +182,7 @@ onMounted(async () => {
           <form v-if="!isRegisterMode || hasAnyUser" class="space-y-4" @submit.prevent="handleLogin">
             <!-- Email -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ t('login.email') }}</label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <BaseIcon :path="mdiAccount" size="20" class="text-gray-400" />
@@ -190,14 +192,14 @@ onMounted(async () => {
                   type="email"
                   required
                   class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your email"
+                  :placeholder="t('login.emailPlaceholder')"
                 />
               </div>
             </div>
 
             <!-- Password -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ t('login.password') }}</label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <BaseIcon :path="mdiLock" size="20" class="text-gray-400" />
@@ -207,7 +209,7 @@ onMounted(async () => {
                   :type="showPassword ? 'text' : 'password'"
                   required
                   class="w-full pl-10 pr-12 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your password"
+                  :placeholder="t('login.passwordPlaceholder')"
                 />
                 <button
                   type="button"
@@ -231,7 +233,7 @@ onMounted(async () => {
             >
               <BaseIcon v-if="!loading" :path="mdiLogin" size="20" />
               <div v-if="loading" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>{{ loading ? 'Signing in...' : 'Sign In' }}</span>
+              <span>{{ loading ? t('login.signingIn') : t('login.signIn') }}</span>
             </button>
           </form>
 
@@ -239,7 +241,7 @@ onMounted(async () => {
           <form v-else class="space-y-4" @submit.prevent="handleRegister">
             <!-- Email -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Email</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ t('login.email') }}</label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <BaseIcon :path="mdiEmail" size="20" class="text-gray-400" />
@@ -249,14 +251,14 @@ onMounted(async () => {
                   type="email"
                   required
                   class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Enter your email"
+                  :placeholder="t('login.emailPlaceholder')"
                 />
               </div>
             </div>
 
             <!-- Password -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Password</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ t('login.password') }}</label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <BaseIcon :path="mdiLock" size="20" class="text-gray-400" />
@@ -266,7 +268,7 @@ onMounted(async () => {
                   :type="showPassword ? 'text' : 'password'"
                   required
                   class="w-full pl-10 pr-12 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Create a password"
+                  :placeholder="t('login.createPasswordPlaceholder')"
                 />
                 <button
                   type="button"
@@ -284,7 +286,7 @@ onMounted(async () => {
 
             <!-- Confirm Password -->
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Confirm Password</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ t('login.confirmPassword') }}</label>
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                   <BaseIcon :path="mdiLock" size="20" class="text-gray-400" />
@@ -294,7 +296,7 @@ onMounted(async () => {
                   type="password"
                   required
                   class="w-full pl-10 pr-4 py-3 bg-gray-700 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                  placeholder="Confirm your password"
+                  :placeholder="t('login.confirmPasswordPlaceholder')"
                 />
               </div>
             </div>
@@ -307,20 +309,20 @@ onMounted(async () => {
             >
               <BaseIcon v-if="!loading" :path="mdiAccountPlus" size="20" />
               <div v-if="loading" class="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-              <span>{{ loading ? 'Creating account...' : 'Create Account' }}</span>
+              <span>{{ loading ? t('login.creatingAccount') : t('login.createAccount') }}</span>
             </button>
           </form>
 
           <!-- Toggle Mode -->
           <div v-if="!hasAnyUser" class="mt-6 pt-6 border-t border-gray-700 text-center">
             <p class="text-gray-400 mb-3">
-              {{ isRegisterMode ? 'Already have an account?' : "Don't have an account?" }}
+              {{ isRegisterMode ? t('login.haveAccount') : t('login.noAccount') }}
             </p>
             <button
               class="text-blue-400 hover:text-blue-300 font-medium transition-colors"
               @click="toggleMode"
             >
-              {{ isRegisterMode ? 'Sign in instead' : 'Create an account' }}
+              {{ isRegisterMode ? t('login.signInInstead') : t('login.createAccountLink') }}
             </button>
           </div>
         </div>

@@ -2,6 +2,7 @@
 import BaseIcon from '@/components/BaseIcon.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
 import FormCheckRadio from '@/components/FormCheckRadio.vue'
+import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
 import menuIconMap from '@/menuIcons.js'
 import ApiService from '@/services/ApiService'
 import { useAuthStore } from '@/stores/authStore'
@@ -28,9 +29,18 @@ import { FitAddon } from '@xterm/addon-fit'
 import { Terminal } from '@xterm/xterm'
 import '@xterm/xterm/css/xterm.css'
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 const router = useRouter()
+const { t, te } = useI18n()
+
+// Translate a backend-provided menu item via the nav.* namespace (key derived
+// from its path), falling back to the backend-provided name when no key exists.
+const menuLabel = (item) => {
+  const key = `nav.${String(item.path || '').replace(/^\//, '').replace(/[/-]/g, '_')}`
+  return te(key) ? t(key) : item.name
+}
 const terminalStore = useTerminalStore()
 const layoutStore = useLayoutStore()
 const menuVisibilityStore = useMenuVisibilityStore()
@@ -537,7 +547,7 @@ onMounted(() => {
         <div v-show="!layoutStore.sidebarCollapsed" class="flex items-center gap-1 shrink-0">
           <button
             class="hidden lg:flex p-1.5 text-gray-400 hover:text-white rounded-lg hover:bg-gray-700/50 transition-colors"
-            aria-label="Collapse menu"
+            :aria-label="t('layout.collapseMenu')"
             @click.stop="layoutStore.toggleSidebarCollapsed()"
           >
             <BaseIcon :path="mdiChevronLeft" size="20" />
@@ -574,10 +584,10 @@ onMounted(() => {
               ? 'bg-gradient-to-r from-blue-600 to-purple-600 text-white shadow-lg'
               : 'text-gray-300 hover:text-white hover:bg-gray-700/50'
           ]"
-          :title="layoutStore.sidebarCollapsed ? item.name : undefined"
+          :title="layoutStore.sidebarCollapsed ? menuLabel(item) : undefined"
         >
           <BaseIcon :path="menuIconMap[item.icon] || item.icon" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
-          <span v-show="!layoutStore.sidebarCollapsed" class="flex-1 truncate">{{ item.name }}</span>
+          <span v-show="!layoutStore.sidebarCollapsed" class="flex-1 truncate">{{ menuLabel(item) }}</span>
         </router-link>
       </nav>
 
@@ -593,22 +603,22 @@ onMounted(() => {
             'w-full flex items-center text-gray-300 hover:text-white hover:bg-gray-700/50 rounded-xl transition-all duration-200 border border-gray-600/50 mb-2',
             layoutStore.sidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5 text-sm font-medium'
           ]"
-          title="Customize Menu"
+          :title="t('layout.customizeMenu')"
           @click="showMenuVisibilityModal = true"
         >
           <BaseIcon :path="mdiCog" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
-          <span v-show="!layoutStore.sidebarCollapsed">Customize Menu</span>
+          <span v-show="!layoutStore.sidebarCollapsed">{{ t('layout.customizeMenu') }}</span>
         </button>
         <button
           :class="[
             'w-full flex items-center text-red-400 hover:text-white hover:bg-red-600/20 rounded-xl transition-all duration-200 border border-red-600/20',
             layoutStore.sidebarCollapsed ? 'justify-center p-2.5' : 'px-3 py-2.5 text-sm font-medium'
           ]"
-          title="Logout"
+          :title="t('layout.logout')"
           @click="logout"
         >
           <BaseIcon :path="mdiLogout" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
-          <span v-show="!layoutStore.sidebarCollapsed">Logout</span>
+          <span v-show="!layoutStore.sidebarCollapsed">{{ t('layout.logout') }}</span>
         </button>
       </div>
     </div>
@@ -616,14 +626,14 @@ onMounted(() => {
     <!-- Menü görünürlük modal -->
     <CardBoxModal
       v-model="showMenuVisibilityModal"
-      title="Customize Menu"
-      button-label="Close"
+      :title="t('layout.customizeMenu')"
+      :button-label="t('common.close')"
       :has-cancel="false"
       :hide-buttons="false"
       @confirm="showMenuVisibilityModal = false"
     >
       <p class="text-sm text-gray-600 dark:text-gray-400 mb-4">
-        Turn menu items on or off. New items are shown by default.
+        {{ t('layout.customizeMenuDesc') }}
       </p>
       <div class="space-y-3 max-h-[60vh] overflow-y-auto">
         <div
@@ -631,7 +641,7 @@ onMounted(() => {
           :key="item.path"
           class="flex items-center justify-between py-2 border-b border-gray-100 dark:border-gray-700 last:border-b-0"
         >
-          <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ item.name }}</span>
+          <span class="text-sm font-medium text-gray-800 dark:text-gray-200">{{ menuLabel(item) }}</span>
           <FormCheckRadio
             :name="'menu-' + item.path"
             type="switch"
@@ -654,7 +664,7 @@ onMounted(() => {
             'p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors',
             layoutStore.sidebarCollapsed ? '' : 'lg:hidden'
           ]"
-          :aria-label="layoutStore.sidebarCollapsed ? 'Expand menu' : 'Menu'"
+          :aria-label="layoutStore.sidebarCollapsed ? t('layout.expandMenu') : t('layout.menu')"
           @click="layoutStore.sidebarCollapsed ? layoutStore.toggleSidebarCollapsed() : toggleSidebar()"
         >
           <BaseIcon :path="mdiMenu" size="20" />
@@ -662,6 +672,9 @@ onMounted(() => {
 
         <!-- Right side controls -->
         <div class="flex flex-1 items-center justify-end space-x-4">
+          <!-- Language switcher -->
+          <LanguageSwitcher />
+
           <!-- Notifications -->
           <button class="relative p-2 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded-lg transition-colors">
             <BaseIcon :path="mdiBell" size="20" />
@@ -700,7 +713,7 @@ onMounted(() => {
                     @click="logout"
                   >
                     <BaseIcon :path="mdiLogout" size="16" class="mr-3" />
-                    <span>Sign out</span>
+                    <span>{{ t('layout.logout') }}</span>
                   </button>
                 </div>
               </div>
@@ -737,7 +750,7 @@ onMounted(() => {
       >
         <!-- Header -->
         <div class="flex items-center justify-between p-3 border-b border-gray-700/50 bg-gray-800/80">
-          <h4 class="text-sm font-semibold text-white">Saved Commands</h4>
+          <h4 class="text-sm font-semibold text-white">{{ t('layout.savedCommands') }}</h4>
           <span class="text-xs text-gray-400 bg-gray-700/50 px-2 py-1 rounded-full">
             {{ filteredCommands.length }}/{{ savedCommands.length }}
           </span>
@@ -748,7 +761,7 @@ onMounted(() => {
           <input
             v-model="commandFilter"
             type="text"
-            placeholder="Search commands..."
+            :placeholder="t('layout.searchCommands')"
             class="w-full px-3 py-1.5 text-sm bg-gray-700/50 border border-gray-600/50 rounded-lg text-white placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500"
             @input="filterCommands"
           />
@@ -858,21 +871,21 @@ onMounted(() => {
             <!-- Duplicate Button -->
             <button
               class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded transition-colors"
-              title="Duplicate Terminal"
+              :title="t('layout.duplicateTerminal')"
               @click="duplicateActiveTerminal"
             >
               <BaseIcon :path="mdiContentDuplicate" size="16" />
             </button>
             <button
               class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded transition-colors"
-              title="Minimize Terminal"
+              :title="t('layout.minimizeTerminal')"
               @click="minimizeTerminal"
             >
               <BaseIcon :path="mdiMinus" size="16" />
             </button>
             <button
               class="p-1.5 text-gray-400 hover:text-white hover:bg-gray-700/50 rounded transition-colors"
-              title="Maximize Terminal"
+              :title="t('layout.maximizeTerminal')"
               @click="maximizeTerminal"
             >
               <BaseIcon :path="mdiWindowMaximize" size="16" />

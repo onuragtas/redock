@@ -41,6 +41,7 @@ import {
 } from "@mdi/js";
 import { computed, onMounted, ref, watch } from "vue";
 import { useToast } from "vue-toastification";
+import { useI18n } from "vue-i18n";
 import { useRoute, useRouter } from "vue-router";
 
 const route = useRoute();
@@ -88,6 +89,7 @@ const start = ref({
 const clientConfigs = ref({});
 
 const toast = useToast();
+const { t } = useI18n();
 
 // Whether a tunnel's protocol enables a transport ("all" or a "+"-combo like "http+tcp").
 function protoHas(tunnel, kind) {
@@ -106,22 +108,22 @@ function getConnectionLines(tunnel) {
   const hasUDP = protocol === "all" || protocol.includes("udp");
   if (hasHTTP) {
     lines.push(
-      { label: "HTTP (Web)", value: `http://${domain}`, desc: "Open this URL in a browser or send HTTP requests." },
-      { label: "HTTPS (Web)", value: `https://${domain}`, desc: "Secure HTTPS endpoint." }
+      { label: t("tps.connHttpLabelHttp"), value: `http://${domain}`, desc: t("tpc.connHttpDesc") },
+      { label: t("tps.connHttpLabelHttps"), value: `https://${domain}`, desc: t("tpc.connHttpsDesc") }
     );
   }
   if (hasTCP) {
     lines.push({
       label: "TCP",
       value: `${domain}:${port}`,
-      desc: "Raw TCP connection (connect with telnet, netcat, or a socket to this address)."
+      desc: t("tps.connTcpDesc")
     });
   }
   if (hasUDP) {
     lines.push({
       label: "UDP",
       value: `${domain}:${port}`,
-      desc: "Send UDP packets to this target address."
+      desc: t("tps.connUdpDesc")
     });
   }
   return lines;
@@ -129,9 +131,9 @@ function getConnectionLines(tunnel) {
 
 function copyConnection(value) {
   navigator.clipboard.writeText(value).then(() => {
-    toast.success("Copied to clipboard");
+    toast.success(t("common.copied"));
   }).catch(() => {
-    toast.error("Copy failed");
+    toast.error(t("common.copyFailed"));
   });
 }
 
@@ -187,10 +189,10 @@ const loginSubmit = async () => {
       login.value = true;
       await tunnelList();
     } else {
-      toast.error(response?.data?.msg || "Login failed. Check your credentials.");
+      toast.error(response?.data?.msg || t("tpc.loginFailedCreds"));
     }
   } catch (error) {
-    toast.error(error?.response?.data?.msg || error?.message || "Login failed.");
+    toast.error(error?.response?.data?.msg || error?.message || t("tpc.loginFailed"));
   }
 };
 
@@ -211,11 +213,11 @@ const registerSubmit = async () => {
       isRegisterModalActive.value = false;
       await tunnelList();
     } else {
-      toast.error(response?.data?.msg || "Registration failed.");
+      toast.error(response?.data?.msg || t("tpc.registrationFailed"));
       isRegisterModalActive.value = false;
     }
   } catch (error) {
-    toast.error(error?.response?.data?.msg || error?.message || "Registration failed.");
+    toast.error(error?.response?.data?.msg || error?.message || t("tpc.registrationFailed"));
   }
 };
 
@@ -350,10 +352,10 @@ const toggleAutoStart = async (item) => {
     if (clientConfigs.value[item.domain]) {
       clientConfigs.value[item.domain].auto_start = next;
     }
-    toast.success(next ? `Auto-start enabled: ${item.domain}` : `Auto-start disabled: ${item.domain}`);
+    toast.success(next ? t("tpc.autoStartEnabled", { domain: item.domain }) : t("tpc.autoStartDisabled", { domain: item.domain }));
   } catch (error) {
     console.error("Failed to toggle auto-start:", error);
-    toast.error("Failed to update auto-start: " + (error.response?.data?.msg || error.message));
+    toast.error(t("tpc.autoStartUpdateFailed") + (error.response?.data?.msg || error.message));
   }
 };
 
@@ -369,7 +371,7 @@ const startSubmit = async () => {
     const hasTcp = tcpIp !== "" && tcpPort > 0;
     const hasUdp = udpIp !== "" && udpPort > 0;
     if (!hasHttp && !hasTcp && !hasUdp) {
-      toast.warning("Fill at least one target: HTTP, TCP, or UDP (IP + Port)");
+      toast.warning(t("tpc.fillTarget"));
       return;
     }
     const keepaliveSec = parseInt(start.value.keepaliveIntervalSeconds, 10);
@@ -449,7 +451,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS });
 const layoutToggleLabel = computed(() =>
-  isGridLayout.value ? "List View" : "Grid View"
+  isGridLayout.value ? t("tps.listView") : t("tps.gridView")
 );
 const layoutToggleIcon = computed(() =>
   isGridLayout.value ? mdiViewList : mdiViewGridOutline
@@ -618,7 +620,7 @@ const goToTunnelAuth = async () => {
     const authUrl = baseUrl.replace(/\/$/, "") + "/#/tunnel-auth?" + params.toString();
     window.location.href = authUrl;
   } catch (e) {
-    toast.error(e?.response?.data?.msg || e?.message || "Failed to start authentication. Try again.");
+    toast.error(e?.response?.data?.msg || e?.message || t("tpc.authStartFailed"));
   } finally {
     tunnelAuthPrepareLoading.value = false;
   }
@@ -676,12 +678,12 @@ onMounted(async () => {
         <div>
           <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
             <BaseIcon :path="mdiTunnel" size="40" class="mr-4" />
-            Tunnel Proxy Client
+            {{ t('tpc.title') }}
           </h1>
         </div>
         <div v-if="login" class="mt-6 lg:mt-0 flex space-x-3">
           <BaseButton
-            label="Refresh"
+            :label="t('common.refresh')"
             :icon="mdiRefresh"
             color="white"
             outline
@@ -690,7 +692,7 @@ onMounted(async () => {
             @click="tunnelList"
           />
           <BaseButton
-            label="Sign out"
+            :label="t('tpc.signOut')"
             :icon="mdiLogout"
             color="white"
             outline
@@ -702,7 +704,7 @@ onMounted(async () => {
     </div>
 
     <CardBox v-if="ApiService.getJWT()" class="mb-6">
-      <FormField label="Tunnel server" help="Domain list and tunnel operations use the selected server.">
+      <FormField :label="t('tpc.tunnelServer')" :help="t('tpc.tunnelServerHelp')">
         <div class="flex flex-wrap items-center gap-3">
           <select
             v-model="selectedServerId"
@@ -713,11 +715,11 @@ onMounted(async () => {
               :key="s.id"
               :value="s.id"
             >
-              {{ s.name }}{{ s.is_default ? " (default)" : "" }}
+              {{ s.name }}{{ s.is_default ? t('tpc.defaultSuffix') : "" }}
             </option>
           </select>
           <BaseButton
-            label="Set as default"
+            :label="t('tpc.setAsDefault')"
             :icon="mdiCheckCircle"
             color="info"
             outline
@@ -726,7 +728,7 @@ onMounted(async () => {
             @click="selectedServer && setDefaultServer(selectedServer)"
           />
           <BaseButton
-            label="Add another server"
+            :label="t('tpc.addAnotherServer')"
             :icon="mdiPlus"
             color="info"
             outline
@@ -734,7 +736,7 @@ onMounted(async () => {
           />
           <BaseButton
             v-if="selectedServer && tunnelServers.length > 1"
-            label="Delete server"
+            :label="t('tpc.deleteServer')"
             :icon="mdiDelete"
             color="danger"
             outline
@@ -754,15 +756,15 @@ onMounted(async () => {
           <BaseIcon :path="mdiConnection" size="32" class="text-purple-600 dark:text-purple-400" />
           <div>
             <p class="font-medium text-slate-800 dark:text-slate-200">
-              Sign in to connect to {{ selectedServer.name }}
+              {{ t('tpc.signInToConnect', { name: selectedServer.name }) }}
             </p>
             <p class="text-sm text-slate-500 dark:text-slate-400">
-              Sign in or register on this server to view the tunnel list and manage tunnels.
+              {{ t('tpc.signInOrRegisterHint') }}
             </p>
           </div>
         </div>
         <BaseButton
-          :label="tunnelAuthPrepareLoading ? 'Redirecting...' : 'Connect'"
+          :label="tunnelAuthPrepareLoading ? t('tpc.redirecting') : t('tpc.connect')"
           :icon="mdiLogin"
           color="info"
           class="shrink-0"
@@ -786,7 +788,7 @@ onMounted(async () => {
             <div
               class="text-sm text-purple-600/70 dark:text-purple-400/70"
             >
-              Total Tunnels
+              {{ t('tpc.totalTunnels') }}
             </div>
           </div>
           <BaseIcon
@@ -810,7 +812,7 @@ onMounted(async () => {
             <div
               class="text-sm text-green-600/70 dark:text-green-400/70"
             >
-              Active Tunnels
+              {{ t('tpc.activeTunnels') }}
             </div>
           </div>
           <BaseIcon
@@ -834,7 +836,7 @@ onMounted(async () => {
             <div
               class="text-sm text-gray-600/70 dark:text-gray-400/70"
             >
-              Inactive Tunnels
+              {{ t('tpc.inactiveTunnels') }}
             </div>
           </div>
           <BaseIcon
@@ -849,7 +851,7 @@ onMounted(async () => {
     <CardBox v-if="login">
       <SectionTitleLineWithButton
         :icon="mdiConnection"
-        title="Tunnel List"
+        :title="t('tpc.tunnelList')"
         main
       >
         <div class="flex flex-col gap-3 md:flex-row md:items-center">
@@ -857,7 +859,7 @@ onMounted(async () => {
             <FormControl
               v-model="searchQuery"
               :icon="mdiMagnify"
-              placeholder="Search tunnels"
+              :placeholder="t('tpc.searchTunnels')"
             />
           </div>
           <BaseButton
@@ -869,7 +871,7 @@ onMounted(async () => {
             @click="toggleLayout"
           />
           <BaseButton
-            label="Add Domain"
+            :label="t('tpc.addDomain')"
             :icon="mdiPlus"
             color="success"
             class="shrink-0"
@@ -889,7 +891,7 @@ onMounted(async () => {
       <div
         class="mb-4 px-4 py-2 rounded-lg bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 text-sm text-amber-800 dark:text-amber-200"
       >
-        Domains not used for more than 1 month will be automatically deleted and their ports may be reassigned.
+        {{ t('tpc.unusedWarning') }}
       </div>
 
       <div v-if="loading" class="text-center py-12">
@@ -897,7 +899,7 @@ onMounted(async () => {
           class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"
         />
         <p class="text-slate-500 dark:text-slate-400 mt-4">
-          Loading tunnels...
+          {{ t('tpc.loadingTunnels') }}
         </p>
       </div>
 
@@ -913,8 +915,8 @@ onMounted(async () => {
         <p class="text-slate-500 dark:text-slate-400 mb-4">
           {{
             searchQuery
-              ? "No tunnels match your search."
-              : "No tunnels defined yet."
+              ? t('tpc.noTunnelsMatch')
+              : t('tpc.noTunnels')
           }}
         </p>
       </div>
@@ -951,7 +953,7 @@ onMounted(async () => {
                   <div class="flex items-center gap-2 flex-wrap">
                     <span class="flex items-center">
                       <BaseIcon :path="mdiEthernet" size="16" class="mr-1" />
-                      Port: {{ tunnel.port }}
+                      {{ t('tpc.port') }}: {{ tunnel.port }}
                     </span>
                     <span
                       v-if="protoHas(tunnel, 'tcp')"
@@ -989,14 +991,14 @@ onMounted(async () => {
                         tunnel.keep_alive ? 'text-green-500' : 'text-red-500'
                       "
                     />
-                    Keep Alive: {{ tunnel.keep_alive ? "Yes" : "No" }}
+                    {{ t('tpc.keepAlive') }}: {{ tunnel.keep_alive ? t('common.yes') : t('common.no') }}
                   </div>
-                  <div>Updated: {{ formatDate(tunnel.UpdatedAt) }}</div>
+                  <div>{{ t('tpc.updated') }}: {{ formatDate(tunnel.UpdatedAt) }}</div>
                 </div>
-                <!-- How to connect from outside -->
+                <!-- {{ t('tps.howToConnect') }} -->
                 <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-600">
                   <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-                    How to connect from outside
+                    {{ t('tps.howToConnect') }}
                   </p>
                   <div class="space-y-2">
                     <div
@@ -1013,7 +1015,7 @@ onMounted(async () => {
                           :icon="mdiContentCopy"
                           color="lightDark"
                           small
-                          title="Copy"
+                          :title="t('common.copy')"
                           @click="copyConnection(line.value)"
                         />
                       </div>
@@ -1034,7 +1036,7 @@ onMounted(async () => {
                   getStatusColor(tunnel.started)
                 ]"
               >
-                {{ tunnel.started ? "Active" : "Inactive" }}
+                {{ tunnel.started ? t("tpc.active") : t("tpc.inactive") }}
               </span>
             </div>
           </div>
@@ -1044,28 +1046,28 @@ onMounted(async () => {
               :icon="mdiRefreshAuto"
               :color="tunnel.autoStart ? 'success' : 'lightDark'"
               small
-              :title="tunnel.autoStart ? 'Auto-start on (click to turn off)' : 'Auto-start off (click to turn on)'"
+              :title="tunnel.autoStart ? t('tpc.autoStartOn') : t('tpc.autoStartOff')"
               @click="toggleAutoStart(tunnel)"
             />
             <BaseButton
               :icon="tunnel.started ? mdiStop : mdiPlay"
               :color="tunnel.started ? 'danger' : 'success'"
               small
-              :title="tunnel.started ? 'Stop' : 'Start'"
+              :title="tunnel.started ? t('common.stop') : t('common.start')"
               @click="tunnel.started ? stopModal(tunnel) : startModal(tunnel)"
             />
             <BaseButton
               :icon="mdiAutorenew"
               color="info"
               small
-              title="Renew"
+              :title="t('tpc.renew')"
               @click="renewTunnel(tunnel)"
             />
             <BaseButton
               :icon="mdiDelete"
               color="danger"
               small
-              title="Delete"
+              :title="t('common.delete')"
               @click="deleteModal(tunnel)"
             />
           </div>
@@ -1114,9 +1116,9 @@ onMounted(async () => {
   <!-- Add Domain Modal (random subdomain generated by server) -->
   <CardBoxModal
     v-model="isAddModalActive"
-    title="Add Domain"
+    :title="t('tpc.addDomain')"
     button="success"
-    :button-label="addLoading ? 'Adding...' : 'Add'"
+    :button-label="addLoading ? t('tpc.adding') : t('common.add')"
     :button-disabled="addLoading"
     :cancel-disabled="addLoading"
     has-cancel
@@ -1128,17 +1130,15 @@ onMounted(async () => {
           <BaseIcon :path="mdiPlus" size="24" />
         </div>
         <div class="add-domain-header-text">
-          <span class="add-domain-title">New tunnel domain</span>
-          <span class="add-domain-subtitle">A random subdomain will be generated automatically</span>
+          <span class="add-domain-title">{{ t('tpc.newTunnelDomain') }}</span>
+          <span class="add-domain-subtitle">{{ t('tpc.randomSubdomainHint') }}</span>
         </div>
       </div>
       <div class="add-domain-body">
-        <p class="add-domain-desc">
-          The full domain (e.g. <code>a1b2c3d4.tnpx.org</code>) will appear in your list after creation. HTTP, HTTPS, TCP and UDP will all be available.
-        </p>
+        <p class="add-domain-desc" v-html="t('tpc.addDomainDesc')"></p>
         <div v-if="addLoading" class="add-domain-loading">
           <div class="add-domain-spinner" />
-          <span>Creating domain...</span>
+          <span>{{ t('tpc.creatingDomain') }}</span>
         </div>
       </div>
     </div>
@@ -1147,9 +1147,9 @@ onMounted(async () => {
   <!-- External server login/register (federation – OAuth2, e.g. api.tnpx.org) -->
   <CardBoxModal
     v-model="isExternalLoginModalActive"
-    :title="externalAuthMode === 'register' ? 'Register on tunnel server' : 'Sign in to tunnel server'"
+    :title="externalAuthMode === 'register' ? t('tpc.registerOnServer') : t('tpc.signInToServer')"
     button="info"
-    :button-label="externalLoginLoading ? (externalAuthMode === 'register' ? 'Registering...' : 'Signing in...') : (externalAuthMode === 'register' ? 'Register' : 'Sign in')"
+    :button-label="externalLoginLoading ? (externalAuthMode === 'register' ? t('tpc.registering') : t('tpc.signingIn')) : (externalAuthMode === 'register' ? t('tpc.register') : t('tpc.signIn'))"
     :button-disabled="externalLoginLoading || !credentials.email || !credentials.password"
     :cancel-disabled="externalLoginLoading"
     has-cancel
@@ -1157,7 +1157,7 @@ onMounted(async () => {
     @cancel="externalAuthError = ''"
   >
     <p class="text-slate-600 dark:text-slate-400 mb-4">
-      Sign in or register with OAuth2 for {{ selectedServer?.name }} ({{ selectedServer?.base_url }}).
+      {{ t('tpc.signInOrRegisterOauth', { name: selectedServer?.name, url: selectedServer?.base_url }) }}
     </p>
     <div class="flex gap-2 mb-4">
       <button
@@ -1166,7 +1166,7 @@ onMounted(async () => {
         class="px-3 py-2 rounded-lg text-sm font-medium"
         @click="externalAuthMode = 'login'; externalAuthError = ''"
       >
-        Sign in
+        {{ t('tpc.signIn') }}
       </button>
       <button
         type="button"
@@ -1174,17 +1174,17 @@ onMounted(async () => {
         class="px-3 py-2 rounded-lg text-sm font-medium"
         @click="externalAuthMode = 'register'; externalAuthError = ''"
       >
-        Register
+        {{ t('tpc.register') }}
       </button>
     </div>
-    <FormField label="E-posta">
+    <FormField :label="t('tpc.email')">
       <FormControl
         v-model="credentials.email"
         type="email"
         placeholder="email@example.com"
       />
     </FormField>
-    <FormField label="Password" class="mt-4">
+    <FormField :label="t('tpc.password')" class="mt-4">
       <FormControl
         v-model="credentials.password"
         type="password"
@@ -1199,20 +1199,20 @@ onMounted(async () => {
   <!-- Add Tunnel Server Modal (Federation) -->
   <CardBoxModal
     v-model="isAddServerModalActive"
-    title="Add another server"
+    :title="t('tpc.addAnotherServer')"
     button="info"
-    button-label="Add"
+    :button-label="t('common.add')"
     has-cancel
     @confirm="addServerSubmit"
   >
     <form class="space-y-6">
-      <FormField label="Name" help="Display name for the server (e.g. External Redock)">
+      <FormField :label="t('common.name')" :help="t('tpc.serverNameHelp')">
         <FormControl
           v-model="addServerForm.name"
           placeholder="Tunnel Server"
         />
       </FormField>
-      <FormField label="Base URL" help="Tunnel server API URL (e.g. https://tunnel.example.com)">
+      <FormField :label="t('tpc.baseUrl')" :help="t('tpc.baseUrlHelp')">
         <FormControl
           v-model="addServerForm.base_url"
           placeholder="https://..."
@@ -1224,9 +1224,9 @@ onMounted(async () => {
   <!-- Start Tunnel Modal -->
   <CardBoxModal
     v-model="isStartModalActive"
-    title="Start Tunnel"
+    :title="t('tpc.startTunnel')"
     button="success"
-    button-label="Start"
+    :button-label="t('common.start')"
     has-cancel
     @confirm="startSubmit"
   >
@@ -1238,22 +1238,22 @@ onMounted(async () => {
         </div>
         <div class="start-tunnel-header-text">
           <span class="start-tunnel-domain">{{ startDomain.domain }}</span>
-          <span class="start-tunnel-subtitle">Configure where to forward traffic</span>
+          <span class="start-tunnel-subtitle">{{ t('tpc.configureForward') }}</span>
         </div>
       </div>
 
       <!-- HTTP forwarding -->
       <div class="start-tunnel-section">
-        <h5 class="start-tunnel-section-title">HTTP / HTTPS (optional)</h5>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">Web traffic (HTTP/HTTPS) will be forwarded to this address.</p>
+        <h5 class="start-tunnel-section-title">{{ t('tpc.httpHttpsOptional') }}</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">{{ t('tpc.httpDesc') }}</p>
         <div class="start-tunnel-row">
-          <FormField label="Target IP" help="e.g. 127.0.0.1 or 192.168.1.100">
+          <FormField :label="t('tpc.targetIp')" :help="t('tpc.targetIpHelp')">
             <FormControl
               v-model="start.localHttpIp"
               placeholder="127.0.0.1"
             />
           </FormField>
-          <FormField label="Port">
+          <FormField :label="t('tpc.port')">
             <FormControl
               v-model="start.localHttpPort"
               type="number"
@@ -1266,16 +1266,16 @@ onMounted(async () => {
 
       <!-- TCP forwarding -->
       <div class="start-tunnel-section">
-        <h5 class="start-tunnel-section-title">TCP (optional)</h5>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">Raw TCP connections will be forwarded to this address.</p>
+        <h5 class="start-tunnel-section-title">{{ t('tpc.tcpOptional') }}</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">{{ t('tpc.tcpDesc') }}</p>
         <div class="start-tunnel-row">
-          <FormField label="Target IP">
+          <FormField :label="t('tpc.targetIp')">
             <FormControl
               v-model="start.localTcpIp"
               placeholder="127.0.0.1"
             />
           </FormField>
-          <FormField label="Port">
+          <FormField :label="t('tpc.port')">
             <FormControl
               v-model="start.localTcpPort"
               type="number"
@@ -1288,16 +1288,16 @@ onMounted(async () => {
 
       <!-- UDP forwarding -->
       <div class="start-tunnel-section">
-        <h5 class="start-tunnel-section-title">UDP (optional)</h5>
-        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">UDP packets will be forwarded to this address.</p>
+        <h5 class="start-tunnel-section-title">{{ t('tpc.udpOptional') }}</h5>
+        <p class="text-sm text-slate-500 dark:text-slate-400 mb-2">{{ t('tpc.udpDesc') }}</p>
         <div class="start-tunnel-row">
-          <FormField label="Target IP">
+          <FormField :label="t('tpc.targetIp')">
             <FormControl
               v-model="start.localUdpIp"
               placeholder="127.0.0.1"
             />
           </FormField>
-          <FormField label="Port">
+          <FormField :label="t('tpc.port')">
             <FormControl
               v-model="start.localUdpPort"
               type="number"
@@ -1310,10 +1310,10 @@ onMounted(async () => {
 
       <!-- Advanced -->
       <div class="start-tunnel-section start-tunnel-section-advanced">
-        <h5 class="start-tunnel-section-title">Advanced</h5>
+        <h5 class="start-tunnel-section-title">{{ t('tpc.advanced') }}</h5>
         <FormField
-          label="Source bind IP"
-          help="Local IP to use when connecting to target (leave empty for default)"
+          :label="t('tpc.sourceBindIp')"
+          :help="t('tpc.sourceBindHelp')"
         >
           <FormControl
             v-model="start.sourceBindIp"
@@ -1322,8 +1322,8 @@ onMounted(async () => {
         </FormField>
         <FormField
           v-if="['http', 'https', 'all'].includes(startDomain.protocol)"
-          label="Host rewrite"
-          help="Override Host header (e.g. backend.example.com). Empty = no override."
+          :label="t('tpc.hostRewriteLabel')"
+          :help="t('tpc.hostRewriteHelp')"
         >
           <FormControl
             v-model="start.hostRewrite"
@@ -1331,8 +1331,8 @@ onMounted(async () => {
           />
         </FormField>
         <FormField
-          label="Keepalive interval (seconds)"
-          help="PING interval to keep connection alive. 0 = disabled. Recommended 30–60 for unstable networks."
+          :label="t('tpc.keepaliveLabel')"
+          :help="t('tpc.keepaliveHelp')"
         >
           <FormControl
             v-model.number="start.keepaliveIntervalSeconds"
@@ -1349,9 +1349,9 @@ onMounted(async () => {
   <!-- Delete Confirmation Modal -->
   <CardBoxModal
     v-model="isDeleteModalActive"
-    title="Delete Tunnel"
+    :title="t('tpc.deleteTunnel')"
     button="danger"
-    button-label="Delete"
+    :button-label="t('common.delete')"
     has-cancel
     @confirm="deleteSubmit"
   >
@@ -1365,11 +1365,11 @@ onMounted(async () => {
           {{ selectedTunnel.domain }}
         </h4>
         <p class="text-sm text-red-600 dark:text-red-300 mt-1">
-          Port: {{ selectedTunnel.port }}
+          {{ t('tpc.port') }}: {{ selectedTunnel.port }}
         </p>
       </div>
       <p class="text-slate-600 dark:text-slate-400">
-        This tunnel will be permanently deleted and active connections will be closed.
+        {{ t('tpc.deleteTunnelText') }}
       </p>
       <div
         class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg"
@@ -1380,9 +1380,7 @@ onMounted(async () => {
             size="20"
             class="text-yellow-600 dark:text-yellow-400 mt-0.5 mr-2 flex-shrink-0"
           />
-          <p class="text-sm text-yellow-800 dark:text-yellow-200">
-            <strong>Warning:</strong> This action cannot be undone.
-          </p>
+          <p class="text-sm text-yellow-800 dark:text-yellow-200" v-html="t('tpc.deleteWarning')"></p>
         </div>
       </div>
     </div>

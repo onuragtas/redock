@@ -8,9 +8,9 @@
               <svg class="w-10 h-10 mr-4" fill="currentColor" viewBox="0 0 24 24">
                 <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5C2,3.89 2.9,3 4,3H20M13,17V15H18V17H13M9.58,13L5.57,9H8.4L11.7,12.3C12.09,12.69 12.09,13.33 11.7,13.72L8.42,17H5.59L9.58,13Z"/>
               </svg>
-              Terminal Management
+              {{ $t('term.title') }}
             </h1>
-            <p class="text-green-100 text-lg">Create and manage container terminals</p>
+            <p class="text-green-100 text-lg">{{ $t('term.subtitle') }}</p>
           </div>
         </div>
       </div>
@@ -23,26 +23,26 @@
             <svg class="w-6 h-6 text-green-400 mr-3" fill="currentColor" viewBox="0 0 24 24">
               <path d="M12,2A10,10 0 0,1 22,12A10,10 0 0,1 12,22A10,10 0 0,1 2,12A10,10 0 0,1 12,2M13,7H11V11H7V13H11V17H13V13H17V11H13V7Z"/>
             </svg>
-            <h3 class="text-xl font-semibold text-white">Create Terminal</h3>
+            <h3 class="text-xl font-semibold text-white">{{ $t('term.createTerminal') }}</h3>
           </div>
 
           <div class="space-y-4">
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Container ID</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ $t('term.containerId') }}</label>
               <input
                 v-model="newTerminalContainer"
                 type="text"
-                placeholder="Enter container ID..."
+                :placeholder="$t('term.enterContainerId')"
                 class="w-full px-4 py-3 bg-gray-800/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
               />
             </div>
 
             <div>
-              <label class="block text-sm font-medium text-gray-300 mb-2">Terminal Name (Optional)</label>
+              <label class="block text-sm font-medium text-gray-300 mb-2">{{ $t('term.terminalName') }}</label>
               <input
                 v-model="newTerminalName"
                 type="text"
-                placeholder="Custom terminal name..."
+                :placeholder="$t('term.customName')"
                 class="w-full px-4 py-3 bg-gray-800/50 border border-gray-600/50 rounded-xl text-white placeholder-gray-400 focus:ring-2 focus:ring-green-500 focus:border-green-500 transition-all"
               />
             </div>
@@ -56,7 +56,7 @@
                 <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                 <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
               </svg>
-              {{ isCreatingTerminal ? 'Creating...' : 'Create Terminal' }}
+              {{ isCreatingTerminal ? $t('term.creating') : $t('term.createTerminal') }}
             </button>
           </div>
         </div>
@@ -67,15 +67,15 @@
             <svg class="w-6 h-6 text-blue-400 mr-3" fill="currentColor" viewBox="0 0 24 24">
               <path d="M3,3V21H21V3H3M19,19H5V5H19V19M17,17H7V15H17V17M17,13H7V11H17V13M17,9H7V7H17V9Z"/>
             </svg>
-            <h3 class="text-xl font-semibold text-white">Active Terminals</h3>
+            <h3 class="text-xl font-semibold text-white">{{ $t('term.activeTerminals') }}</h3>
           </div>
 
           <div v-if="terminalStore.tabs.length === 0" class="text-center py-8">
             <svg class="w-16 h-16 text-gray-500 mx-auto mb-4" fill="currentColor" viewBox="0 0 24 24">
               <path d="M20,19V7H4V19H20M20,3A2,2 0 0,1 22,5V19A2,2 0 0,1 20,21H4A2,2 0 0,1 2,19V5C2,3.89 2.9,3 4,3H20"/>
             </svg>
-            <p class="text-gray-400">No active terminals</p>
-            <p class="text-gray-500 text-sm mt-1">Create a new terminal to get started</p>
+            <p class="text-gray-400">{{ $t('term.noActive') }}</p>
+            <p class="text-gray-500 text-sm mt-1">{{ $t('term.getStarted') }}</p>
           </div>
 
           <div v-else class="space-y-3">
@@ -101,13 +101,13 @@
                   class="px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors"
                   @click="switchToTerminal(tab.id)"
                 >
-                  Switch
+                  {{ $t('term.switch') }}
                 </button>
                 <button
                   class="px-3 py-1.5 text-xs bg-red-600 hover:bg-red-700 text-white rounded-lg transition-colors"
                   @click="closeTerminal(tab.id)"
                 >
-                  Close
+                  {{ $t('term.close') }}
                 </button>
               </div>
             </div>
@@ -121,25 +121,22 @@
           <svg class="w-6 h-6 text-blue-400 mr-3" fill="currentColor" viewBox="0 0 24 24">
             <path d="M11,9H13V7H11M12,20C7.59,20 4,16.41 4,12C4,7.59 7.59,4 12,4C16.41,4 20,7.59 20,12C20,16.41 16.41,20 12,20M12,2A10,10 0 0,0 2,12A10,10 0 0,0 12,22A10,10 0 0,0 22,12A10,10 0 0,0 12,2M11,17H13V11H11V17Z"/>
           </svg>
-          <h3 class="text-xl font-semibold text-white">Terminal Information</h3>
+          <h3 class="text-xl font-semibold text-white">{{ $t('term.information') }}</h3>
         </div>
         
         <div class="space-y-4">
           <div class="bg-blue-500/10 border border-blue-500/20 rounded-lg p-4">
-            <h4 class="text-blue-400 font-medium mb-2">Layout Terminal System</h4>
-            <p class="text-gray-300 text-sm">
-              Terminals are now managed globally and persist across page navigation. 
-              You can access them from any page using the sidebar or the floating terminal panel at the bottom.
-            </p>
+            <h4 class="text-blue-400 font-medium mb-2">{{ $t('term.layoutSystem') }}</h4>
+            <p class="text-gray-300 text-sm">{{ $t('term.layoutSystemDesc') }}</p>
           </div>
           
           <div class="bg-green-500/10 border border-green-500/20 rounded-lg p-4">
-            <h4 class="text-green-400 font-medium mb-2">How to Use</h4>
+            <h4 class="text-green-400 font-medium mb-2">{{ $t('term.howToUse') }}</h4>
             <ul class="text-gray-300 text-sm space-y-2">
-              <li>• Create terminals above with container IDs</li>
-              <li>• Access running terminals from the sidebar</li>
-              <li>• Terminals remain active while navigating pages</li>
-              <li>• Click terminal tabs in sidebar to switch between them</li>
+              <li>{{ $t('term.tip1') }}</li>
+              <li>{{ $t('term.tip2') }}</li>
+              <li>{{ $t('term.tip3') }}</li>
+              <li>{{ $t('term.tip4') }}</li>
             </ul>
           </div>
         </div>
@@ -152,11 +149,13 @@
 import { useTerminalStore } from '@/stores/terminalStore';
 import { onMounted, ref } from 'vue';
 import { useRoute } from 'vue-router';
+import { useI18n } from 'vue-i18n';
 
 export default {
   components: {
   },
   setup() {
+    const { t } = useI18n()
     const route = useRoute()
     const terminalStore = useTerminalStore()
     
@@ -178,7 +177,7 @@ export default {
       
       try {
         const containerId = newTerminalContainer.value.trim() || null
-        const name = newTerminalName.value.trim() || (containerId ? `Terminal ${containerId}` : 'New Terminal')
+        const name = newTerminalName.value.trim() || (containerId ? t('term.terminalNamed', { id: containerId }) : t('term.newTerminal'))
         
         // Use parent layout's createNewTerminal function
         // We need to emit an event or call the parent function

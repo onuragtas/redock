@@ -7,6 +7,9 @@ import FormField from "@/components/FormField.vue";
 import ApiService from "@/services/ApiService";
 import { mdiArrowLeft, mdiContentSave, mdiWrench } from '@mdi/js';
 import { onMounted, ref } from 'vue';
+import { useI18n } from 'vue-i18n';
+
+const { t } = useI18n();
 
 // Reactive state
 const env = ref('')
@@ -52,8 +55,8 @@ onMounted(() => {
           <BaseIcon :path="mdiWrench" size="24" class="text-white" />
         </div>
         <div>
-          <h1 class="text-2xl lg:text-3xl font-bold mb-2">Setup Environment</h1>
-          <p class="text-blue-100">Configure your environment variables</p>
+          <h1 class="text-2xl lg:text-3xl font-bold mb-2">{{ t('setupEnv.title') }}</h1>
+          <p class="text-blue-100">{{ t('setupEnv.subtitle') }}</p>
         </div>
       </div>
     </div>
@@ -63,14 +66,14 @@ onMounted(() => {
       <div class="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-800 dark:to-gray-700 p-6 -m-6 mb-6">
         <div class="flex items-center space-x-3">
           <BaseIcon :path="mdiWrench" size="24" class="text-gray-600 dark:text-gray-400" />
-          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">Environment Variables</h3>
+          <h3 class="text-lg font-semibold text-gray-900 dark:text-white">{{ t('setupEnv.envVars') }}</h3>
         </div>
       </div>
 
       <form class="space-y-6" @submit.prevent="submit">
-        <FormField 
-          label="Environment Configuration" 
-          help="Enter your environment variables in .env format (KEY=VALUE)"
+        <FormField
+          :label="t('setupEnv.envConfig')"
+          :help="t('setupEnv.envHelp')"
         >
           <FormControl 
             v-model="env" 
@@ -84,13 +87,13 @@ onMounted(() => {
         <div class="flex justify-end space-x-3 pt-4 border-t border-gray-200 dark:border-gray-700">
           <BaseButton
             :icon="mdiArrowLeft"
-            label="Back"
+            :label="t('common.back')"
             color="lightDark"
             to="/"
           />
           <BaseButton
             :icon="mdiContentSave"
-            label="Save Environment"
+            :label="t('setupEnv.save')"
             color="success"
             type="submit"
             :disabled="loading"

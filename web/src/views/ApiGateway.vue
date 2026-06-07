@@ -35,8 +35,10 @@ import {
   mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 const toast = useToast();
+const { t } = useI18n();
 
 // Reactive state
 const loading = ref(false)
@@ -851,11 +853,11 @@ const removeUpstreamTarget = (form, idx) => {
 const requestCertificate = async () => {
   try {
     await ApiService.apiGatewayRequestCertificate()
-    toast.success('Certificate issued successfully. HTTPS is now available.')
+    toast.success(t('gw.certIssued'))
     await loadData()
   } catch (error) {
     const msg = error.response?.data?.msg || error.message || 'Failed to issue certificate'
-    toast.error('Certificate error: ' + msg)
+    toast.error(t('gw.certError') + msg)
     console.error('Failed to request certificate:', error)
   }
 }
@@ -1074,14 +1076,14 @@ onUnmounted(() => {
         <div>
           <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
             <BaseIcon :path="mdiRouter" size="40" class="mr-4" />
-            API Gateway
+            {{ t('gw.title') }}
           </h1>
-          <p class="text-blue-100 text-lg">Manage HTTP traffic routing, rate limiting, and SSL certificates</p>
+          <p class="text-blue-100 text-lg">{{ t('gw.subtitle') }}</p>
         </div>
         <div class="mt-6 lg:mt-0 flex flex-wrap gap-3">
           <BaseButton
             v-if="!status.running"
-            label="Start Gateway"
+            :label="t('gw.startGateway')"
             :icon="mdiPlay"
             color="white"
             class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -1089,14 +1091,14 @@ onUnmounted(() => {
           />
           <BaseButton
             v-else
-            label="Stop Gateway"
+            :label="t('gw.stopGateway')"
             :icon="mdiStop"
             color="danger"
             class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
             @click="stopGateway"
           />
           <BaseButton
-            label="Settings"
+            :label="t('common.settings')"
             :icon="mdiCog"
             color="white"
             outline
@@ -1125,10 +1127,10 @@ onUnmounted(() => {
           ]"
         >
           <span :class="['w-2 h-2 rounded-full mr-2', status.running ? 'bg-green-400' : 'bg-gray-400']"></span>
-          {{ status.running ? 'Running' : 'Stopped' }}
+          {{ status.running ? t('common.running') : t('common.stopped') }}
         </span>
         <span v-if="status.running" class="text-blue-100 text-sm">
-          HTTP: {{ status.http_port }} | HTTPS: {{ status.https_enabled ? status.https_port : 'Disabled' }}
+          HTTP: {{ status.http_port }} | HTTPS: {{ status.https_enabled ? status.https_port : t('common.disabled') }}
         </span>
       </div>
     </div>
@@ -1139,7 +1141,7 @@ onUnmounted(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ gatewayStats.totalServices }}</div>
-            <div class="text-sm text-blue-600/70">Services</div>
+            <div class="text-sm text-blue-600/70">{{ t('gw.statServices') }}</div>
           </div>
           <BaseIcon :path="mdiServer" size="36" class="text-blue-500 opacity-20" />
         </div>
@@ -1149,7 +1151,7 @@ onUnmounted(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ gatewayStats.healthyServices }}/{{ gatewayStats.totalServices }}</div>
-            <div class="text-sm text-green-600/70">Healthy</div>
+            <div class="text-sm text-green-600/70">{{ t('gw.statHealthy') }}</div>
           </div>
           <BaseIcon :path="mdiHeartPulse" size="36" class="text-green-500 opacity-20" />
         </div>
@@ -1159,7 +1161,7 @@ onUnmounted(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{{ gatewayStats.totalRoutes }}</div>
-            <div class="text-sm text-purple-600/70">Routes</div>
+            <div class="text-sm text-purple-600/70">{{ t('gw.statRoutes') }}</div>
           </div>
           <BaseIcon :path="mdiWeb" size="36" class="text-purple-500 opacity-20" />
         </div>
@@ -1169,7 +1171,7 @@ onUnmounted(() => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-orange-600 dark:text-orange-400">{{ gatewayStats.totalRequests }}</div>
-            <div class="text-sm text-orange-600/70">Requests</div>
+            <div class="text-sm text-orange-600/70">{{ t('gw.statRequests') }}</div>
           </div>
           <BaseIcon :path="mdiSpeedometer" size="36" class="text-orange-500 opacity-20" />
         </div>
@@ -1190,7 +1192,7 @@ onUnmounted(() => {
           ]"
           @click="activeTab = tab"
         >
-          {{ tab }}
+          {{ t('gw.tabs.' + tab) }}
         </button>
       </div>
     </div>
@@ -1199,33 +1201,33 @@ onUnmounted(() => {
     <div v-if="activeTab === 'overview'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <!-- Performance Stats -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiSpeedometer" title="Performance" main />
+        <SectionTitleLineWithButton :icon="mdiSpeedometer" :title="t('gw.performance')" main />
         <div class="grid grid-cols-2 gap-4 mt-4">
           <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
             <div class="text-2xl font-bold text-slate-800 dark:text-slate-200">{{ gatewayStats.avgLatency }}ms</div>
-            <div class="text-sm text-slate-500">Avg Latency</div>
+            <div class="text-sm text-slate-500">{{ t('gw.avgLatency') }}</div>
           </div>
           <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
             <div class="text-2xl font-bold text-slate-800 dark:text-slate-200">{{ gatewayStats.uptime }}</div>
-            <div class="text-sm text-slate-500">Uptime</div>
+            <div class="text-sm text-slate-500">{{ t('gw.uptime') }}</div>
           </div>
           <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
             <div class="text-2xl font-bold text-slate-800 dark:text-slate-200">{{ gatewayStats.totalRequests }}</div>
-            <div class="text-sm text-slate-500">Total Requests</div>
+            <div class="text-sm text-slate-500">{{ t('gw.totalRequests') }}</div>
           </div>
           <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
             <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ gatewayStats.totalErrors }}</div>
-            <div class="text-sm text-slate-500">Total Errors</div>
+            <div class="text-sm text-slate-500">{{ t('gw.totalErrors') }}</div>
           </div>
         </div>
       </CardBox>
 
       <!-- Service Health -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiHeartPulse" title="Service Health" main />
+        <SectionTitleLineWithButton :icon="mdiHeartPulse" :title="t('gw.serviceHealth')" main />
         <div class="space-y-3 mt-4">
           <div v-if="serviceHealth.length === 0" class="text-center py-8 text-slate-500">
-            No health data available
+            {{ t('gw.noHealthData') }}
           </div>
           <div
             v-for="health in serviceHealth"
@@ -1243,7 +1245,7 @@ onUnmounted(() => {
             <div class="flex items-center gap-4 text-sm text-slate-500">
               <span>{{ health.response_time_ms }}ms</span>
               <span :class="health.healthy ? 'text-green-500' : 'text-red-500'">
-                {{ health.healthy ? 'Healthy' : 'Unhealthy' }}
+                {{ health.healthy ? t('gw.healthy') : t('gw.unhealthy') }}
               </span>
             </div>
           </div>
@@ -1253,9 +1255,9 @@ onUnmounted(() => {
 
     <!-- Services Tab -->
     <CardBox v-if="activeTab === 'services'">
-      <SectionTitleLineWithButton :icon="mdiServer" title="Upstream Services" main>
+      <SectionTitleLineWithButton :icon="mdiServer" :title="t('gw.upstreamServices')" main>
         <BaseButton
-          label="Add Service"
+          :label="t('gw.addService')"
           :icon="mdiPlus"
           color="info"
           small
@@ -1267,16 +1269,16 @@ onUnmounted(() => {
         <div class="flex-1 min-w-[200px]">
           <FormControl
             v-model="serviceSearch"
-            placeholder="Search by name, host, port, protocol…"
+            :placeholder="t('gw.serviceSearchPlaceholder')"
             :icon="mdiMagnify"
           />
         </div>
         <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
           <button
             v-for="opt in [
-              { value: 'all',      label: 'All' },
-              { value: 'enabled',  label: 'Active' },
-              { value: 'disabled', label: 'Disabled' }
+              { value: 'all',      label: t('gw.all') },
+              { value: 'enabled',  label: t('gw.active') },
+              { value: 'disabled', label: t('common.disabled') }
             ]"
             :key="opt.value"
             type="button"
@@ -1294,12 +1296,12 @@ onUnmounted(() => {
 
       <div v-if="services.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiServer" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No services configured</p>
-        <BaseButton label="Add Your First Service" :icon="mdiPlus" color="info" @click="openAddServiceModal" />
+        <p class="text-slate-500 mb-4">{{ t('gw.noServices') }}</p>
+        <BaseButton :label="t('gw.addFirstService')" :icon="mdiPlus" color="info" @click="openAddServiceModal" />
       </div>
 
       <div v-else-if="filteredServices.length === 0" class="text-center py-12 text-slate-500">
-        No services match the current filter.
+        {{ t('gw.noServicesMatch') }}
       </div>
 
       <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
@@ -1327,7 +1329,7 @@ onUnmounted(() => {
           <div class="mt-4 flex items-center justify-between">
             <div class="flex items-center gap-2 text-sm text-slate-500">
               <span class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">{{ service.protocol }}</span>
-              <span>Timeout: {{ service.timeout }}s</span>
+              <span>{{ t('gw.timeout') }}: {{ service.timeout }}s</span>
             </div>
             <div class="flex gap-2">
               <BaseButton :icon="mdiPencil" color="info" small @click="openEditServiceModal(service)" />
@@ -1340,9 +1342,9 @@ onUnmounted(() => {
 
     <!-- Upstreams Tab -->
     <CardBox v-if="activeTab === 'upstreams'">
-      <SectionTitleLineWithButton :icon="mdiSourceBranch" title="Upstream Pools" main>
+      <SectionTitleLineWithButton :icon="mdiSourceBranch" :title="t('gw.upstreamPools')" main>
         <BaseButton
-          label="Add Upstream"
+          :label="t('gw.addUpstream')"
           :icon="mdiPlus"
           color="info"
           small
@@ -1351,24 +1353,24 @@ onUnmounted(() => {
       </SectionTitleLineWithButton>
 
       <p class="text-xs text-slate-500 mt-2">
-        An upstream is a pool of one or more services with a load-balancing strategy and optional session affinity.
-        Routes forward to upstreams.
+        {{ t('gw.upstreamDesc') }}
+        
       </p>
 
       <div v-if="upstreams.length > 0" class="mt-3 flex flex-wrap gap-3 items-center">
         <div class="flex-1 min-w-[200px]">
           <FormControl
             v-model="upstreamSearch"
-            placeholder="Search by name, strategy, or target service…"
+            :placeholder="t('gw.upstreamSearchPlaceholder')"
             :icon="mdiMagnify"
           />
         </div>
         <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
           <button
             v-for="opt in [
-              { value: 'all',      label: 'All' },
-              { value: 'enabled',  label: 'Active' },
-              { value: 'disabled', label: 'Disabled' }
+              { value: 'all',      label: t('gw.all') },
+              { value: 'enabled',  label: t('gw.active') },
+              { value: 'disabled', label: t('common.disabled') }
             ]"
             :key="opt.value"
             type="button"
@@ -1386,12 +1388,12 @@ onUnmounted(() => {
 
       <div v-if="upstreams.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiSourceBranch" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No upstream pools configured</p>
-        <BaseButton label="Add Your First Upstream" :icon="mdiPlus" color="info" @click="openAddUpstreamModal" />
+        <p class="text-slate-500 mb-4">{{ t('gw.noUpstreams') }}</p>
+        <BaseButton :label="t('gw.addFirstUpstream')" :icon="mdiPlus" color="info" @click="openAddUpstreamModal" />
       </div>
 
       <div v-else-if="filteredUpstreams.length === 0" class="text-center py-12 text-slate-500">
-        No upstreams match the current filter.
+        {{ t('gw.noUpstreamsMatch') }}
       </div>
 
       <div v-else class="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-4">
@@ -1411,7 +1413,7 @@ onUnmounted(() => {
                 ? 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400'
                 : 'bg-slate-200 dark:bg-slate-700 text-slate-500'"
             >
-              {{ upstream.enabled ? 'enabled' : 'disabled' }}
+              {{ upstream.enabled ? t('common.enabled') : t('common.disabled') }}
             </span>
           </div>
           <div class="flex flex-wrap gap-2 mt-3 text-xs">
@@ -1420,13 +1422,13 @@ onUnmounted(() => {
               sticky: {{ upstream.sticky.mode }}
             </span>
             <span class="px-2 py-1 bg-slate-200 dark:bg-slate-700 rounded">
-              {{ (upstream.targets || []).length }} target{{ (upstream.targets || []).length === 1 ? '' : 's' }}
+              {{ (upstream.targets || []).length }} {{ t('gw.targetsLabel') }}
             </span>
           </div>
           <div class="mt-3 text-xs text-slate-600 dark:text-slate-400 space-y-1">
-            <div v-for="t in (upstream.targets || [])" :key="t.service_id" class="flex justify-between">
-              <span>{{ getServiceName(t.service_id) }}</span>
-              <span class="text-slate-400">weight {{ t.weight || 1 }}</span>
+            <div v-for="tgt in (upstream.targets || [])" :key="tgt.service_id" class="flex justify-between">
+              <span>{{ getServiceName(tgt.service_id) }}</span>
+              <span class="text-slate-400">{{ t('gw.weight') }} {{ tgt.weight || 1 }}</span>
             </div>
           </div>
           <div class="mt-3 flex justify-end gap-2">
@@ -1440,9 +1442,9 @@ onUnmounted(() => {
     <!-- Clients Tab -->
     <div v-if="activeTab === 'clients'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiShield" title="Blocked Clients" main />
+        <SectionTitleLineWithButton :icon="mdiShield" :title="t('gw.blockedClients')" main />
         <div v-if="blockedClients.length === 0" class="text-center py-10 text-slate-500">
-          No blocked clients
+          {{ t('gw.noBlockedClients') }}
         </div>
         <div v-else class="space-y-3 mt-4">
           <div
@@ -1453,51 +1455,51 @@ onUnmounted(() => {
             <div>
               <div class="font-semibold">{{ client.ip }}</div>
               <div class="text-xs text-slate-500">
-                Reason: {{ client.reason || 'N/A' }}
+                {{ t('gw.reason') }}: {{ client.reason || 'N/A' }}
               </div>
               <div class="text-xs text-slate-400">
-                {{ client.manual ? 'Manual block' : 'Auto block' }} •
-                {{ client.blocked_until ? 'Until ' + formatDateTime(client.blocked_until) : 'Indefinite' }}
+                {{ client.manual ? t('gw.manualBlock') : t('gw.autoBlock') }} •
+                {{ client.blocked_until ? t('gw.until') + ' ' + formatDateTime(client.blocked_until) : t('gw.indefinite') }}
               </div>
             </div>
-            <BaseButton label="Unblock" color="warning" small outline @click="unblockClient(client.ip)" />
+            <BaseButton :label="t('gw.unblock')" color="warning" small outline @click="unblockClient(client.ip)" />
           </div>
         </div>
       </CardBox>
 
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiShield" title="Manual Block" main />
+        <SectionTitleLineWithButton :icon="mdiShield" :title="t('gw.manualBlockTitle')" main />
         <form class="space-y-4 mt-4" @submit.prevent="submitManualBlock">
-          <FormField label="Client IP">
+          <FormField :label="t('gw.clientIp')">
             <FormControl
               v-model="manualBlockForm.ip"
               placeholder="e.g. 192.168.1.10"
               required
             />
           </FormField>
-          <FormField label="Duration (seconds)">
+          <FormField :label="t('gw.durationSeconds')">
             <FormControl
               v-model.number="manualBlockForm.duration_seconds"
               type="number"
               min="0"
-              placeholder="0 for indefinite"
+              :placeholder="t('gw.zeroForIndefinite')"
             />
           </FormField>
-          <FormField label="Reason">
-            <FormControl v-model="manualBlockForm.reason" placeholder="Reason for blocking" />
+          <FormField :label="t('gw.reason')">
+            <FormControl v-model="manualBlockForm.reason" :placeholder="t('gw.reasonPlaceholder')" />
           </FormField>
-          <BaseButton type="submit" label="Block Client" color="danger" :icon="mdiShield" />
+          <BaseButton type="submit" :label="t('gw.blockClient')" color="danger" :icon="mdiShield" />
         </form>
       </CardBox>
 
       <CardBox class="lg:col-span-2">
-        <SectionTitleLineWithButton :icon="mdiShield" title="Top Clients" main />
+        <SectionTitleLineWithButton :icon="mdiShield" :title="t('gw.topClients')" main />
         <div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between mt-4">
           <p class="text-sm text-slate-500">
-            Showing {{ topClients.length }} of {{ allTopClients.length }} clients
+            {{ t('gw.showingClients', { shown: topClients.length, total: allTopClients.length }) }}
           </p>
           <label class="text-sm text-slate-500 flex items-center gap-2">
-            <span>Show</span>
+            <span>{{ t('gw.show') }}</span>
             <select
               v-model.number="topClientDisplayLimit"
               class="border border-slate-200 dark:border-slate-700 rounded-lg px-3 py-1 bg-white dark:bg-slate-800 text-slate-700 dark:text-slate-200"
@@ -1513,7 +1515,7 @@ onUnmounted(() => {
           </label>
         </div>
         <div v-if="topClients.length === 0" class="text-center py-10 text-slate-500">
-          No client traffic recorded yet
+          {{ t('gw.noTraffic') }}
         </div>
         <div v-else class="mt-4 space-y-4">
           <div class="grid gap-3 md:hidden">
@@ -1525,7 +1527,7 @@ onUnmounted(() => {
               <div class="flex items-start justify-between gap-3">
                 <div>
                   <div class="font-semibold text-slate-800 dark:text-slate-100">{{ client.ip }}</div>
-                  <div class="text-xs text-slate-500">Last seen {{ formatDateTime(client.last_seen) }}</div>
+                  <div class="text-xs text-slate-500">{{ t('gw.lastSeen') }} {{ formatDateTime(client.last_seen) }}</div>
                 </div>
                 <span
                   :class="[
@@ -1535,31 +1537,31 @@ onUnmounted(() => {
                       : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200'
                   ]"
                 >
-                  {{ client.blocked ? 'Blocked' : 'Active' }}
+                  {{ client.blocked ? t('gw.blocked') : t('gw.active') }}
                 </span>
               </div>
               <div class="grid grid-cols-2 gap-3 mt-4 text-sm text-slate-600 dark:text-slate-300">
                 <div>
-                  <p class="text-xs uppercase tracking-wide text-slate-500">Requests</p>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('gw.requests') }}</p>
                   <p class="font-semibold">{{ client.request_count }}</p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-wide text-slate-500">Last Path</p>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('gw.lastPath') }}</p>
                   <p class="truncate">{{ client.last_path || '-' }}</p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-wide text-slate-500">Route</p>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('gw.route') }}</p>
                   <p class="font-medium">{{ getRouteName(client.last_route_id) }}</p>
                 </div>
                 <div>
-                  <p class="text-xs uppercase tracking-wide text-slate-500">Service</p>
+                  <p class="text-xs uppercase tracking-wide text-slate-500">{{ t('gw.service') }}</p>
                   <p class="font-medium">{{ getRouteServiceName(client.last_route_id) }}</p>
                 </div>
               </div>
               <div class="mt-4 flex justify-end">
                 <BaseButton
                   v-if="client.blocked"
-                  label="Unblock"
+                  :label="t('gw.unblock')"
                   color="warning"
                   small
                   outline
@@ -1567,7 +1569,7 @@ onUnmounted(() => {
                 />
                 <BaseButton
                   v-else
-                  label="Block"
+                  :label="t('gw.block')"
                   color="danger"
                   small
                   outline
@@ -1581,14 +1583,14 @@ onUnmounted(() => {
             <table class="min-w-full text-sm">
               <thead>
                 <tr class="text-left text-slate-500 border-b border-slate-100 dark:border-slate-700">
-                  <th class="py-3">Client IP</th>
-                  <th class="py-3">Requests</th>
-                  <th class="py-3">Last Seen</th>
-                  <th class="py-3">Last Path</th>
-                  <th class="py-3">Route</th>
-                  <th class="py-3">Service</th>
-                  <th class="py-3">Status</th>
-                  <th class="py-3 text-right">Action</th>
+                  <th class="py-3">{{ t('gw.clientIp') }}</th>
+                  <th class="py-3">{{ t('gw.requests') }}</th>
+                  <th class="py-3">{{ t('gw.lastSeen') }}</th>
+                  <th class="py-3">{{ t('gw.lastPath') }}</th>
+                  <th class="py-3">{{ t('gw.route') }}</th>
+                  <th class="py-3">{{ t('gw.service') }}</th>
+                  <th class="py-3">{{ t('common.status') }}</th>
+                  <th class="py-3 text-right">{{ t('gw.action') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -1608,13 +1610,13 @@ onUnmounted(() => {
                           : 'bg-green-100 text-green-700 dark:bg-green-500/20 dark:text-green-200'
                       ]"
                     >
-                      {{ client.blocked ? 'Blocked' : 'Active' }}
+                      {{ client.blocked ? t('gw.blocked') : t('gw.active') }}
                     </span>
                   </td>
                   <td class="py-3 text-right">
                     <BaseButton
                       v-if="client.blocked"
-                      label="Unblock"
+                      :label="t('gw.unblock')"
                       color="warning"
                       small
                       outline
@@ -1622,7 +1624,7 @@ onUnmounted(() => {
                     />
                     <BaseButton
                       v-else
-                      label="Block"
+                      :label="t('gw.block')"
                       color="danger"
                       small
                       outline
@@ -1639,9 +1641,9 @@ onUnmounted(() => {
 
     <!-- Routes Tab -->
     <CardBox v-if="activeTab === 'routes'">
-      <SectionTitleLineWithButton :icon="mdiWeb" title="Routing Rules" main>
+      <SectionTitleLineWithButton :icon="mdiWeb" :title="t('gw.routingRules')" main>
         <BaseButton
-          label="Add Route"
+          :label="t('gw.addRoute')"
           :icon="mdiPlus"
           color="info"
           small
@@ -1654,16 +1656,16 @@ onUnmounted(() => {
         <div class="flex-1 min-w-[200px]">
           <FormControl
             v-model="routeSearch"
-            placeholder="Search by name, path, host, or upstream…"
+            :placeholder="t('gw.routeSearchPlaceholder')"
             :icon="mdiMagnify"
           />
         </div>
         <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
           <button
             v-for="opt in [
-              { value: 'all',      label: 'All' },
-              { value: 'enabled',  label: 'Active' },
-              { value: 'disabled', label: 'Disabled' }
+              { value: 'all',      label: t('gw.all') },
+              { value: 'enabled',  label: t('gw.active') },
+              { value: 'disabled', label: t('common.disabled') }
             ]"
             :key="opt.value"
             type="button"
@@ -1683,12 +1685,12 @@ onUnmounted(() => {
 
       <div v-if="routes.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No routes configured</p>
-        <BaseButton label="Add Your First Route" :icon="mdiPlus" color="info" @click="openAddRouteModal" />
+        <p class="text-slate-500 mb-4">{{ t('gw.noRoutes') }}</p>
+        <BaseButton :label="t('gw.addFirstRoute')" :icon="mdiPlus" color="info" @click="openAddRouteModal" />
       </div>
 
       <div v-else-if="filteredRoutes.length === 0" class="text-center py-12 text-slate-500">
-        No routes match the current filter.
+        {{ t('gw.noRoutesMatch') }}
       </div>
 
       <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4 mt-4">
@@ -1707,7 +1709,7 @@ onUnmounted(() => {
                     route.enabled ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-400'
                   ]"
                 >
-                  {{ route.enabled ? 'Active' : 'Disabled' }}
+                  {{ route.enabled ? t('gw.active') : t('common.disabled') }}
                 </span>
               </h3>
               <p class="text-sm text-slate-500 mt-1 break-all">
@@ -1717,7 +1719,7 @@ onUnmounted(() => {
                 → {{ getUpstreamName(route.upstream_id) }}
               </p>
               <p v-if="route.hosts?.length" class="text-xs text-slate-400 mt-1 truncate">
-                hosts: {{ route.hosts.join(', ') }}
+                {{ t('gw.hostsLabel') }}: {{ route.hosts.join(', ') }}
               </p>
             </div>
             <div class="flex gap-2 shrink-0">
@@ -1727,16 +1729,16 @@ onUnmounted(() => {
           </div>
           <div class="mt-3 flex flex-wrap gap-2">
             <span v-if="route.rate_limit_enabled" class="px-2 py-1 bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 text-xs rounded">
-              Rate Limited
+              {{ t('gw.rateLimited') }}
             </span>
             <span v-if="route.auth_required" class="px-2 py-1 bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-300 text-xs rounded">
-              Auth: {{ route.auth_type }}{{ route.auth_type === 'header' && (route.auth_headers?.length) ? ` (${route.auth_headers.length})` : '' }}
+              {{ t('gw.authLabel') }}: {{ route.auth_type }}{{ route.auth_type === 'header' && (route.auth_headers?.length) ? ` (${route.auth_headers.length})` : '' }}
             </span>
             <span v-if="route.strip_path" class="px-2 py-1 bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-300 text-xs rounded">
-              Strip Path
+              {{ t('gw.stripPath') }}
             </span>
             <span v-if="route.timeout > 0" class="px-2 py-1 bg-slate-200 dark:bg-slate-700 text-slate-700 dark:text-slate-300 text-xs rounded">
-              Timeout {{ route.timeout }}s
+              {{ t('gw.timeout') }} {{ route.timeout }}s
             </span>
           </div>
         </div>
@@ -1745,9 +1747,9 @@ onUnmounted(() => {
 
     <!-- Certificates Tab -->
     <CardBox v-if="activeTab === 'certificates'">
-      <SectionTitleLineWithButton :icon="mdiCertificate" title="SSL/TLS Certificates" main>
+      <SectionTitleLineWithButton :icon="mdiCertificate" :title="t('gw.sslCerts')" main>
         <BaseButton
-          label="Gateway Settings"
+          :label="t('gw.gatewaySettings')"
           :icon="mdiCog"
           color="info"
           small
@@ -1756,37 +1758,37 @@ onUnmounted(() => {
       </SectionTitleLineWithButton>
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
-        <!-- Current Certificate -->
+        <!-- {{ t('gw.currentCertificate') }} -->
         <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
           <h3 class="font-semibold mb-4 flex items-center gap-2">
             <BaseIcon :path="mdiShield" size="20" />
-            Current Certificate
+            {{ t('gw.currentCertificate') }}
           </h3>
           <div v-if="certificateInfo.cert_subject" class="space-y-3">
             <div class="flex justify-between">
-              <span class="text-slate-500">Common Name</span>
+              <span class="text-slate-500">{{ t('gw.commonName') }}</span>
               <span class="font-medium text-right break-all">{{ certificateInfo.cert_subject }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-500">Issuer</span>
+              <span class="text-slate-500">{{ t('gw.issuer') }}</span>
               <span class="font-medium text-right break-all">{{ certificateInfo.cert_issuer }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-500">Valid From</span>
+              <span class="text-slate-500">{{ t('gw.validFrom') }}</span>
               <span class="font-medium">{{ certificateInfo.cert_not_before }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-500">Valid Until</span>
+              <span class="text-slate-500">{{ t('gw.validUntil') }}</span>
               <span class="font-medium">{{ certificateInfo.cert_not_after }}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-500">Status</span>
+              <span class="text-slate-500">{{ t('common.status') }}</span>
               <span :class="certificateInfo.cert_valid ? 'text-green-500' : 'text-red-500'">
-                {{ certificateInfo.cert_valid ? 'Valid' : 'Invalid/Expired' }}
+                {{ certificateInfo.cert_valid ? t('gw.valid') : t('gw.invalidExpired') }}
               </span>
             </div>
             <div v-if="certificateInfo.cert_dns_names?.length" class="space-y-1">
-              <span class="text-slate-500">Subject Alternative Names</span>
+              <span class="text-slate-500">{{ t('gw.subjectAltNames') }}</span>
               <div class="flex flex-wrap gap-2 justify-end">
                 <span
                   v-for="domain in certificateInfo.cert_dns_names"
@@ -1802,13 +1804,13 @@ onUnmounted(() => {
               class="pt-3 border-t border-slate-200 dark:border-slate-700 space-y-1 text-xs"
             >
               <div class="flex justify-between">
-                <span class="text-slate-500">Cert File</span>
+                <span class="text-slate-500">{{ t('gw.certFile') }}</span>
                 <span class="font-mono text-right break-all text-slate-700 dark:text-slate-200">
                   {{ certificateInfo.cert_file || 'N/A' }}
                 </span>
               </div>
               <div class="flex justify-between">
-                <span class="text-slate-500">Key File</span>
+                <span class="text-slate-500">{{ t('gw.keyFile') }}</span>
                 <span class="font-mono text-right break-all text-slate-700 dark:text-slate-200">
                   {{ certificateInfo.key_file || 'N/A' }}
                 </span>
@@ -1816,7 +1818,7 @@ onUnmounted(() => {
             </div>
           </div>
           <div v-else class="text-center py-8 text-slate-500">
-            No certificate configured
+            {{ t('gw.noCertificate') }}
           </div>
         </div>
 
@@ -1824,27 +1826,27 @@ onUnmounted(() => {
         <div class="p-6 bg-slate-50 dark:bg-slate-800/50 rounded-xl">
           <h3 class="font-semibold mb-4 flex items-center gap-2">
             <BaseIcon :path="mdiSync" size="20" />
-            Auto-Renewal Status
+            {{ t('gw.autoRenewalStatus') }}
           </h3>
           <div class="space-y-4">
             <div class="flex items-center justify-between">
               <span class="text-slate-500">Let's Encrypt</span>
               <span :class="certificateInfo.lets_encrypt ? 'text-green-500' : 'text-gray-500'">
-                {{ certificateInfo.lets_encrypt ? 'Enabled' : 'Disabled' }}
+                {{ certificateInfo.lets_encrypt ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div class="flex items-center justify-between">
-              <span class="text-slate-500">Auto-Renew Scheduler</span>
+              <span class="text-slate-500">{{ t('gw.autoRenewScheduler') }}</span>
               <span :class="renewerStatus.running ? 'text-green-500' : 'text-gray-500'">
-                {{ renewerStatus.running ? 'Running' : 'Stopped' }}
+                {{ renewerStatus.running ? t('common.running') : t('common.stopped') }}
               </span>
             </div>
             <div v-if="certificateInfo.expires_at" class="flex items-center justify-between">
-              <span class="text-slate-500">Expires</span>
+              <span class="text-slate-500">{{ t('gw.expires') }}</span>
               <span>{{ certificateInfo.expires_at }}</span>
             </div>
             <div v-if="certificateInfo.lets_encrypt_domains?.length" class="space-y-1">
-              <span class="text-slate-500">Domains (from routes)</span>
+              <span class="text-slate-500">{{ t('gw.domainsFromRoutes') }}</span>
               <div class="flex flex-wrap gap-2">
                 <span
 v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
@@ -1855,26 +1857,22 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
             </div>
             <div class="pt-4 flex gap-2">
               <BaseButton
-                :label="renewerStatus.running ? 'Stop Scheduler' : 'Start Scheduler'"
+                :label="renewerStatus.running ? t('gw.stopScheduler') : t('gw.startScheduler')"
                 :icon="renewerStatus.running ? mdiStop : mdiPlay"
                 :color="renewerStatus.running ? 'danger' : 'success'"
                 small
                 @click="toggleRenewer"
               />
               <BaseButton
-                label="Request Certificate"
+                :label="t('gw.requestCertificate')"
                 :icon="mdiCertificate"
                 color="info"
                 small
                 @click="requestCertificate"
               />
             </div>
-            <p v-if="!certificateInfo.lets_encrypt" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              To get a certificate, first enable Let's Encrypt and enter an email under <strong>Gateway Settings</strong>.
-            </p>
-            <p v-else-if="!certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400">
-              No Let's Encrypt routes yet. In the <strong>Routes</strong> tab, check the "Let's Encrypt" box on a route that has a host set. The domain must point to this server (HTTP 80).
-            </p>
+            <p v-if="!certificateInfo.lets_encrypt" class="mt-3 text-sm text-amber-600 dark:text-amber-400" v-html="t('gw.leHintNoLE')"></p>
+            <p v-else-if="!certificateInfo.lets_encrypt_domains?.length" class="mt-3 text-sm text-amber-600 dark:text-amber-400" v-html="t('gw.leHintNoRoutes')"></p>
           </div>
         </div>
       </div>
@@ -1882,9 +1880,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
 
     <!-- Observability Tab -->
     <CardBox v-if="activeTab === 'observability'">
-      <SectionTitleLineWithButton :icon="mdiChartLine" title="Observability & Telemetry" main>
+      <SectionTitleLineWithButton :icon="mdiChartLine" :title="t('gw.observabilityTitle')" main>
         <BaseButton
-          label="Configure"
+          :label="t('gw.configure')"
           :icon="mdiCog"
           color="info"
           small
@@ -1901,9 +1899,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           </h3>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-slate-500">Status</span>
+              <span class="text-slate-500">{{ t('common.status') }}</span>
               <span :class="observabilityConfig.loki_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ observabilityConfig.loki_enabled ? 'Enabled' : 'Disabled' }}
+                {{ observabilityConfig.loki_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div v-if="observabilityConfig.loki?.url" class="text-sm text-slate-500 truncate">
@@ -1920,9 +1918,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           </h3>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-slate-500">Status</span>
+              <span class="text-slate-500">{{ t('common.status') }}</span>
               <span :class="observabilityConfig.influx_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ observabilityConfig.influx_enabled ? 'Enabled' : 'Disabled' }}
+                {{ observabilityConfig.influx_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div v-if="observabilityConfig.influx?.url" class="text-sm text-slate-500 truncate">
@@ -1939,9 +1937,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           </h3>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-slate-500">Status</span>
+              <span class="text-slate-500">{{ t('common.status') }}</span>
               <span :class="observabilityConfig.graylog_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ observabilityConfig.graylog_enabled ? 'Enabled' : 'Disabled' }}
+                {{ observabilityConfig.graylog_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div v-if="observabilityConfig.graylog?.endpoint" class="text-sm text-slate-500 truncate">
@@ -1958,9 +1956,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           </h3>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-slate-500">Status</span>
+              <span class="text-slate-500">{{ t('common.status') }}</span>
               <span :class="observabilityConfig.otlp_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ observabilityConfig.otlp_enabled ? 'Enabled' : 'Disabled' }}
+                {{ observabilityConfig.otlp_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div v-if="observabilityConfig.otlp_endpoint" class="text-sm text-slate-500 truncate">
@@ -1977,9 +1975,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           </h3>
           <div class="space-y-3">
             <div class="flex items-center justify-between">
-              <span class="text-slate-500">Status</span>
+              <span class="text-slate-500">{{ t('common.status') }}</span>
               <span :class="observabilityConfig.clickhouse_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ observabilityConfig.clickhouse_enabled ? 'Enabled' : 'Disabled' }}
+                {{ observabilityConfig.clickhouse_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div v-if="observabilityConfig.clickhouse_endpoint" class="text-sm text-slate-500 truncate">
@@ -1990,50 +1988,47 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
       </div>
 
       <div class="mt-6 p-4 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
-        <p class="text-sm text-blue-800 dark:text-blue-200">
-          <strong>Note:</strong> When enabled, all request and response data will be sent to the configured endpoints.
-          This includes method, path, status code, latency, service ID, and route ID.
-        </p>
+        <p class="text-sm text-blue-800 dark:text-blue-200" v-html="t('gw.observabilityNote')"></p>
       </div>
     </CardBox>
 
     <!-- Add Service Modal -->
     <CardBoxModal 
       v-model="isAddServiceModalActive" 
-      title="Add Upstream Service" 
+      :title="t('gw.addUpstreamService')" 
       button="success" 
-      button-label="Add Service"
+      :button-label="t('gw.addService')"
       has-cancel
       @confirm="addService"
     >
       <div class="space-y-4">
-        <FormField label="Service Name">
+        <FormField :label="t('gw.serviceName')">
           <FormControl v-model="newService.name" placeholder="my-service" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Host">
+          <FormField :label="t('gw.host')">
             <FormControl v-model="newService.host" placeholder="localhost or IP" />
           </FormField>
-          <FormField label="Port">
+          <FormField :label="t('gw.port')">
             <FormControl v-model="newService.port" type="number" placeholder="80" />
           </FormField>
         </div>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Protocol">
+          <FormField :label="t('gw.protocol')">
             <FormControl v-model="newService.protocol" :options="['http', 'https']" />
           </FormField>
-          <FormField label="Request Timeout (seconds, 0 = global default)">
+          <FormField :label="t('gw.requestTimeout')">
             <FormControl v-model.number="newService.timeout" type="number" min="0" placeholder="0" />
           </FormField>
         </div>
-        <FormField label="Base Path (optional)">
+        <FormField :label="t('gw.basePath')">
           <FormControl v-model="newService.path" placeholder="/api" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Health Check Path">
+          <FormField :label="t('gw.healthCheckPath')">
             <FormControl v-model="newService.health_check.path" placeholder="/health" />
           </FormField>
-          <FormField label="Health Check Interval (seconds)">
+          <FormField :label="t('gw.healthCheckInterval')">
             <FormControl
               v-model.number="newService.health_check.interval"
               type="number"
@@ -2048,59 +2043,59 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Add Upstream Modal -->
     <CardBoxModal
       v-model="isAddUpstreamModalActive"
-      title="Add Upstream"
+      :title="t('gw.addUpstream')"
       button="success"
-      button-label="Add Upstream"
+      :button-label="t('gw.addUpstream')"
       has-cancel
       @confirm="addUpstream"
     >
       <div class="space-y-4">
-        <FormField label="Name">
+        <FormField :label="t('gw.name')">
           <FormControl v-model="newUpstream.name" placeholder="my-pool" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Distribution Strategy">
+          <FormField :label="t('gw.distributionStrategy')">
             <FormControl v-model="newUpstream.strategy" :options="strategyOptions" />
           </FormField>
           <FormField>
-            <FormCheckRadio v-model="newUpstream.enabled" label="Enabled" name="new_upstream_enabled" />
+            <FormCheckRadio v-model="newUpstream.enabled" :label="t('common.enabled')" name="new_upstream_enabled" />
           </FormField>
         </div>
         <div class="border-t pt-4">
           <FormField>
-            <FormCheckRadio v-model="newUpstream.sticky_enabled" label="Enable session affinity (sticky)" name="new_upstream_sticky" />
+            <FormCheckRadio v-model="newUpstream.sticky_enabled" :label="t('gw.enableSticky')" name="new_upstream_sticky" />
           </FormField>
-          <p class="text-xs text-slate-500 mb-2">Stickiness pins a client to one backend across requests. ip_hash and header are stateless; cookie sets a Set-Cookie header.</p>
+          <p class="text-xs text-slate-500 mb-2">{{ t('gw.stickyHint') }}</p>
           <template v-if="newUpstream.sticky_enabled">
             <div class="grid grid-cols-2 gap-4">
-              <FormField label="Sticky Mode">
+              <FormField :label="t('gw.stickyMode')">
                 <FormControl v-model="newUpstream.sticky.mode" :options="stickyModeOptions" />
               </FormField>
-              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" label="Cookie Name">
+              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" :label="t('gw.cookieName')">
                 <FormControl v-model="newUpstream.sticky.cookie_name" placeholder="redock_lb" />
               </FormField>
-              <FormField v-if="newUpstream.sticky.mode?.value === 'header'" label="Header Name">
+              <FormField v-if="newUpstream.sticky.mode?.value === 'header'" :label="t('gw.headerName')">
                 <FormControl v-model="newUpstream.sticky.header_name" placeholder="X-Session-Id" />
               </FormField>
-              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" label="Cookie TTL (seconds, 0 = session)">
+              <FormField v-if="newUpstream.sticky.mode?.value === 'cookie'" :label="t('gw.cookieTtl')">
                 <FormControl v-model.number="newUpstream.sticky.ttl_seconds" type="number" min="0" placeholder="0" />
               </FormField>
             </div>
           </template>
         </div>
         <div class="border-t pt-4">
-          <h4 class="font-semibold mb-2">Targets</h4>
-          <p class="text-xs text-slate-500 mb-2">Pick services to receive traffic. Weights only matter for the Weighted strategy (and weight-aware sticky modes).</p>
-          <div v-for="(t, idx) in newUpstream.targets" :key="'nu-t-' + idx" class="flex gap-2 items-end mb-2">
-            <FormField label="Service" class="flex-1">
-              <FormControl v-model="t.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
+          <h4 class="font-semibold mb-2">{{ t('gw.targets') }}</h4>
+          <p class="text-xs text-slate-500 mb-2">{{ t('gw.targetsHint') }}</p>
+          <div v-for="(tg, idx) in newUpstream.targets" :key="'nu-t-' + idx" class="flex gap-2 items-end mb-2">
+            <FormField :label="t('gw.service')" class="flex-1">
+              <FormControl v-model="tg.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
             </FormField>
-            <FormField label="Weight" class="w-24">
-              <FormControl v-model.number="t.weight" type="number" min="1" placeholder="1" />
+            <FormField :label="t('gw.weight')" class="w-24">
+              <FormControl v-model.number="tg.weight" type="number" min="1" placeholder="1" />
             </FormField>
             <BaseButton :icon="mdiDelete" color="danger" small @click="removeUpstreamTarget(newUpstream, idx)" />
           </div>
-          <BaseButton label="Add target" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(newUpstream)" />
+          <BaseButton :label="t('gw.addTarget')" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(newUpstream)" />
         </div>
       </div>
     </CardBoxModal>
@@ -2108,57 +2103,57 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Edit Upstream Modal -->
     <CardBoxModal
       v-model="isEditUpstreamModalActive"
-      title="Edit Upstream"
+      :title="t('gw.editUpstream')"
       button="success"
-      button-label="Update Upstream"
+      :button-label="t('gw.updateUpstream')"
       has-cancel
       @confirm="updateUpstream"
     >
       <div v-if="editingUpstream" class="space-y-4">
-        <FormField label="Name">
+        <FormField :label="t('gw.name')">
           <FormControl v-model="editingUpstream.name" placeholder="my-pool" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Distribution Strategy">
+          <FormField :label="t('gw.distributionStrategy')">
             <FormControl v-model="editingUpstream.strategy" :options="strategyOptions" />
           </FormField>
           <FormField>
-            <FormCheckRadio v-model="editingUpstream.enabled" label="Enabled" name="edit_upstream_enabled" />
+            <FormCheckRadio v-model="editingUpstream.enabled" :label="t('common.enabled')" name="edit_upstream_enabled" />
           </FormField>
         </div>
         <div class="border-t pt-4">
           <FormField>
-            <FormCheckRadio v-model="editingUpstream.sticky_enabled" label="Enable session affinity (sticky)" name="edit_upstream_sticky" />
+            <FormCheckRadio v-model="editingUpstream.sticky_enabled" :label="t('gw.enableSticky')" name="edit_upstream_sticky" />
           </FormField>
           <template v-if="editingUpstream.sticky_enabled">
             <div class="grid grid-cols-2 gap-4">
-              <FormField label="Sticky Mode">
+              <FormField :label="t('gw.stickyMode')">
                 <FormControl v-model="editingUpstream.sticky.mode" :options="stickyModeOptions" />
               </FormField>
-              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" label="Cookie Name">
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" :label="t('gw.cookieName')">
                 <FormControl v-model="editingUpstream.sticky.cookie_name" placeholder="redock_lb" />
               </FormField>
-              <FormField v-if="editingUpstream.sticky.mode?.value === 'header'" label="Header Name">
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'header'" :label="t('gw.headerName')">
                 <FormControl v-model="editingUpstream.sticky.header_name" placeholder="X-Session-Id" />
               </FormField>
-              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" label="Cookie TTL (seconds, 0 = session)">
+              <FormField v-if="editingUpstream.sticky.mode?.value === 'cookie'" :label="t('gw.cookieTtl')">
                 <FormControl v-model.number="editingUpstream.sticky.ttl_seconds" type="number" min="0" placeholder="0" />
               </FormField>
             </div>
           </template>
         </div>
         <div class="border-t pt-4">
-          <h4 class="font-semibold mb-2">Targets</h4>
-          <div v-for="(t, idx) in editingUpstream.targets" :key="'eu-t-' + idx" class="flex gap-2 items-end mb-2">
-            <FormField label="Service" class="flex-1">
-              <FormControl v-model="t.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
+          <h4 class="font-semibold mb-2">{{ t('gw.targets') }}</h4>
+          <div v-for="(tg, idx) in editingUpstream.targets" :key="'eu-t-' + idx" class="flex gap-2 items-end mb-2">
+            <FormField :label="t('gw.service')" class="flex-1">
+              <FormControl v-model="tg.service_id" :options="services.map(s => ({ value: s.id, label: s.name || s.id }))" />
             </FormField>
-            <FormField label="Weight" class="w-24">
-              <FormControl v-model.number="t.weight" type="number" min="1" placeholder="1" />
+            <FormField :label="t('gw.weight')" class="w-24">
+              <FormControl v-model.number="tg.weight" type="number" min="1" placeholder="1" />
             </FormField>
             <BaseButton :icon="mdiDelete" color="danger" small @click="removeUpstreamTarget(editingUpstream, idx)" />
           </div>
-          <BaseButton label="Add target" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(editingUpstream)" />
+          <BaseButton :label="t('gw.addTarget')" :icon="mdiPlus" color="info" small @click="addUpstreamTarget(editingUpstream)" />
         </div>
       </div>
     </CardBoxModal>
@@ -2166,151 +2161,151 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Add Route Modal -->
     <CardBoxModal 
       v-model="isAddRouteModalActive" 
-      title="Add Route" 
+      :title="t('gw.addRoute')" 
       button="success" 
-      button-label="Add Route"
+      :button-label="t('gw.addRoute')"
       has-cancel
       @confirm="addRoute"
     >
       <div class="space-y-4">
-        <FormField label="Route Name">
+        <FormField :label="t('gw.routeName')">
           <FormControl v-model="newRoute.name" placeholder="my-route" />
         </FormField>
-        <FormField label="Upstream (backend pool)">
+        <FormField :label="t('gw.upstreamBackend')">
           <FormControl v-model="newRoute.upstream_id" :options="upstreamOptions" />
         </FormField>
-        <FormField label="Paths (comma-separated)">
+        <FormField :label="t('gw.pathsLabel')">
           <FormControl v-model="newRoute.paths" placeholder="/api, /api/*" />
         </FormField>
-        <FormField label="Hosts (comma-separated, optional)">
+        <FormField :label="t('gw.hostsField')">
           <FormControl v-model="newRoute.hosts" placeholder="api.example.com" />
         </FormField>
-        <FormField label="Host Rewrite (optional)">
+        <FormField :label="t('gw.hostRewrite')">
           <FormControl v-model="newRoute.host_rewrite" placeholder="order.test.com" />
         </FormField>
-        <FormField label="Methods (comma-separated, optional)">
+        <FormField :label="t('gw.methods')">
           <FormControl v-model="newRoute.methods" placeholder="GET, POST, PUT" />
         </FormField>
-        <FormField label="Request Timeout (seconds, optional)">
-          <FormControl v-model.number="newRoute.timeout" type="number" min="0" placeholder="0 = inherit from service / global" />
+        <FormField :label="t('gw.requestTimeoutOpt')">
+          <FormControl v-model.number="newRoute.timeout" type="number" min="0" :placeholder="t('gw.timeoutInheritPlaceholder')" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
-            <FormCheckRadio v-model="newRoute.strip_path" label="Strip Path" name="strip_path" />
+            <FormCheckRadio v-model="newRoute.strip_path" :label="t('gw.stripPath')" name="strip_path" />
           </FormField>
           <FormField>
-            <FormCheckRadio v-model="newRoute.rate_limit_enabled" label="Enable Rate Limiting" name="rate_limit" />
+            <FormCheckRadio v-model="newRoute.rate_limit_enabled" :label="t('gw.enableRateLimiting')" name="rate_limit" />
           </FormField>
         </div>
         <FormField>
-          <FormCheckRadio v-model="newRoute.preserve_host" label="Preserve Host Header" name="preserve_host" />
+          <FormCheckRadio v-model="newRoute.preserve_host" :label="t('gw.preserveHost')" name="preserve_host" />
         </FormField>
         <FormField>
-          <FormCheckRadio v-model="newRoute.observability_enabled" label="Send Observability Logs" name="new_route_observability" />
+          <FormCheckRadio v-model="newRoute.observability_enabled" :label="t('gw.sendObservability')" name="new_route_observability" />
         </FormField>
         <FormField>
-          <FormCheckRadio v-model="newRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="new_route_lets_encrypt" />
+          <FormCheckRadio v-model="newRoute.lets_encrypt" :label="t('gw.leCheckbox')" name="new_route_lets_encrypt" />
           <p class="text-xs text-gray-500 mt-1">
-            Adds this route's Hosts to the certificate. The host field must be set and the domain must point to this server (HTTP 80). If Let's Encrypt is enabled in Gateway Settings, the certificate is re-issued automatically in the background on save.
+            {{ t('gw.leCheckboxHint') }}
           </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
-            <FormCheckRadio v-model="newRoute.auth_required" label="Require Auth" name="new_route_auth" />
+            <FormCheckRadio v-model="newRoute.auth_required" :label="t('gw.requireAuth')" name="new_route_auth" />
           </FormField>
-          <FormField v-if="newRoute.auth_required" label="Auth Type">
-            <FormControl v-model="newRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
+          <FormField v-if="newRoute.auth_required" :label="t('gw.authType')">
+            <FormControl v-model="newRoute.auth_type" :options="[{ value: '', label: t('gw.selectPlaceholder') }, { value: 'basic', label: t('gw.authBasic') }, { value: 'jwt', label: t('gw.authJwt') }, { value: 'header', label: t('gw.authHeaderOpt') }]" />
           </FormField>
         </div>
         <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'header'">
           <div class="border-t pt-4 mt-4">
-            <h4 class="font-semibold mb-3">Required headers</h4>
-            <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value. Add one or more (e.g. X-API-Key).</p>
+            <h4 class="font-semibold mb-3">{{ t('gw.requiredHeaders') }}</h4>
+            <p class="text-xs text-slate-500 mb-2">{{ t('gw.requiredHeadersHint') }}</p>
             <div v-for="(entry, idx) in newRoute.auth_headers" :key="'ah-' + idx" class="flex gap-2 items-end mb-2">
-              <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
-              <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
+              <FormControl v-model="entry.key" :placeholder="t('gw.headerNamePlaceholder')" class="flex-1" />
+              <FormControl v-model="entry.value" :placeholder="t('gw.expectedValue')" class="flex-1" />
               <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.auth_headers.splice(idx, 1)" />
             </div>
-            <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.auth_headers.push({ key: '', value: '' })" />
+            <BaseButton :label="t('gw.addHeader')" color="info" small :icon="mdiPlus" @click="newRoute.auth_headers.push({ key: '', value: '' })" />
           </div>
         </template>
         <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'basic'">
           <div class="border-t pt-4 mt-4">
-            <h4 class="font-semibold mb-3">Basic auth users</h4>
-            <p class="text-xs text-slate-500 mb-2">Browser will show a native login prompt. Passwords are stored as bcrypt hashes.</p>
-            <FormField label="Realm">
+            <h4 class="font-semibold mb-3">{{ t('gw.basicAuthUsers') }}</h4>
+            <p class="text-xs text-slate-500 mb-2">{{ t('gw.basicAuthHint') }}</p>
+            <FormField :label="t('gw.realm')">
               <FormControl v-model="newRoute.basic_auth_realm" placeholder="Restricted" />
             </FormField>
             <div v-for="(u, idx) in newRoute.basic_auth_users" :key="'bu-' + idx" class="flex gap-2 items-end mb-2 mt-2">
-              <FormControl v-model="u.username" placeholder="Username" class="flex-1" />
-              <FormControl v-model="u.password" type="password" placeholder="Password" class="flex-1" />
+              <FormControl v-model="u.username" :placeholder="t('gw.usernamePlaceholder')" class="flex-1" />
+              <FormControl v-model="u.password" type="password" :placeholder="t('gw.passwordPlaceholder')" class="flex-1" />
               <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.basic_auth_users.splice(idx, 1)" />
             </div>
-            <BaseButton label="Add user" color="info" small :icon="mdiPlus" @click="newRoute.basic_auth_users.push({ username: '', password: '', password_hash: '' })" />
+            <BaseButton :label="t('gw.addUser')" color="info" small :icon="mdiPlus" @click="newRoute.basic_auth_users.push({ username: '', password: '', password_hash: '' })" />
           </div>
         </template>
         <template v-if="newRoute.auth_required && normalizeAuthType(newRoute.auth_type) === 'jwt'">
           <div class="border-t pt-4 mt-4">
-            <h4 class="font-semibold mb-3">JWT (HS256)</h4>
-            <p class="text-xs text-slate-500 mb-2">Tokens must be signed with the shared secret using HS256/HS384/HS512. Issuer and audience are optional but checked if set.</p>
-            <FormField label="Secret">
+            <h4 class="font-semibold mb-3">{{ t('gw.jwtHs256') }}</h4>
+            <p class="text-xs text-slate-500 mb-2">{{ t('gw.jwtHint') }}</p>
+            <FormField :label="t('gw.secret')">
               <FormControl v-model="newRoute.jwt.secret" type="password" placeholder="Shared HMAC secret" />
             </FormField>
             <div class="grid grid-cols-2 gap-4">
-              <FormField label="Issuer (optional)">
+              <FormField :label="t('gw.issuerOptional')">
                 <FormControl v-model="newRoute.jwt.issuer" placeholder="iss claim" />
               </FormField>
-              <FormField label="Audience (optional)">
+              <FormField :label="t('gw.audienceOptional')">
                 <FormControl v-model="newRoute.jwt.audience" placeholder="aud claim" />
               </FormField>
             </div>
           </div>
         </template>
         <div v-if="newRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
-          <FormField label="Requests">
+          <FormField :label="t('gw.requests')">
             <FormControl v-model="newRoute.rate_limit_requests" type="number" placeholder="100" />
           </FormField>
-          <FormField label="Window (seconds)">
+          <FormField :label="t('gw.windowSeconds')">
             <FormControl v-model="newRoute.rate_limit_window" type="number" placeholder="60" />
           </FormField>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">CORS (per route)</h4>
-          <p class="text-xs text-slate-500 mb-2">Applied to OPTIONS preflight and all responses (including WebSocket upgrade).</p>
+          <h4 class="font-semibold mb-3">{{ t('gw.corsTitle') }}</h4>
+          <p class="text-xs text-slate-500 mb-2">{{ t('gw.corsHint') }}</p>
           <FormField>
-            <FormCheckRadio v-model="newRoute.cors.enabled" label="Enable CORS" name="new_route_cors" />
+            <FormCheckRadio v-model="newRoute.cors.enabled" :label="t('gw.enableCors')" name="new_route_cors" />
           </FormField>
           <template v-if="newRoute.cors.enabled">
-            <FormField label="Allow Origins (comma-separated)">
+            <FormField :label="t('gw.allowOrigins')">
               <FormControl v-model="newRoute.cors.allow_origins" placeholder="* or https://app.example.com" />
             </FormField>
-            <FormField label="Allow Methods">
+            <FormField :label="t('gw.allowMethods')">
               <FormControl v-model="newRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
             </FormField>
-            <FormField label="Allow Headers">
+            <FormField :label="t('gw.allowHeaders')">
               <FormControl v-model="newRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
             </FormField>
-            <FormField label="Expose Headers (optional)">
+            <FormField :label="t('gw.exposeHeaders')">
               <FormControl v-model="newRoute.cors.expose_headers" placeholder="X-Request-Id" />
             </FormField>
             <div class="grid grid-cols-2 gap-4">
               <FormField>
-                <FormCheckRadio v-model="newRoute.cors.allow_credentials" label="Allow Credentials" name="new_cors_creds" />
+                <FormCheckRadio v-model="newRoute.cors.allow_credentials" :label="t('gw.allowCredentials')" name="new_cors_creds" />
               </FormField>
-              <FormField label="Max-Age (seconds)">
+              <FormField :label="t('gw.maxAge')">
                 <FormControl v-model.number="newRoute.cors.max_age" type="number" placeholder="86400" />
               </FormField>
             </div>
           </template>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Additional response headers</h4>
+          <h4 class="font-semibold mb-3">{{ t('gw.additionalHeaders') }}</h4>
           <div v-for="(entry, idx) in newRoute.response_headers" :key="'rh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
             <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
             <BaseButton label="" color="danger" small :icon="mdiDelete" @click="newRoute.response_headers.splice(idx, 1)" />
           </div>
-          <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="newRoute.response_headers.push({ key: '', value: '' })" />
+          <BaseButton :label="t('gw.addHeader')" color="info" small :icon="mdiPlus" @click="newRoute.response_headers.push({ key: '', value: '' })" />
         </div>
       </div>
     </CardBoxModal>
@@ -2318,56 +2313,54 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Config Modal -->
     <CardBoxModal 
       v-model="isConfigModalActive" 
-      title="Gateway Settings" 
+      :title="t('gw.gatewaySettings')" 
       button="success" 
-      button-label="Save Settings"
+      :button-label="t('gw.saveSettings')"
       has-cancel
       @confirm="saveConfig"
     >
       <div class="space-y-4">
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="HTTP Port">
+          <FormField :label="t('gw.httpPort')">
             <FormControl v-model="gatewayConfig.http_port" type="number" placeholder="80" />
           </FormField>
-          <FormField label="HTTPS Port">
+          <FormField :label="t('gw.httpsPort')">
             <FormControl v-model="gatewayConfig.https_port" type="number" placeholder="443" />
           </FormField>
         </div>
         <FormField>
-          <FormCheckRadio v-model="gatewayConfig.https_enabled" label="Enable HTTPS" name="https_enabled" />
+          <FormCheckRadio v-model="gatewayConfig.https_enabled" :label="t('gw.enableHttps')" name="https_enabled" />
         </FormField>
         <FormField>
-          <FormCheckRadio v-model="gatewayConfig.access_log_enabled" label="Enable Access Logging" name="access_log" />
+          <FormCheckRadio v-model="gatewayConfig.access_log_enabled" :label="t('gw.enableAccessLogging')" name="access_log" />
         </FormField>
 
         <!-- Let's Encrypt / SSL -->
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3 flex items-center gap-2">
             <BaseIcon :path="mdiLock" size="18" />
-            Let's Encrypt (SSL)
+            {{ t('gw.letsEncryptSsl') }}
           </h4>
           <FormField>
-            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.enabled" label="Enable Let's Encrypt" name="le_enabled" />
+            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.enabled" :label="t('gw.enableLetsEncrypt')" name="le_enabled" />
           </FormField>
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <FormField label="Email Address">
+            <FormField :label="t('gw.emailAddress')">
               <FormControl v-model="gatewayConfig.lets_encrypt.email" type="email" placeholder="admin@example.com" />
             </FormField>
-            <FormField label="Renew Before Expiry (days)">
+            <FormField :label="t('gw.renewBeforeExpiry')">
               <FormControl v-model.number="gatewayConfig.lets_encrypt.renew_before_days" type="number" min="1" placeholder="30" />
             </FormField>
           </div>
           <FormField>
-            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.auto_renew" label="Auto-Renew Certificates" name="le_auto_renew" />
+            <FormCheckRadio v-model="gatewayConfig.lets_encrypt.auto_renew" :label="t('gw.autoRenewCerts')" name="le_auto_renew" />
           </FormField>
-          <p class="text-xs text-gray-500">
-            Certificate domains are collected automatically from the Hosts of routes with "Let's Encrypt" checked in the <strong>Routes</strong> tab. After enabling and saving, issue the certificate via "Request Certificate" in the Certificates tab.
-          </p>
+          <p class="text-xs text-gray-500" v-html="t('gw.leConfigHint')"></p>
         </div>
 
         <div class="border-t pt-4 mt-4">
           <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <FormField label="Top Client Limit">
+            <FormField :label="t('gw.topClientLimit')">
               <FormControl
                 v-model.number="gatewayConfig.client_security.top_client_limit"
                 type="number"
@@ -2379,7 +2372,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
             <FormField>
               <FormCheckRadio
                 v-model="gatewayConfig.client_security.tracking_enabled"
-                label="Enable Client Tracking"
+                :label="t('gw.enableClientTracking')"
                 name="client_tracking_enabled"
               />
             </FormField>
@@ -2389,43 +2382,43 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           </p>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Timeouts (seconds)</h4>
+          <h4 class="font-semibold mb-3">{{ t('gw.timeoutsSeconds') }}</h4>
           <p class="text-xs text-slate-500 mb-3">
             Global defaults. Per-route timeout overrides per-service, which overrides the request timeout below.
             Server Write must be ≥ the longest expected request, otherwise it caps everything.
           </p>
           <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-            <FormField label="Request Timeout (overall)">
+            <FormField :label="t('gw.requestTimeoutOverall')">
               <FormControl v-model.number="gatewayConfig.timeouts.request_timeout_seconds" type="number" min="0" placeholder="0 = disabled" />
             </FormField>
-            <FormField label="Server Read">
+            <FormField :label="t('gw.serverRead')">
               <FormControl v-model.number="gatewayConfig.timeouts.server_read_seconds" type="number" min="0" placeholder="30" />
             </FormField>
-            <FormField label="Server Write">
+            <FormField :label="t('gw.serverWrite')">
               <FormControl v-model.number="gatewayConfig.timeouts.server_write_seconds" type="number" min="0" placeholder="30" />
             </FormField>
-            <FormField label="Server Idle">
+            <FormField :label="t('gw.serverIdle')">
               <FormControl v-model.number="gatewayConfig.timeouts.server_idle_seconds" type="number" min="0" placeholder="60" />
             </FormField>
-            <FormField label="Shutdown">
+            <FormField :label="t('gw.shutdown')">
               <FormControl v-model.number="gatewayConfig.timeouts.shutdown_seconds" type="number" min="0" placeholder="10" />
             </FormField>
-            <FormField label="Health Check">
+            <FormField :label="t('gw.healthCheck')">
               <FormControl v-model.number="gatewayConfig.timeouts.health_check_seconds" type="number" min="0" placeholder="5" />
             </FormField>
-            <FormField label="Upstream Dial">
+            <FormField :label="t('gw.upstreamDial')">
               <FormControl v-model.number="gatewayConfig.timeouts.upstream_dial_seconds" type="number" min="0" placeholder="30" />
             </FormField>
-            <FormField label="Upstream Keep-Alive">
+            <FormField :label="t('gw.upstreamKeepAlive')">
               <FormControl v-model.number="gatewayConfig.timeouts.upstream_keep_alive_seconds" type="number" min="0" placeholder="30" />
             </FormField>
-            <FormField label="Upstream Idle Conn">
+            <FormField :label="t('gw.upstreamIdleConn')">
               <FormControl v-model.number="gatewayConfig.timeouts.upstream_idle_conn_seconds" type="number" min="0" placeholder="90" />
             </FormField>
-            <FormField label="TLS Handshake">
+            <FormField :label="t('gw.tlsHandshake')">
               <FormControl v-model.number="gatewayConfig.timeouts.tls_handshake_seconds" type="number" min="0" placeholder="10" />
             </FormField>
-            <FormField label="Expect-Continue">
+            <FormField :label="t('gw.expectContinue')">
               <FormControl v-model.number="gatewayConfig.timeouts.expect_continue_seconds" type="number" min="0" placeholder="1" />
             </FormField>
           </div>
@@ -2436,43 +2429,43 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Edit Service Modal -->
     <CardBoxModal 
       v-model="isEditServiceModalActive" 
-      title="Edit Service" 
+      :title="t('gw.editService')" 
       button="success" 
-      button-label="Update Service"
+      :button-label="t('gw.updateService')"
       has-cancel
       @confirm="updateService"
     >
       <div v-if="editingService" class="space-y-4">
-        <FormField label="Service Name">
+        <FormField :label="t('gw.serviceName')">
           <FormControl v-model="editingService.name" placeholder="my-service" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Host">
+          <FormField :label="t('gw.host')">
             <FormControl v-model="editingService.host" placeholder="localhost or IP" />
           </FormField>
-          <FormField label="Port">
+          <FormField :label="t('gw.port')">
             <FormControl v-model="editingService.port" type="number" placeholder="80" />
           </FormField>
         </div>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Protocol">
+          <FormField :label="t('gw.protocol')">
             <FormControl v-model="editingService.protocol" :options="['http', 'https']" />
           </FormField>
-          <FormField label="Request Timeout (seconds, 0 = global default)">
+          <FormField :label="t('gw.requestTimeout')">
             <FormControl v-model.number="editingService.timeout" type="number" min="0" placeholder="0" />
           </FormField>
         </div>
-        <FormField label="Base Path (optional)">
+        <FormField :label="t('gw.basePath')">
           <FormControl v-model="editingService.path" placeholder="/api" />
         </FormField>
         <FormField>
-          <FormCheckRadio v-model="editingService.enabled" label="Enabled" name="edit_service_enabled" />
+          <FormCheckRadio v-model="editingService.enabled" :label="t('common.enabled')" name="edit_service_enabled" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField label="Health Check Path">
+          <FormField :label="t('gw.healthCheckPath')">
             <FormControl v-model="editingService.health_check.path" placeholder="/health" />
           </FormField>
-          <FormField label="Health Check Interval (seconds)">
+          <FormField :label="t('gw.healthCheckInterval')">
             <FormControl
               v-model.number="editingService.health_check.interval"
               type="number"
@@ -2487,92 +2480,92 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Edit Route Modal -->
     <CardBoxModal 
       v-model="isEditRouteModalActive" 
-      title="Edit Route" 
+      :title="t('gw.editRoute')" 
       button="success" 
-      button-label="Update Route"
+      :button-label="t('gw.updateRoute')"
       has-cancel
       @confirm="updateRoute"
     >
       <div v-if="editingRoute" class="space-y-4">
-        <FormField label="Route Name">
+        <FormField :label="t('gw.routeName')">
           <FormControl v-model="editingRoute.name" placeholder="my-route" />
         </FormField>
-        <FormField label="Upstream (backend pool)">
+        <FormField :label="t('gw.upstreamBackend')">
           <FormControl v-model="editingRoute.upstream_id" :options="upstreamOptions" />
         </FormField>
-        <FormField label="Paths (comma-separated)">
+        <FormField :label="t('gw.pathsLabel')">
           <FormControl v-model="editingRoute.paths" placeholder="/api, /api/*" />
         </FormField>
-        <FormField label="Hosts (comma-separated, optional)">
+        <FormField :label="t('gw.hostsField')">
           <FormControl v-model="editingRoute.hosts" placeholder="api.example.com" />
         </FormField>
-        <FormField label="Host Rewrite (optional)">
+        <FormField :label="t('gw.hostRewrite')">
           <FormControl v-model="editingRoute.host_rewrite" placeholder="order.test.com" />
         </FormField>
-        <FormField label="Methods (comma-separated, optional)">
+        <FormField :label="t('gw.methods')">
           <FormControl v-model="editingRoute.methods" placeholder="GET, POST, PUT" />
         </FormField>
-        <FormField label="Request Timeout (seconds, optional)">
-          <FormControl v-model.number="editingRoute.timeout" type="number" min="0" placeholder="0 = inherit from service / global" />
+        <FormField :label="t('gw.requestTimeoutOpt')">
+          <FormControl v-model.number="editingRoute.timeout" type="number" min="0" :placeholder="t('gw.timeoutInheritPlaceholder')" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
-            <FormCheckRadio v-model="editingRoute.strip_path" label="Strip Path" name="edit_strip_path" />
+            <FormCheckRadio v-model="editingRoute.strip_path" :label="t('gw.stripPath')" name="edit_strip_path" />
           </FormField>
           <FormField>
-            <FormCheckRadio v-model="editingRoute.enabled" label="Enabled" name="edit_route_enabled" />
+            <FormCheckRadio v-model="editingRoute.enabled" :label="t('common.enabled')" name="edit_route_enabled" />
           </FormField>
         </div>
         <FormField>
-          <FormCheckRadio v-model="editingRoute.preserve_host" label="Preserve Host Header" name="edit_preserve_host" />
+          <FormCheckRadio v-model="editingRoute.preserve_host" :label="t('gw.preserveHost')" name="edit_preserve_host" />
         </FormField>
         <FormField>
-          <FormCheckRadio v-model="editingRoute.observability_enabled" label="Send Observability Logs" name="edit_route_observability" />
+          <FormCheckRadio v-model="editingRoute.observability_enabled" :label="t('gw.sendObservability')" name="edit_route_observability" />
         </FormField>
         <FormField>
-          <FormCheckRadio v-model="editingRoute.lets_encrypt" label="Let's Encrypt (issue SSL for this route's hosts)" name="edit_route_lets_encrypt" />
+          <FormCheckRadio v-model="editingRoute.lets_encrypt" :label="t('gw.leCheckbox')" name="edit_route_lets_encrypt" />
           <p class="text-xs text-gray-500 mt-1">
-            Adds this route's Hosts to the certificate. The host field must be set and the domain must point to this server (HTTP 80). If Let's Encrypt is enabled in Gateway Settings, the certificate is re-issued automatically in the background on save.
+            {{ t('gw.leCheckboxHint') }}
           </p>
         </FormField>
         <div class="grid grid-cols-2 gap-4">
           <FormField>
-            <FormCheckRadio v-model="editingRoute.rate_limit_enabled" label="Enable Rate Limiting" name="edit_rate_limit" />
+            <FormCheckRadio v-model="editingRoute.rate_limit_enabled" :label="t('gw.enableRateLimiting')" name="edit_rate_limit" />
           </FormField>
           <FormField>
-            <FormCheckRadio v-model="editingRoute.auth_required" label="Require Auth" name="edit_auth" />
+            <FormCheckRadio v-model="editingRoute.auth_required" :label="t('gw.requireAuth')" name="edit_auth" />
           </FormField>
         </div>
-        <FormField v-if="editingRoute.auth_required" label="Auth Type">
-          <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: '— Select —' }, { value: 'basic', label: 'Basic' }, { value: 'jwt', label: 'JWT (Bearer)' }, { value: 'header', label: 'Header (custom)' }]" />
+        <FormField v-if="editingRoute.auth_required" :label="t('gw.authType')">
+          <FormControl v-model="editingRoute.auth_type" :options="[{ value: '', label: t('gw.selectPlaceholder') }, { value: 'basic', label: t('gw.authBasic') }, { value: 'jwt', label: t('gw.authJwt') }, { value: 'header', label: t('gw.authHeaderOpt') }]" />
         </FormField>
         <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'basic'">
           <div class="border-t pt-4 mt-4">
-            <h4 class="font-semibold mb-3">Basic auth users</h4>
+            <h4 class="font-semibold mb-3">{{ t('gw.basicAuthUsers') }}</h4>
             <p class="text-xs text-slate-500 mb-2">Leave password blank to keep the existing one. Browser shows a native login prompt.</p>
-            <FormField label="Realm">
+            <FormField :label="t('gw.realm')">
               <FormControl v-model="editingRoute.basic_auth_realm" placeholder="Restricted" />
             </FormField>
             <div v-for="(u, idx) in (editingRoute.basic_auth_users || [])" :key="'ebu-' + idx" class="flex gap-2 items-end mb-2 mt-2">
-              <FormControl v-model="u.username" placeholder="Username" class="flex-1" />
+              <FormControl v-model="u.username" :placeholder="t('gw.usernamePlaceholder')" class="flex-1" />
               <FormControl v-model="u.password" type="password" :placeholder="u.password_hash ? '••• (unchanged)' : 'Password'" class="flex-1" />
               <BaseButton label="" color="danger" small :icon="mdiDelete" @click="(editingRoute.basic_auth_users || []).splice(idx, 1)" />
             </div>
-            <BaseButton label="Add user" color="info" small :icon="mdiPlus" @click="(editingRoute.basic_auth_users = editingRoute.basic_auth_users || []).push({ username: '', password: '', password_hash: '' })" />
+            <BaseButton :label="t('gw.addUser')" color="info" small :icon="mdiPlus" @click="(editingRoute.basic_auth_users = editingRoute.basic_auth_users || []).push({ username: '', password: '', password_hash: '' })" />
           </div>
         </template>
         <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'jwt'">
           <div class="border-t pt-4 mt-4">
-            <h4 class="font-semibold mb-3">JWT (HS256)</h4>
-            <p class="text-xs text-slate-500 mb-2">Tokens must be signed with the shared secret using HS256/HS384/HS512. Issuer and audience are optional but checked if set.</p>
-            <FormField label="Secret">
+            <h4 class="font-semibold mb-3">{{ t('gw.jwtHs256') }}</h4>
+            <p class="text-xs text-slate-500 mb-2">{{ t('gw.jwtHint') }}</p>
+            <FormField :label="t('gw.secret')">
               <FormControl v-model="editingRoute.jwt.secret" type="password" placeholder="Shared HMAC secret" />
             </FormField>
             <div class="grid grid-cols-2 gap-4">
-              <FormField label="Issuer (optional)">
+              <FormField :label="t('gw.issuerOptional')">
                 <FormControl v-model="editingRoute.jwt.issuer" placeholder="iss claim" />
               </FormField>
-              <FormField label="Audience (optional)">
+              <FormField :label="t('gw.audienceOptional')">
                 <FormControl v-model="editingRoute.jwt.audience" placeholder="aud claim" />
               </FormField>
             </div>
@@ -2580,61 +2573,61 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         </template>
         <template v-if="editingRoute.auth_required && normalizeAuthType(editingRoute.auth_type) === 'header'">
           <div class="border-t pt-4 mt-4">
-            <h4 class="font-semibold mb-3">Required headers</h4>
+            <h4 class="font-semibold mb-3">{{ t('gw.requiredHeaders') }}</h4>
             <p class="text-xs text-slate-500 mb-2">Request must include each header with the given value.</p>
             <div v-for="(entry, idx) in (editingRoute.auth_headers || [])" :key="'eah-' + idx" class="flex gap-2 items-end mb-2">
-              <FormControl v-model="entry.key" placeholder="Header name" class="flex-1" />
-              <FormControl v-model="entry.value" placeholder="Expected value" class="flex-1" />
+              <FormControl v-model="entry.key" :placeholder="t('gw.headerNamePlaceholder')" class="flex-1" />
+              <FormControl v-model="entry.value" :placeholder="t('gw.expectedValue')" class="flex-1" />
               <BaseButton label="" color="danger" small :icon="mdiDelete" @click="(editingRoute.auth_headers || []).splice(idx, 1)" />
             </div>
-            <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" />
+            <BaseButton :label="t('gw.addHeader')" color="info" small :icon="mdiPlus" @click="(editingRoute.auth_headers = editingRoute.auth_headers || []).push({ key: '', value: '' })" />
           </div>
         </template>
         <div v-if="editingRoute.rate_limit_enabled" class="grid grid-cols-2 gap-4">
-          <FormField label="Requests">
+          <FormField :label="t('gw.requests')">
             <FormControl v-model="editingRoute.rate_limit_requests" type="number" placeholder="100" />
           </FormField>
-          <FormField label="Window (seconds)">
+          <FormField :label="t('gw.windowSeconds')">
             <FormControl v-model="editingRoute.rate_limit_window" type="number" placeholder="60" />
           </FormField>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">CORS (per route)</h4>
-          <p class="text-xs text-slate-500 mb-2">Applied to OPTIONS preflight and all responses (including WebSocket upgrade).</p>
+          <h4 class="font-semibold mb-3">{{ t('gw.corsTitle') }}</h4>
+          <p class="text-xs text-slate-500 mb-2">{{ t('gw.corsHint') }}</p>
           <FormField>
-            <FormCheckRadio v-model="editingRoute.cors.enabled" label="Enable CORS" name="edit_route_cors" />
+            <FormCheckRadio v-model="editingRoute.cors.enabled" :label="t('gw.enableCors')" name="edit_route_cors" />
           </FormField>
           <template v-if="editingRoute.cors && editingRoute.cors.enabled">
-            <FormField label="Allow Origins (comma-separated)">
+            <FormField :label="t('gw.allowOrigins')">
               <FormControl v-model="editingRoute.cors.allow_origins" placeholder="* or https://app.example.com" />
             </FormField>
-            <FormField label="Allow Methods">
+            <FormField :label="t('gw.allowMethods')">
               <FormControl v-model="editingRoute.cors.allow_methods" placeholder="GET, POST, OPTIONS" />
             </FormField>
-            <FormField label="Allow Headers">
+            <FormField :label="t('gw.allowHeaders')">
               <FormControl v-model="editingRoute.cors.allow_headers" placeholder="Content-Type, Authorization" />
             </FormField>
-            <FormField label="Expose Headers (optional)">
+            <FormField :label="t('gw.exposeHeaders')">
               <FormControl v-model="editingRoute.cors.expose_headers" placeholder="X-Request-Id" />
             </FormField>
             <div class="grid grid-cols-2 gap-4">
               <FormField>
-                <FormCheckRadio v-model="editingRoute.cors.allow_credentials" label="Allow Credentials" name="edit_cors_creds" />
+                <FormCheckRadio v-model="editingRoute.cors.allow_credentials" :label="t('gw.allowCredentials')" name="edit_cors_creds" />
               </FormField>
-              <FormField label="Max-Age (seconds)">
+              <FormField :label="t('gw.maxAge')">
                 <FormControl v-model.number="editingRoute.cors.max_age" type="number" placeholder="86400" />
               </FormField>
             </div>
           </template>
         </div>
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Additional response headers</h4>
+          <h4 class="font-semibold mb-3">{{ t('gw.additionalHeaders') }}</h4>
           <div v-for="(entry, idx) in editingRoute.response_headers" :key="'erh-' + idx" class="flex gap-2 items-end mb-2">
             <FormControl v-model="entry.key" placeholder="Header-Name" class="flex-1" />
             <FormControl v-model="entry.value" placeholder="value" class="flex-1" />
             <BaseButton label="" color="danger" small :icon="mdiDelete" @click="editingRoute.response_headers.splice(idx, 1)" />
           </div>
-          <BaseButton label="Add header" color="info" small :icon="mdiPlus" @click="editingRoute.response_headers.push({ key: '', value: '' })" />
+          <BaseButton :label="t('gw.addHeader')" color="info" small :icon="mdiPlus" @click="editingRoute.response_headers.push({ key: '', value: '' })" />
         </div>
       </div>
     </CardBoxModal>
@@ -2642,29 +2635,29 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Observability Modal -->
     <CardBoxModal 
       v-model="isObservabilityModalActive" 
-      title="Configure Observability" 
+      :title="t('gw.configureObservability')" 
       button="success" 
-      button-label="Save Configuration"
+      :button-label="t('gw.saveConfiguration')"
       has-cancel
       @confirm="saveObservability"
     >
       <div class="space-y-4">
         <FormField>
-          <FormCheckRadio v-model="observabilityConfig.enabled" label="Enable Observability" name="obs_enabled" />
+          <FormCheckRadio v-model="observabilityConfig.enabled" :label="t('gw.enableObservability')" name="obs_enabled" />
         </FormField>
         
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3">Loki</h4>
           <FormField>
-            <FormCheckRadio v-model="observabilityConfig.loki_enabled" label="Enable Loki" name="loki_enabled" />
+            <FormCheckRadio v-model="observabilityConfig.loki_enabled" :label="t('gw.enableLoki')" name="loki_enabled" />
           </FormField>
-          <FormField label="Loki Endpoint">
+          <FormField :label="t('gw.lokiEndpoint')">
             <FormControl v-model="observabilityConfig.loki.url" placeholder="http://loki:3100/loki/api/v1/push" />
           </FormField>
-          <FormField label="Tenant ID (optional)">
+          <FormField :label="t('gw.tenantIdOptional')">
             <FormControl v-model="observabilityConfig.loki.tenant_id" placeholder="acme-org" />
           </FormField>
-          <FormField label="API Key (optional)">
+          <FormField :label="t('gw.apiKeyOptional')">
             <FormControl v-model="observabilityConfig.loki.api_key" type="password" placeholder="API Key" />
           </FormField>
         </div>
@@ -2672,20 +2665,20 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3">InfluxDB</h4>
           <FormField>
-            <FormCheckRadio v-model="observabilityConfig.influx_enabled" label="Enable InfluxDB" name="influx_enabled" />
+            <FormCheckRadio v-model="observabilityConfig.influx_enabled" :label="t('gw.enableInflux')" name="influx_enabled" />
           </FormField>
-          <FormField label="InfluxDB URL">
+          <FormField :label="t('gw.influxUrl')">
             <FormControl v-model="observabilityConfig.influx.url" placeholder="http://influxdb:8086" />
           </FormField>
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="Organization">
+            <FormField :label="t('gw.organization')">
               <FormControl v-model="observabilityConfig.influx.org" placeholder="my-org" />
             </FormField>
-            <FormField label="Bucket">
+            <FormField :label="t('gw.bucket')">
               <FormControl v-model="observabilityConfig.influx.bucket" placeholder="api_gateway" />
             </FormField>
           </div>
-          <FormField label="Access Token">
+          <FormField :label="t('gw.accessToken')">
             <FormControl v-model="observabilityConfig.influx.token" type="password" placeholder="Token" />
           </FormField>
         </div>
@@ -2693,19 +2686,19 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3">Graylog</h4>
           <FormField>
-            <FormCheckRadio v-model="observabilityConfig.graylog_enabled" label="Enable Graylog" name="graylog_enabled" />
+            <FormCheckRadio v-model="observabilityConfig.graylog_enabled" :label="t('gw.enableGraylog')" name="graylog_enabled" />
           </FormField>
-          <FormField label="Graylog Endpoint">
+          <FormField :label="t('gw.graylogEndpoint')">
             <FormControl v-model="observabilityConfig.graylog.endpoint" placeholder="http://graylog:12201/gelf" />
           </FormField>
-          <FormField label="Stream ID (optional)">
+          <FormField :label="t('gw.streamIdOptional')">
             <FormControl v-model="observabilityConfig.graylog.stream_id" placeholder="graylog-stream-id" />
           </FormField>
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="API Key (optional)">
+            <FormField :label="t('gw.apiKeyOptional')">
               <FormControl v-model="observabilityConfig.graylog.api_key" type="password" placeholder="API Key" />
             </FormField>
-            <FormField label="API Key Header">
+            <FormField :label="t('gw.apiKeyHeader')">
               <FormControl v-model="observabilityConfig.graylog.api_key_header" placeholder="Authorization" />
             </FormField>
           </div>
@@ -2714,9 +2707,9 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3">OpenTelemetry (OTLP)</h4>
           <FormField>
-            <FormCheckRadio v-model="observabilityConfig.otlp_enabled" label="Enable OTLP" name="otlp_enabled" />
+            <FormCheckRadio v-model="observabilityConfig.otlp_enabled" :label="t('gw.enableOtlp')" name="otlp_enabled" />
           </FormField>
-          <FormField label="OTLP Endpoint">
+          <FormField :label="t('gw.otlpEndpoint')">
             <FormControl v-model="observabilityConfig.otlp_endpoint" placeholder="http://otel-collector:4318" />
           </FormField>
         </div>
@@ -2724,36 +2717,36 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3">ClickHouse</h4>
           <FormField>
-            <FormCheckRadio v-model="observabilityConfig.clickhouse_enabled" label="Enable ClickHouse" name="ch_enabled" />
+            <FormCheckRadio v-model="observabilityConfig.clickhouse_enabled" :label="t('gw.enableClickhouse')" name="ch_enabled" />
           </FormField>
-          <FormField label="ClickHouse Endpoint">
+          <FormField :label="t('gw.clickhouseEndpoint')">
             <FormControl v-model="observabilityConfig.clickhouse_endpoint" placeholder="http://clickhouse:8123" />
           </FormField>
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="Database">
+            <FormField :label="t('gw.database')">
               <FormControl v-model="observabilityConfig.clickhouse_database" placeholder="default" />
             </FormField>
-            <FormField label="Table">
+            <FormField :label="t('gw.table')">
               <FormControl v-model="observabilityConfig.clickhouse_table" placeholder="api_gateway_logs" />
             </FormField>
           </div>
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="Username">
+            <FormField :label="t('gw.username')">
               <FormControl v-model="observabilityConfig.clickhouse_username" placeholder="default" />
             </FormField>
-            <FormField label="Password">
+            <FormField :label="t('gw.password')">
               <FormControl v-model="observabilityConfig.clickhouse_password" type="password" />
             </FormField>
           </div>
         </div>
 
         <div class="border-t pt-4 mt-4">
-          <h4 class="font-semibold mb-3">Batching</h4>
+          <h4 class="font-semibold mb-3">{{ t('gw.batching') }}</h4>
           <div class="grid grid-cols-2 gap-4">
-            <FormField label="Batch Size">
+            <FormField :label="t('gw.batchSize')">
               <FormControl v-model="observabilityConfig.batch_size" type="number" placeholder="100" />
             </FormField>
-            <FormField label="Flush Interval (seconds)">
+            <FormField :label="t('gw.flushInterval')">
               <FormControl v-model="observabilityConfig.flush_interval" type="number" placeholder="30" />
             </FormField>
           </div>
@@ -2764,14 +2757,14 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
     <!-- Delete Confirmation Modal -->
     <CardBoxModal 
       v-model="isDeleteModalActive" 
-      title="Confirm Delete" 
+      :title="t('gw.confirmDelete')" 
       button="danger" 
-      button-label="Delete"
+      :button-label="t('common.delete')"
       has-cancel
       @confirm="deleteItem"
     >
       <p class="text-slate-600 dark:text-slate-400">
-        Are you sure you want to delete this {{ deleteTarget.type }}?
+        {{ t('gw.deleteConfirmText', { type: deleteTarget.type }) }}
         <strong v-if="deleteTarget.item">{{ deleteTarget.item.name }}</strong>
       </p>
     </CardBoxModal>

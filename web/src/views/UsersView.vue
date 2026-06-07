@@ -17,8 +17,10 @@ import {
 import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
+import { useI18n } from 'vue-i18n'
 
 const toast = useToast()
+const { t } = useI18n()
 const router = useRouter()
 const users = ref([])
 const menuOptions = ref([])
@@ -52,7 +54,7 @@ const fetchUsers = async () => {
       router.push('/')
       return
     }
-    toast.error(e.response?.data?.msg || 'Failed to load users')
+    toast.error(e.response?.data?.msg || t('usr.loadFailed'))
     users.value = []
   } finally {
     loading.value = false
@@ -91,11 +93,11 @@ const openDeleteModal = (user) => {
 
 const createSubmit = async () => {
   if (!formCreate.value.email?.trim() || !formCreate.value.password?.trim()) {
-    toast.error('Email and password required')
+    toast.error(t('usr.emailPasswordRequired'))
     return
   }
   if (formCreate.value.password.length < 6) {
-    toast.error('Password must be at least 6 characters')
+    toast.error(t('usr.passwordMin'))
     return
   }
   try {
@@ -105,11 +107,11 @@ const createSubmit = async () => {
       user_role: formCreate.value.user_role,
       allowed_menus: formCreate.value.allowed_menus
     })
-    toast.success('User added')
+    toast.success(t('usr.userAdded'))
     isAddModalActive.value = false
     await fetchUsers()
   } catch (e) {
-    toast.error(e.response?.data?.msg || 'Failed to add user')
+    toast.error(e.response?.data?.msg || t('usr.addFailed'))
   }
 }
 
@@ -120,22 +122,22 @@ const editSubmit = async () => {
       user_status: formEdit.value.user_status,
       allowed_menus: formEdit.value.allowed_menus
     })
-    toast.success('User updated')
+    toast.success(t('usr.userUpdated'))
     isEditModalActive.value = false
     await fetchUsers()
   } catch (e) {
-    toast.error(e.response?.data?.msg || 'Failed to update')
+    toast.error(e.response?.data?.msg || t('usr.updateFailed'))
   }
 }
 
 const deleteSubmit = async () => {
   try {
     await ApiService.deleteUser(selectedUser.value.id)
-    toast.success('User deleted')
+    toast.success(t('usr.userDeleted'))
     isDeleteModalActive.value = false
     await fetchUsers()
   } catch (e) {
-    toast.error(e.response?.data?.msg || 'Failed to delete')
+    toast.error(e.response?.data?.msg || t('usr.deleteFailed'))
   }
 }
 
@@ -154,8 +156,8 @@ const toggleMenuEdit = (path) => {
 const isMenuCheckedCreate = (path) => formCreate.value.allowed_menus.includes(path)
 const isMenuCheckedEdit = (path) => formEdit.value.allowed_menus.includes(path)
 
-const roleLabel = (role) => (role === 'admin' ? 'Admin' : 'User')
-const statusLabel = (status) => (status === 1 ? 'Active' : 'Inactive')
+const roleLabel = (role) => (role === 'admin' ? t('usr.admin') : t('usr.user'))
+const statusLabel = (status) => (status === 1 ? t('usr.active') : t('usr.inactive'))
 
 onMounted(() => {
   fetchUsers()
@@ -166,9 +168,9 @@ onMounted(() => {
 <template>
   <div class="space-y-6">
     <div class="flex flex-wrap items-center justify-between gap-4">
-      <h1 class="text-2xl font-bold text-white">Users</h1>
+      <h1 class="text-2xl font-bold text-white">{{ t('usr.title') }}</h1>
       <BaseButton
-        label="New User"
+        :label="t('usr.newUser')"
         :icon="mdiAccountPlus"
         color="info"
         @click="openAddModal"
@@ -176,19 +178,19 @@ onMounted(() => {
     </div>
 
     <CardBox>
-      <div v-if="loading" class="p-8 text-center text-gray-400">Loading...</div>
+      <div v-if="loading" class="p-8 text-center text-gray-400">{{ t('common.loading') }}</div>
       <div v-else-if="users.length === 0" class="p-8 text-center text-gray-400">
-        No users yet. The first account to sign in becomes admin automatically.
+        {{ t('usr.noUsers') }}
       </div>
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-gray-700">
-              <th class="text-left py-3 px-4 text-gray-300">Email</th>
-              <th class="text-left py-3 px-4 text-gray-300">Role</th>
-              <th class="text-left py-3 px-4 text-gray-300">Status</th>
-              <th class="text-left py-3 px-4 text-gray-300">Menus</th>
-              <th class="w-24 text-right py-3 px-4 text-gray-300">Actions</th>
+              <th class="text-left py-3 px-4 text-gray-300">{{ t('common.email') }}</th>
+              <th class="text-left py-3 px-4 text-gray-300">{{ t('usr.role') }}</th>
+              <th class="text-left py-3 px-4 text-gray-300">{{ t('common.status') }}</th>
+              <th class="text-left py-3 px-4 text-gray-300">{{ t('usr.menus') }}</th>
+              <th class="w-24 text-right py-3 px-4 text-gray-300">{{ t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -216,21 +218,21 @@ onMounted(() => {
               </td>
               <td class="py-3 px-4 text-gray-300">{{ statusLabel(u.user_status) }}</td>
               <td class="py-3 px-4 text-gray-400">
-                {{ u.user_role === 'admin' ? 'All' : (u.allowed_menus || []).length + ' menus' }}
+                {{ u.user_role === 'admin' ? t('usr.all') : (u.allowed_menus || []).length + ' ' + t('usr.menusWord') }}
               </td>
               <td class="py-3 px-4 text-right">
                 <BaseButton
                   :icon="mdiPencil"
                   small
                   color="info"
-                  title="Edit"
+                  :title="t('common.edit')"
                   @click="openEditModal(u)"
                 />
                 <BaseButton
                   :icon="mdiDelete"
                   small
                   color="danger"
-                  title="Delete"
+                  :title="t('common.delete')"
                   @click="openDeleteModal(u)"
                 />
               </td>
@@ -243,29 +245,29 @@ onMounted(() => {
     <!-- Add user modal -->
     <CardBoxModal
       v-model="isAddModalActive"
-      title="New User"
-      button-label="Add"
+      :title="t('usr.newUser')"
+      :button-label="t('common.add')"
       @confirm="createSubmit"
     >
-      <FormField label="Email">
+      <FormField :label="t('common.email')">
         <FormControl v-model="formCreate.email" type="email" placeholder="user@example.com" />
       </FormField>
-      <FormField label="Password">
+      <FormField :label="t('usr.password')">
         <FormControl v-model="formCreate.password" type="password" placeholder="••••••••" />
       </FormField>
-      <FormField label="Role">
+      <FormField :label="t('usr.role')">
         <select
           v-model="formCreate.user_role"
           class="w-full rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2"
         >
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
+          <option value="user">{{ t('usr.user') }}</option>
+          <option value="admin">{{ t('usr.admin') }}</option>
         </select>
       </FormField>
       <FormField
         v-if="formCreate.user_role === 'user'"
-        label="Visible menus"
-        help="Select which menu items this user can see."
+        :label="t('usr.visibleMenus')"
+        :help="t('usr.visibleMenusHelp')"
       >
         <div class="max-h-48 overflow-y-auto space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
           <label
@@ -288,34 +290,34 @@ onMounted(() => {
     <!-- Edit user modal -->
     <CardBoxModal
       v-model="isEditModalActive"
-      title="Edit User"
-      button-label="Save"
+      :title="t('usr.editUser')"
+      :button-label="t('common.save')"
       @confirm="editSubmit"
     >
       <p v-if="selectedUser" class="text-sm text-gray-400 mb-4">
         {{ selectedUser.email }}
       </p>
-      <FormField label="Role">
+      <FormField :label="t('usr.role')">
         <select
           v-model="formEdit.user_role"
           class="w-full rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2"
         >
-          <option value="user">User</option>
-          <option value="admin">Admin</option>
+          <option value="user">{{ t('usr.user') }}</option>
+          <option value="admin">{{ t('usr.admin') }}</option>
         </select>
       </FormField>
-      <FormField label="Status">
+      <FormField :label="t('common.status')">
         <select
           v-model="formEdit.user_status"
           class="w-full rounded-lg border border-gray-600 bg-gray-700 text-white px-3 py-2"
         >
-          <option :value="1">Active</option>
-          <option :value="0">Inactive</option>
+          <option :value="1">{{ t('usr.active') }}</option>
+          <option :value="0">{{ t('usr.inactive') }}</option>
         </select>
       </FormField>
       <FormField
         v-if="formEdit.user_role === 'user'"
-        label="Visible menus"
+        :label="t('usr.visibleMenus')"
       >
         <div class="max-h-48 overflow-y-auto space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
           <label
@@ -337,14 +339,12 @@ onMounted(() => {
     <!-- Delete confirm -->
     <CardBoxModal
       v-model="isDeleteModalActive"
-      title="Delete User"
-      button-label="Delete"
+      :title="t('usr.deleteUser')"
+      :button-label="t('common.delete')"
       :has-cancel="true"
       @confirm="deleteSubmit"
     >
-      <p class="text-gray-300">
-        Are you sure you want to delete user <strong>{{ selectedUser?.email }}</strong>?
-      </p>
+      <p class="text-gray-300" v-html="t('usr.deleteConfirm', { email: selectedUser?.email })"></p>
     </CardBoxModal>
   </div>
 </template>

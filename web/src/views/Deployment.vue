@@ -28,6 +28,10 @@ import {
   mdiViewList
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
+
 // Reactive state
 const deployments = ref([])
 const loading = ref(false)
@@ -110,7 +114,7 @@ const deploymentLayoutClass = computed(() => (
     : "space-y-5"
 ))
 
-const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleLabel = computed(() => isGridLayout.value ? t('dep.listView') : t('dep.gridView'))
 const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
@@ -252,27 +256,27 @@ onMounted(() => {
             <BaseIcon :path="mdiGit" size="24" class="text-white" />
           </div>
           <div>
-            <h1 class="text-2xl lg:text-3xl font-bold mb-2">Git Deployments</h1>
-            <p class="text-blue-100">Manage your automated deployments</p>
+            <h1 class="text-2xl lg:text-3xl font-bold mb-2">{{ t('dep.gitDeployments') }}</h1>
+            <p class="text-blue-100">{{ t('dep.subtitle') }}</p>
           </div>
         </div>
         <div class="flex space-x-3 mt-4 lg:mt-0">
           <BaseButton
             :icon="mdiRefresh"
-            label="Refresh"
+            :label="t('common.refresh')"
             color="lightDark"
             :disabled="loading"
             @click="getList"
           />
           <BaseButton
             :icon="mdiCog"
-            label="Settings"
+            :label="t('common.settings')"
             color="warning"
             @click="openSettingsModal"
           />
           <BaseButton
             :icon="mdiPlus"
-            label="New Deployment"
+            :label="t('dep.newDeployment')"
             color="success"
             @click="isAddModalActive = true"
           />
@@ -287,7 +291,7 @@ onMounted(() => {
         <div class="flex items-center justify-between">
               <div>
                 <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ deploymentStats.total }}</div>
-                <div class="text-sm text-blue-600/70 dark:text-blue-400/70">Total Deployments</div>
+                <div class="text-sm text-blue-600/70 dark:text-blue-400/70">{{ t('dep.totalDeployments') }}</div>
               </div>
               <BaseIcon :path="mdiServer" size="48" class="text-blue-500 opacity-20" />
             </div>
@@ -298,7 +302,7 @@ onMounted(() => {
             <div class="flex items-center justify-between">
               <div>
                 <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ deploymentStats.recent }}</div>
-                <div class="text-sm text-green-600/70 dark:text-green-400/70">Recent (24h)</div>
+                <div class="text-sm text-green-600/70 dark:text-green-400/70">{{ t('dep.recent24h') }}</div>
               </div>
               <BaseIcon :path="mdiHistory" size="48" class="text-green-500 opacity-20" />
             </div>
@@ -308,8 +312,8 @@ onMounted(() => {
           <CardBox class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border-purple-200 dark:border-purple-700">
             <div class="flex items-center justify-between">
               <div>
-                <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">Active</div>
-                <div class="text-sm text-purple-600/70 dark:text-purple-400/70">System Status</div>
+                <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{{ t('dep.active') }}</div>
+                <div class="text-sm text-purple-600/70 dark:text-purple-400/70">{{ t('dep.systemStatus') }}</div>
               </div>
               <BaseIcon :path="mdiCloudUpload" size="48" class="text-purple-500 opacity-20" />
             </div>
@@ -318,13 +322,13 @@ onMounted(() => {
 
         <!-- Deployments List -->
         <CardBox>
-          <SectionTitleLineWithButton :icon="mdiServer" title="Deployment List" main>
+          <SectionTitleLineWithButton :icon="mdiServer" :title="t('dep.deploymentList')" main>
             <div class="flex flex-col gap-3 md:flex-row md:items-center">
               <div class="w-full md:w-64">
                 <FormControl
                   v-model="searchQuery"
                   :icon="mdiMagnify"
-                  placeholder="Search deployments"
+                  :placeholder="t('dep.searchDeployments')"
                 />
               </div>
               <BaseButton
@@ -349,22 +353,22 @@ onMounted(() => {
           <div v-if="loading" class="text-center py-8">
             <div class="inline-flex items-center space-x-2 text-slate-600 dark:text-slate-400">
               <div class="animate-spin rounded-full h-5 w-5 border-b-2 border-blue-600"></div>
-              <span>Loading deployments...</span>
+              <span>{{ t('dep.loadingDeployments') }}</span>
             </div>
           </div>
 
           <div v-else-if="filteredItems.length === 0" class="text-center py-12">
             <BaseIcon :path="mdiServer" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
             <h3 class="text-lg font-medium text-slate-900 dark:text-white mb-2">
-              {{ searchQuery ? 'No deployments match your search' : 'No deployments found' }}
+              {{ searchQuery ? t('dep.noMatch') : t('dep.noDeployments') }}
             </h3>
             <p class="text-slate-600 dark:text-slate-400 mb-6">
-              {{ searchQuery ? 'Try adjusting your filters' : 'Get started by creating your first deployment' }}
+              {{ searchQuery ? t('dep.tryAdjusting') : t('dep.getStarted') }}
             </p>
             <BaseButton
               v-if="!searchQuery"
               :icon="mdiPlus"
-              label="Create Deployment"
+              :label="t('dep.createDeployment')"
               color="success"
               @click="isAddModalActive = true"
             />
@@ -402,14 +406,14 @@ onMounted(() => {
                         :icon="mdiPencil"
                         color="info"
                         size="small"
-                        title="Edit deployment"
+                        :title="t('dep.editDeployment')"
                         @click="editModal(deployment)"
                       />
                       <BaseButton
                         :icon="mdiDelete"
                         color="danger"
                         size="small"
-                        title="Delete deployment"
+                        :title="t('dep.deleteDeployment')"
                         @click="deleteConfirm(deployment)"
                       />
                     </div>
@@ -419,7 +423,7 @@ onMounted(() => {
                     <div class="flex flex-col gap-2">
                       <div class="flex items-center gap-2 font-medium uppercase tracking-wide text-xs text-slate-400 dark:text-slate-500">
                         <BaseIcon :path="mdiGit" size="16" class="text-slate-400" />
-                        <span>Branch</span>
+                        <span>{{ t('dep.branch') }}</span>
                       </div>
                       <span class="font-semibold text-slate-900 dark:text-white break-all">
                         {{ deployment.branch || '-' }}
@@ -428,7 +432,7 @@ onMounted(() => {
                     <div class="flex flex-col gap-2">
                       <div class="flex items-center gap-2 font-medium uppercase tracking-wide text-xs text-slate-400 dark:text-slate-500">
                         <BaseIcon :path="mdiCalendar" size="16" class="text-slate-400" />
-                        <span>Last Deployed</span>
+                        <span>{{ t('dep.lastDeployed') }}</span>
                       </div>
                       <span class="font-semibold text-slate-900 dark:text-white">
                         {{ formatDate(deployment.last_deployed) }}
@@ -437,7 +441,7 @@ onMounted(() => {
                     <div class="flex flex-col gap-2">
                       <div class="flex items-center gap-2 font-medium uppercase tracking-wide text-xs text-slate-400 dark:text-slate-500">
                         <BaseIcon :path="mdiHistory" size="16" class="text-slate-400" />
-                        <span>Last Checked</span>
+                        <span>{{ t('dep.lastChecked') }}</span>
                       </div>
                       <span class="font-semibold text-slate-900 dark:text-white">
                         {{ formatDate(deployment.last_checked) }}
@@ -448,7 +452,7 @@ onMounted(() => {
                   <div v-if="deployment.username" class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-700">
                     <div class="flex items-center gap-2 text-xs text-slate-500 dark:text-slate-400">
                       <BaseIcon :path="mdiCog" size="14" class="text-blue-500" />
-                      <span>Using custom credentials: <span class="font-semibold text-slate-700 dark:text-slate-300">{{ deployment.username }}</span></span>
+                      <span>{{ t('dep.usingCustomCreds') }} <span class="font-semibold text-slate-700 dark:text-slate-300">{{ deployment.username }}</span></span>
                     </div>
                   </div>
                 </div>
@@ -458,7 +462,7 @@ onMounted(() => {
             <!-- Pagination -->
             <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
               <div class="text-sm text-slate-700 dark:text-slate-300">
-                Showing {{ paginationInfo }}
+                {{ t('dep.showing') }} {{ paginationInfo }}
               </div>
 
               <div class="flex items-center gap-2">
@@ -497,9 +501,9 @@ onMounted(() => {
     <!-- Add Modal -->
     <CardBoxModal 
       v-model="isAddModalActive" 
-      title="Create New Deployment"
+      :title="t('dep.createNewDeployment')"
       button="success"
-      button-label="Create Deployment"
+      button-:label="t('dep.createDeployment')"
       has-cancel
       @confirm="addSubmit"
     >
@@ -507,15 +511,15 @@ onMounted(() => {
         <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
           <h4 class="font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center">
             <BaseIcon :path="mdiGit" size="20" class="mr-2" />
-            Deployment Configuration
+            {{ t('dep.deploymentConfiguration') }}
           </h4>
           <p class="text-sm text-blue-600 dark:text-blue-300">
-            Configure your Git repository and deployment settings.
+            {{ t('dep.configureRepoHint') }}
           </p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField label="Deployment Path">
+          <FormField :label="t('dep.deploymentPath')">
             <FormControl 
               v-model="create.path" 
               type="input" 
@@ -524,7 +528,7 @@ onMounted(() => {
             />
           </FormField>
           
-          <FormField label="Git Branch">
+          <FormField :label="t('dep.gitBranch')">
             <FormControl 
               v-model="create.branch" 
               type="input" 
@@ -534,7 +538,7 @@ onMounted(() => {
           </FormField>
         </div>
 
-        <FormField label="Git Repository URL">
+        <FormField :label="t('dep.gitRepoUrl')">
           <FormControl 
             v-model="create.url" 
             type="input" 
@@ -546,44 +550,44 @@ onMounted(() => {
         <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg my-6">
           <h4 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center">
             <BaseIcon :path="mdiCog" size="20" class="mr-2" />
-            Git Credentials (Optional)
+            {{ t('dep.gitCredentialsOptional') }}
           </h4>
           <p class="text-sm text-yellow-600 dark:text-yellow-300">
-            Override global credentials for this project. Leave empty to use global settings.
+            {{ t('dep.overrideCredsHint') }}
           </p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField label="Username" help="Leave empty to use global username">
+          <FormField :label="t('dep.username')" :help="t('dep.usernameHelp')">
             <FormControl 
               v-model="create.username" 
               type="input" 
-              placeholder="Git username (optional)"
+              :placeholder="t('dep.usernamePlaceholder')"
             />
           </FormField>
           
-          <FormField label="Access Token" help="Leave empty to use global token">
+          <FormField :label="t('dep.accessToken')" :help="t('dep.accessTokenHelp')">
             <FormControl 
               v-model="create.token" 
               type="password" 
-              placeholder="Personal access token (optional)"
+              :placeholder="t('dep.tokenPlaceholder')"
             />
           </FormField>
         </div>
 
         <FormField 
-          label="Pre-deployment Check" 
-          help="Command to run before deployment. Output must contain 'start_deployment' to proceed."
+          :label="t('dep.preDeploymentCheck')" 
+          :help="t('dep.preCheckHelp')"
         >
           <FormControl 
             v-model="create.check" 
             type="textarea" 
-            placeholder="Optional check command"
+            :placeholder="t('dep.checkPlaceholder')"
             :rows="3"
           />
         </FormField>
 
-        <FormField label="Deployment Script">
+        <FormField :label="t('dep.deploymentScript')">
           <FormControl 
             v-model="create.script" 
             type="textarea" 
@@ -598,15 +602,15 @@ onMounted(() => {
     <!-- Edit Modal -->
     <CardBoxModal 
       v-model="isEditModalActive" 
-      title="Edit Deployment"
+      :title="t('dep.editDeploymentTitle')"
       button="success"
-      button-label="Update Deployment"
+      :button-label="t('dep.updateDeployment')"
       has-cancel
       @confirm="editSubmit"
     >
       <form class="space-y-6">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField label="Deployment Path">
+          <FormField :label="t('dep.deploymentPath')">
             <FormControl 
               v-model="edit.path" 
               type="input" 
@@ -615,7 +619,7 @@ onMounted(() => {
             />
           </FormField>
           
-          <FormField label="Git Branch">
+          <FormField :label="t('dep.gitBranch')">
             <FormControl 
               v-model="edit.branch" 
               type="input" 
@@ -625,7 +629,7 @@ onMounted(() => {
           </FormField>
         </div>
 
-        <FormField label="Git Repository URL">
+        <FormField :label="t('dep.gitRepoUrl')">
           <FormControl 
             v-model="edit.url" 
             type="input" 
@@ -637,48 +641,48 @@ onMounted(() => {
         <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg my-6">
           <h4 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center">
             <BaseIcon :path="mdiCog" size="20" class="mr-2" />
-            Git Credentials (Optional)
+            {{ t('dep.gitCredentialsOptional') }}
           </h4>
           <p class="text-sm text-yellow-600 dark:text-yellow-300">
-            Override global credentials for this project. Leave empty to use global settings.
+            {{ t('dep.overrideCredsHint') }}
           </p>
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-          <FormField label="Username" help="Leave empty to use global username">
+          <FormField :label="t('dep.username')" :help="t('dep.usernameHelp')">
             <FormControl 
               v-model="edit.username" 
               type="input" 
-              placeholder="Git username (optional)"
+              :placeholder="t('dep.usernamePlaceholder')"
             />
           </FormField>
           
-          <FormField label="Access Token" help="Leave empty to use global token">
+          <FormField :label="t('dep.accessToken')" :help="t('dep.accessTokenHelp')">
             <FormControl 
               v-model="edit.token" 
               type="password" 
-              placeholder="Personal access token (optional)"
+              :placeholder="t('dep.tokenPlaceholder')"
             />
           </FormField>
         </div>
 
         <FormField 
-          label="Pre-deployment Check" 
-          help="Command to run before deployment. Output must contain 'start_deployment' to proceed."
+          :label="t('dep.preDeploymentCheck')" 
+          :help="t('dep.preCheckHelp')"
         >
           <FormControl 
             v-model="edit.check" 
             type="textarea" 
-            placeholder="Optional check command"
+            :placeholder="t('dep.checkPlaceholder')"
             :rows="3"
           />
         </FormField>
 
-        <FormField label="Deployment Script">
+        <FormField :label="t('dep.deploymentScript')">
           <FormControl 
             v-model="edit.script" 
             type="textarea" 
-            placeholder="Deployment commands"
+            :placeholder="t('dep.scriptPlaceholder')"
             :rows="5"
             required
           />
@@ -689,9 +693,9 @@ onMounted(() => {
     <!-- Settings Modal -->
     <CardBoxModal 
       v-model="isSettingsModalActive" 
-      title="Deployment Settings"
+      :title="t('dep.deploymentSettings')"
       button="success"
-      button-label="Save Settings"
+      :button-label="t('dep.saveSettings')"
       has-cancel
       @confirm="saveCredentials"
     >
@@ -699,30 +703,30 @@ onMounted(() => {
         <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg mb-6">
           <h4 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center">
             <BaseIcon :path="mdiCog" size="20" class="mr-2" />
-            Git Credentials & Settings
+            {{ t('dep.gitCredentialsSettings') }}
           </h4>
           <p class="text-sm text-yellow-600 dark:text-yellow-300">
-            Configure your Git credentials and deployment check interval.
+            {{ t('dep.configureCredsHint') }}
           </p>
         </div>
 
-        <FormField label="Username">
+        <FormField :label="t('dep.username')">
           <FormControl 
             v-model="credentials.username" 
             type="input" 
-            placeholder="Git username"
+            :placeholder="t('dep.usernamePlaceholder2')"
           />
         </FormField>
         
-        <FormField label="Access Token">
+        <FormField :label="t('dep.accessToken')">
           <FormControl 
             v-model="credentials.token" 
             type="password" 
-            placeholder="Personal access token"
+            :placeholder="t('dep.tokenPlaceholder2')"
           />
         </FormField>
         
-        <FormField label="Check Interval (seconds)">
+        <FormField :label="t('dep.checkInterval')">
           <FormControl 
             v-model="credentials.checkTime" 
             type="number" 
@@ -736,9 +740,9 @@ onMounted(() => {
     <!-- Delete Confirmation Modal -->
     <CardBoxModal 
       v-model="isDeleteModalActive" 
-      title="Delete Deployment"
+      :title="t('dep.deleteDeploymentTitle')"
       button="danger"
-      button-label="Delete"
+      :button-label="t('common.delete')"
       has-cancel
       @confirm="confirmDelete"
     >
@@ -747,16 +751,16 @@ onMounted(() => {
           <div class="flex items-center space-x-3">
             <BaseIcon :path="mdiAlert" size="24" class="text-red-600 dark:text-red-400" />
             <div>
-              <h4 class="font-semibold text-red-800 dark:text-red-200">Confirm Deletion</h4>
+              <h4 class="font-semibold text-red-800 dark:text-red-200">{{ t('dep.confirmDeletion') }}</h4>
               <p class="text-sm text-red-600 dark:text-red-300">
-                Are you sure you want to delete this deployment? This action cannot be undone.
+                {{ t('dep.deleteConfirmText') }}
               </p>
             </div>
           </div>
         </div>
         
         <div v-if="selectedDeployment" class="p-4 bg-slate-50 dark:bg-slate-800 rounded-lg">
-          <p class="text-sm text-slate-600 dark:text-slate-400">Deployment Path:</p>
+          <p class="text-sm text-slate-600 dark:text-slate-400">{{ t('dep.deploymentPathLabel') }}</p>
           <p class="font-medium text-slate-900 dark:text-white">{{ selectedDeployment.path }}</p>
         </div>
       </div>

@@ -28,9 +28,11 @@ import {
   mdiWeb
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { useI18n } from 'vue-i18n';
 import { useToast } from 'vue-toastification';
 
 const toast = useToast();
+const { t } = useI18n();
 
 // Reactive state
 const loading = ref(false)
@@ -287,13 +289,13 @@ const startServer = async () => {
   try {
     const response = await ApiService.post('/v1/dns/start')
     if (response.data && !response.data.error) {
-      toast.success('DNS server started successfully')
+      toast.success(t('dns.serverStarted'))
       await fetchStatus()
     } else {
-      toast.error('Failed to start DNS server: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.startFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to start DNS server: ' + error.message)
+    toast.error(t('dns.startFailed') + error.message)
   }
   loading.value = false
 }
@@ -303,13 +305,13 @@ const stopServer = async () => {
   try {
     const response = await ApiService.post('/v1/dns/stop')
     if (response.data && !response.data.error) {
-      toast.success('DNS server stopped successfully')
+      toast.success(t('dns.serverStopped'))
       await fetchStatus()
     } else {
-      toast.error('Failed to stop DNS server: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.stopFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to stop DNS server: ' + error.message)
+    toast.error(t('dns.stopFailed') + error.message)
   }
   loading.value = false
 }
@@ -319,13 +321,13 @@ const saveConfig = async () => {
   try {
     const response = await ApiService.put('/v1/dns/config', config.value)
     if (response.data && !response.data.error) {
-      toast.success('Configuration saved successfully')
+      toast.success(t('dns.configSaved'))
       await fetchConfig()
     } else {
-      toast.error('Failed to save configuration: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.configFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to save configuration: ' + error.message)
+    toast.error(t('dns.configFailed') + error.message)
   }
   loading.value = false
   isConfigModalActive.value = false
@@ -336,15 +338,15 @@ const addBlocklist = async () => {
   try {
     const response = await ApiService.post('/v1/dns/blocklists', newBlocklist.value)
     if (response.data && !response.data.error) {
-      toast.success('Blocklist added successfully')
+      toast.success(t('dns.blocklistAdded'))
       await fetchBlocklists()
       isAddBlocklistModalActive.value = false
       resetBlocklistForm()
     } else {
-      toast.error('Failed to add blocklist: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.blocklistAddFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to add blocklist: ' + error.message)
+    toast.error(t('dns.blocklistAddFailed') + error.message)
   }
   loading.value = false
 }
@@ -354,15 +356,15 @@ const updateBlocklist = async () => {
   try {
     const response = await ApiService.put(`/v1/dns/blocklists/${editingBlocklist.value.id}`, editingBlocklist.value)
     if (response.data && !response.data.error) {
-      toast.success('Blocklist updated successfully')
+      toast.success(t('dns.blocklistUpdated'))
       await fetchBlocklists()
       isEditBlocklistModalActive.value = false
       editingBlocklist.value = null
     } else {
-      toast.error('Failed to update blocklist: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.blocklistUpdateFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to update blocklist: ' + error.message)
+    toast.error(t('dns.blocklistUpdateFailed') + error.message)
   }
   loading.value = false
 }
@@ -372,14 +374,14 @@ const deleteBlocklist = async () => {
   try {
     const response = await ApiService.delete(`/v1/dns/blocklists/${deleteTarget.value.item.id}`)
     if (response.data && !response.data.error) {
-      toast.success('Blocklist deleted successfully')
+      toast.success(t('dns.blocklistDeleted'))
       await fetchBlocklists()
       isDeleteModalActive.value = false
     } else {
-      toast.error('Failed to delete blocklist: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.blocklistDeleteFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to delete blocklist: ' + error.message)
+    toast.error(t('dns.blocklistDeleteFailed') + error.message)
   }
   loading.value = false
 }
@@ -389,15 +391,15 @@ const addFilter = async () => {
   try {
     const response = await ApiService.post('/v1/dns/filters', newFilter.value)
     if (response.data && !response.data.error) {
-      toast.success('Filter added successfully')
+      toast.success(t('dns.filterAdded'))
       await fetchCustomFilters()
       isAddFilterModalActive.value = false
       resetFilterForm()
     } else {
-      toast.error('Failed to add filter: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.filterAddFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to add filter: ' + error.message)
+    toast.error(t('dns.filterAddFailed') + error.message)
   }
   loading.value = false
 }
@@ -407,14 +409,14 @@ const deleteFilter = async () => {
   try {
     const response = await ApiService.delete(`/v1/dns/filters/${deleteTarget.value.item.id}`)
     if (response.data && !response.data.error) {
-      toast.success('Filter deleted successfully')
+      toast.success(t('dns.filterDeleted'))
       await fetchCustomFilters()
       isDeleteModalActive.value = false
     } else {
-      toast.error('Failed to delete filter: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.filterDeleteFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to delete filter: ' + error.message)
+    toast.error(t('dns.filterDeleteFailed') + error.message)
   }
   loading.value = false
 }
@@ -424,15 +426,15 @@ const addRewrite = async () => {
   try {
     const response = await ApiService.post('/v1/dns/rewrites', newRewrite.value)
     if (response.data && !response.data.error) {
-      toast.success('DNS Rewrite eklendi')
+      toast.success(t('dns.rewriteAdded'))
       await fetchRewrites()
       isAddRewriteModalActive.value = false
       resetRewriteForm()
     } else {
-      toast.error('Rewrite eklenemedi: ' + (response.data.msg || 'Bilinmeyen hata'))
+      toast.error(t('dns.rewriteAddFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Rewrite eklenemedi: ' + error.message)
+    toast.error(t('dns.rewriteAddFailed') + error.message)
   }
   loading.value = false
 }
@@ -442,15 +444,15 @@ const updateRewrite = async () => {
   try {
     const response = await ApiService.put(`/v1/dns/rewrites/${editingRewrite.value.id}`, editingRewrite.value)
     if (response.data && !response.data.error) {
-      toast.success('DNS Rewrite updated')
+      toast.success(t('dns.rewriteUpdated'))
       await fetchRewrites()
       isEditRewriteModalActive.value = false
       editingRewrite.value = null
     } else {
-      toast.error('Failed to update rewrite: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.rewriteUpdateFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to update rewrite: ' + error.message)
+    toast.error(t('dns.rewriteUpdateFailed') + error.message)
   }
   loading.value = false
 }
@@ -460,14 +462,14 @@ const deleteRewrite = async () => {
   try {
     const response = await ApiService.delete(`/v1/dns/rewrites/${deleteTarget.value.item.id}`)
     if (response.data && !response.data.error) {
-      toast.success('DNS Rewrite silindi')
+      toast.success(t('dns.rewriteDeleted'))
       await fetchRewrites()
       isDeleteModalActive.value = false
     } else {
-      toast.error('Rewrite silinemedi: ' + (response.data.msg || 'Bilinmeyen hata'))
+      toast.error(t('dns.rewriteDeleteFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Rewrite silinemedi: ' + error.message)
+    toast.error(t('dns.rewriteDeleteFailed') + error.message)
   }
   loading.value = false
 }
@@ -477,14 +479,14 @@ const reloadFilters = async () => {
   try {
     const response = await ApiService.post('/v1/dns/reload')
     if (response.data && !response.data.error) {
-      toast.success('Filters reloaded successfully')
+      toast.success(t('dns.filtersReloaded'))
       await fetchBlocklists()
       await fetchCustomFilters()
     } else {
-      toast.error('Failed to reload filters: ' + (response.data.msg || 'Unknown error'))
+      toast.error(t('dns.filtersReloadFailed') + (response.data.msg || t('common.unknownError')))
     }
   } catch (error) {
-    toast.error('Failed to reload filters: ' + error.message)
+    toast.error(t('dns.filtersReloadFailed') + error.message)
   }
   loading.value = false
 }
@@ -559,24 +561,24 @@ const blockDomainGlobally = async (domain) => {
     await ApiService.post('/v1/dns/filters', {
       domain: domain,
       type: 'blacklist',
-      comment: 'Blocked from logs'
+      comment: t('dns.blockedFromLogs')
     })
-    toast.success(`Domain ${domain} blocked globally`)
+    toast.success(t('dns.domainBlocked', { domain }))
     activeLogMenu.value = null
     currentLogStatus.value = null
   } catch (error) {
-    toast.error('Failed to block domain')
+    toast.error(t('dns.blockDomainFailed'))
   }
 }
 
 const removeGlobalBlock = async (domain) => {
   try {
     await ApiService.delete(`/v1/dns/filters?domain=${encodeURIComponent(domain)}&type=blacklist`)
-    toast.success(`Global block removed for ${domain}`)
+    toast.success(t('dns.globalBlockRemoved', { domain }))
     activeLogMenu.value = null
     currentLogStatus.value = null
   } catch (error) {
-    toast.error('Failed to remove global block')
+    toast.error(t('dns.removeBlockFailed'))
   }
 }
 
@@ -588,24 +590,24 @@ const blockDomainForClient = async (clientIP, domain) => {
       type: 'block',
       comment: `Blocked for ${clientIP} from logs`
     })
-    toast.success(`Domain ${domain} blocked for ${clientIP}`)
+    toast.success(t('dns.domainBlockedForClient', { domain, ip: clientIP }))
     activeLogMenu.value = null
     // Refresh status
     currentLogStatus.value = null
   } catch (error) {
-    toast.error('Failed to block domain for client')
+    toast.error(t('dns.blockClientDomainFailed'))
   }
 }
 
 const removeClientDomainRule = async (clientIP, domain, ruleType) => {
   try {
     await ApiService.delete(`/v1/dns/client-rules?client_ip=${encodeURIComponent(clientIP)}&domain=${encodeURIComponent(domain)}&type=${ruleType}`)
-    toast.success(`Client rule removed for ${clientIP}`)
+    toast.success(t('dns.clientRuleRemoved', { ip: clientIP }))
     activeLogMenu.value = null
     // Refresh status
     currentLogStatus.value = null
   } catch (error) {
-    toast.error('Failed to remove client rule')
+    toast.error(t('dns.removeClientRuleFailed'))
   }
 }
 
@@ -613,24 +615,24 @@ const blockClient = async (clientIP) => {
   try {
     await ApiService.post('/v1/dns/clients/block', {
       client_ip: clientIP,
-      reason: 'Blocked from logs'
+      reason: t('dns.blockedFromLogs')
     })
-    toast.success(`Client ${clientIP} has been banned`)
+    toast.success(t('dns.clientBanned', { ip: clientIP }))
     activeLogMenu.value = null
     await fetchClients()
   } catch (error) {
-    toast.error('Failed to block client')
+    toast.error(t('dns.blockClientFailed'))
   }
 }
 
 const unblockClient = async (clientIP) => {
   try {
     await ApiService.post(`/v1/dns/clients/${clientIP}/unblock`)
-    toast.success(`Client ${clientIP} has been unblocked`)
+    toast.success(t('dns.clientUnbanned', { ip: clientIP }))
     activeClientMenu.value = null
     await fetchClients()
   } catch (error) {
-    toast.error('Failed to unblock client')
+    toast.error(t('dns.unblockClientFailed'))
   }
 }
 
@@ -720,11 +722,11 @@ const deleteGlobalFilter = async (filterId) => {
   try {
     const response = await ApiService.delete(`/v1/dns/filters/${filterId}`)
     if (response.data && !response.data.error) {
-      toast.success('Global filter deleted')
+      toast.success(t('dns.globalFilterDeleted'))
       await fetchCustomRules()
     }
   } catch (error) {
-    toast.error('Failed to delete filter: ' + error.message)
+    toast.error(t('dns.filterDeleteFailed') + error.message)
   }
 }
 
@@ -732,11 +734,11 @@ const deleteClientRule = async (ruleId) => {
   try {
     const response = await ApiService.delete(`/v1/dns/client-rules/${ruleId}`)
     if (response.data && !response.data.error) {
-      toast.success('Client rule deleted')
+      toast.success(t('dns.clientRuleDeleted'))
       await fetchCustomRules()
     }
   } catch (error) {
-    toast.error('Failed to delete rule: ' + error.message)
+    toast.error(t('dns.deleteRuleFailed') + error.message)
   }
 }
 
@@ -744,11 +746,11 @@ const deleteClientBan = async (clientIP) => {
   try {
     const response = await ApiService.post(`/v1/dns/clients/${clientIP}/unblock`)
     if (response.data && !response.data.error) {
-      toast.success('Client unblocked')
+      toast.success(t('dns.clientUnblocked'))
       await fetchCustomRules()
     }
   } catch (error) {
-    toast.error('Failed to unblock client: ' + error.message)
+    toast.error(t('dns.unblockClientError') + error.message)
   }
 }
 
@@ -762,14 +764,14 @@ const deleteClientBan = async (clientIP) => {
         <div>
           <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
             <BaseIcon :path="mdiDns" size="40" class="mr-4" />
-            DNS Server
+            {{ t('dns.title') }}
           </h1>
-          <p class="text-cyan-100 text-lg">Ad-blocking DNS server with filtering, caching, and analytics</p>
+          <p class="text-cyan-100 text-lg">{{ t('dns.subtitle') }}</p>
         </div>
         <div class="mt-6 lg:mt-0 flex flex-wrap gap-3">
           <BaseButton
             v-if="!status.running"
-            label="Start Server"
+            :label="t('dns.startServer')"
             :icon="mdiPlay"
             color="white"
             class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -777,14 +779,14 @@ const deleteClientBan = async (clientIP) => {
           />
           <BaseButton
             v-else
-            label="Stop Server"
+            :label="t('dns.stopServer')"
             :icon="mdiStop"
             color="danger"
             class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
             @click="stopServer"
           />
           <BaseButton
-            label="Settings"
+            :label="t('common.settings')"
             :icon="mdiCog"
             color="white"
             outline
@@ -813,7 +815,7 @@ const deleteClientBan = async (clientIP) => {
           ]"
         >
           <span :class="['w-2 h-2 rounded-full mr-2', status.running ? 'bg-green-400' : 'bg-gray-400']"></span>
-          {{ status.running ? 'Running' : 'Stopped' }}
+          {{ status.running ? t('common.running') : t('common.stopped') }}
         </span>
         <span v-if="status.running" class="text-cyan-100 text-sm">
           UDP: {{ config.udp_port }} | TCP: {{ config.tcp_port }} | Cache: {{ config.cache_enabled ? 'On' : 'Off' }}
@@ -827,7 +829,7 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ formatNumber(stats.total_queries_24h) }}</div>
-            <div class="text-sm text-blue-600/70">Queries (24h)</div>
+            <div class="text-sm text-blue-600/70">{{ t('dns.queries24h') }}</div>
             <div class="text-xs text-blue-600/50 mt-1">{{ stats.queries_per_minute.toFixed(2) }} qpm</div>
           </div>
           <BaseIcon :path="mdiSpeedometer" size="36" class="text-blue-500 opacity-20" />
@@ -838,8 +840,8 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ formatNumber(stats.blocked_queries_24h) }}</div>
-            <div class="text-sm text-red-600/70">Blocked</div>
-            <div class="text-xs text-red-600/50 mt-1">{{ blockPercentage }}% blocked</div>
+            <div class="text-sm text-red-600/70">{{ t('dns.blocked') }}</div>
+            <div class="text-xs text-red-600/50 mt-1">{{ blockPercentage }}% {{ t('dns.blockedSuffix') }}</div>
           </div>
           <BaseIcon :path="mdiShieldCheck" size="36" class="text-red-500 opacity-20" />
         </div>
@@ -849,7 +851,7 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ stats.cache_hit_rate.toFixed(1) }}%</div>
-            <div class="text-sm text-green-600/70">Cache Hit Rate</div>
+            <div class="text-sm text-green-600/70">{{ t('dns.cacheHitRate') }}</div>
             <div class="text-xs text-green-600/50 mt-1">{{ stats.avg_response_time.toFixed(1) }}ms avg</div>
           </div>
           <BaseIcon :path="mdiDatabase" size="36" class="text-green-500 opacity-20" />
@@ -860,8 +862,8 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-center justify-between">
           <div>
             <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{{ stats.active_clients }}</div>
-            <div class="text-sm text-purple-600/70">Active Clients</div>
-            <div class="text-xs text-purple-600/50 mt-1">Last hour</div>
+            <div class="text-sm text-purple-600/70">{{ t('dns.activeClients') }}</div>
+            <div class="text-xs text-purple-600/50 mt-1">{{ t('dns.lastHour') }}</div>
           </div>
           <BaseIcon :path="mdiWeb" size="36" class="text-purple-500 opacity-20" />
         </div>
@@ -882,7 +884,7 @@ const deleteClientBan = async (clientIP) => {
           ]"
           @click="switchTab(tab)"
         >
-          {{ tab.replace('-', ' ') }}
+          {{ t('dns.tabs.' + tab) }}
         </button>
       </div>
     </div>
@@ -893,32 +895,32 @@ const deleteClientBan = async (clientIP) => {
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Performance Stats -->
         <CardBox>
-          <SectionTitleLineWithButton :icon="mdiSpeedometer" title="Performance" main />
+          <SectionTitleLineWithButton :icon="mdiSpeedometer" :title="t('dns.performance')" main />
           <div class="grid grid-cols-2 gap-4 mt-4">
             <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="text-2xl font-bold text-slate-800 dark:text-slate-200">{{ stats.avg_response_time.toFixed(2) }}ms</div>
-              <div class="text-sm text-slate-500">Avg Response Time</div>
+              <div class="text-sm text-slate-500">{{ t('dns.avgResponseTime') }}</div>
             </div>
             <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="text-2xl font-bold text-slate-800 dark:text-slate-200">{{ stats.queries_per_minute.toFixed(2) }}</div>
-              <div class="text-sm text-slate-500">Queries/Minute</div>
+              <div class="text-sm text-slate-500">{{ t('dns.queriesPerMinute') }}</div>
             </div>
             <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="text-2xl font-bold text-slate-800 dark:text-slate-200">{{ formatNumber(stats.total_queries_24h) }}</div>
-              <div class="text-sm text-slate-500">Total Queries (24h)</div>
+              <div class="text-sm text-slate-500">{{ t('dns.totalQueries24h') }}</div>
             </div>
             <div class="p-4 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ formatNumber(stats.blocked_queries_24h) }}</div>
-              <div class="text-sm text-slate-500">Blocked (24h)</div>
+              <div class="text-sm text-slate-500">{{ t('dns.blocked24h') }}</div>
             </div>
           </div>
         </CardBox>
 
         <!-- Configuration -->
         <CardBox>
-          <SectionTitleLineWithButton :icon="mdiCog" title="Configuration" main>
+          <SectionTitleLineWithButton :icon="mdiCog" :title="t('dns.configuration')" main>
             <BaseButton
-              label="Edit"
+              :label="t('common.edit')"
               :icon="mdiPencil"
               color="info"
               small
@@ -928,13 +930,13 @@ const deleteClientBan = async (clientIP) => {
           <div class="space-y-3 mt-4">
             <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="flex items-center gap-3">
-                <span class="font-medium">UDP Port</span>
+                <span class="font-medium">{{ t('dns.udpPort') }}</span>
               </div>
               <span class="text-slate-600 dark:text-slate-300">{{ config.udp_port }}</span>
             </div>
             <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="flex items-center gap-3">
-                <span class="font-medium">TCP Port</span>
+                <span class="font-medium">{{ t('dns.tcpPort') }}</span>
               </div>
               <span class="text-slate-600 dark:text-slate-300">{{ config.tcp_port }}</span>
             </div>
@@ -945,10 +947,10 @@ const deleteClientBan = async (clientIP) => {
                   :class="config.blocking_enabled ? 'text-green-500' : 'text-gray-500'"
                   size="20" 
                 />
-                <span class="font-medium">Blocking</span>
+                <span class="font-medium">{{ t('dns.blocking') }}</span>
               </div>
               <span :class="config.blocking_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ config.blocking_enabled ? 'Enabled' : 'Disabled' }}
+                {{ config.blocking_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
@@ -958,15 +960,15 @@ const deleteClientBan = async (clientIP) => {
                   :class="config.cache_enabled ? 'text-green-500' : 'text-gray-500'"
                   size="20" 
                 />
-                <span class="font-medium">Cache</span>
+                <span class="font-medium">{{ t('dns.cache') }}</span>
               </div>
               <span :class="config.cache_enabled ? 'text-green-500' : 'text-gray-500'">
-                {{ config.cache_enabled ? 'Enabled' : 'Disabled' }}
+                {{ config.cache_enabled ? t('common.enabled') : t('common.disabled') }}
               </span>
             </div>
             <div class="flex items-center justify-between p-3 bg-slate-50 dark:bg-slate-800/50 rounded-lg">
               <div class="flex items-center gap-3">
-                <span class="font-medium">DoH / DoT</span>
+                <span class="font-medium">{{ t('dns.dohDot') }}</span>
               </div>
               <span :class="(config.doh_enabled || config.dot_enabled) ? 'text-green-500' : 'text-gray-500'">
                 {{ config.doh_enabled ? 'DoH' : '' }}{{ config.doh_enabled && config.dot_enabled ? ' & ' : '' }}{{ config.dot_enabled ? 'DoT' : '' }}{{ !config.doh_enabled && !config.dot_enabled ? 'Disabled' : '' }}
@@ -978,9 +980,9 @@ const deleteClientBan = async (clientIP) => {
 
       <!-- Active Clients - Full Width -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiWeb" title="Active Clients (Last 24h)" main>
+        <SectionTitleLineWithButton :icon="mdiWeb" :title="t('dns.activeClients24h')" main>
           <BaseButton
-            label="Refresh"
+            :label="t('common.refresh')"
             :icon="mdiRefresh"
             color="info"
             small
@@ -990,7 +992,7 @@ const deleteClientBan = async (clientIP) => {
 
         <div v-if="clients.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-          <p class="text-slate-500">No active clients</p>
+          <p class="text-slate-500">{{ t('dns.noActiveClients') }}</p>
         </div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 mt-4">
@@ -1008,7 +1010,7 @@ const deleteClientBan = async (clientIP) => {
                     v-if="client.is_banned" 
                     class="px-2 py-0.5 text-xs rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-300 font-semibold"
                   >
-                    BANNED
+                    {{ t('dns.banned') }}
                   </span>
                 </div>
                 <p class="text-xs text-slate-500 mt-1">{{ formatDate(client.last_seen) }}</p>
@@ -1017,7 +1019,7 @@ const deleteClientBan = async (clientIP) => {
                 <span 
                   class="px-2 py-0.5 text-xs rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300"
                 >
-                  {{ client.query_count }} queries
+                  {{ client.query_count }} {{ t('dns.queriesSuffix') }}
                 </span>
                 <button 
                   class="px-2 py-1 hover:bg-slate-100 dark:hover:bg-slate-700 rounded transition-colors"
@@ -1034,24 +1036,24 @@ const deleteClientBan = async (clientIP) => {
                 class="w-full px-4 py-2 text-left text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600" 
                 @click="unblockClient(client.ip)"
               >
-                ✅ Unban this client
+                {{ t('dns.unbanClient') }}
               </button>
               <button 
                 v-else
                 class="w-full px-4 py-2 text-left text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600" 
                 @click="blockClient(client.ip)"
               >
-                🚫 Block this client (IP Ban)
+                {{ t('dns.blockClientMenu') }}
               </button>
             </div>
 
             <div class="grid grid-cols-2 gap-2">
               <div class="p-2 bg-white dark:bg-slate-900/50 rounded-lg">
-                <div class="text-xs text-slate-500">Total</div>
+                <div class="text-xs text-slate-500">{{ t('dns.total') }}</div>
                 <div class="text-lg font-bold">{{ client.query_count }}</div>
               </div>
               <div class="p-2 bg-white dark:bg-slate-900/50 rounded-lg">
-                <div class="text-xs text-slate-500">Blocked</div>
+                <div class="text-xs text-slate-500">{{ t('dns.blocked') }}</div>
                 <div class="text-lg font-bold text-red-600 dark:text-red-400">{{ client.blocked_count || 0 }}</div>
               </div>
             </div>
@@ -1063,9 +1065,9 @@ const deleteClientBan = async (clientIP) => {
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <!-- Top Domains -->
         <CardBox>
-          <SectionTitleLineWithButton :icon="mdiWeb" title="Top Queried Domains" main />
+          <SectionTitleLineWithButton :icon="mdiWeb" :title="t('dns.topQueriedDomains')" main />
           <div v-if="!stats.top_domains || stats.top_domains.length === 0" class="text-center py-10 text-slate-500">
-            No data available
+            {{ t('dns.noData') }}
           </div>
           <div v-else class="space-y-3 mt-4">
             <div
@@ -1084,9 +1086,9 @@ const deleteClientBan = async (clientIP) => {
 
         <!-- Top Blocked Domains -->
         <CardBox>
-          <SectionTitleLineWithButton :icon="mdiShield" title="Top Blocked Domains" main />
+          <SectionTitleLineWithButton :icon="mdiShield" :title="t('dns.topBlockedDomains')" main />
           <div v-if="!stats.top_blocked || stats.top_blocked.length === 0" class="text-center py-10 text-slate-500">
-            No blocked domains yet
+            {{ t('dns.noBlockedYet') }}
           </div>
           <div v-else class="space-y-3 mt-4">
             <div
@@ -1107,17 +1109,17 @@ const deleteClientBan = async (clientIP) => {
 
     <!-- Blocklists Tab -->
     <CardBox v-if="activeTab === 'blocklists'">
-      <SectionTitleLineWithButton :icon="mdiShield" title="Blocklists" main>
+      <SectionTitleLineWithButton :icon="mdiShield" :title="t('dns.tabs.blocklists')" main>
         <div class="flex gap-2">
           <BaseButton
-            label="Add Blocklist"
+            :label="t('dns.addBlocklist')"
             :icon="mdiPlus"
             color="info"
             small
             @click="isAddBlocklistModalActive = true"
           />
           <BaseButton
-            label="Reload"
+            :label="t('dns.reload')"
             :icon="mdiRefresh"
             color="success"
             small
@@ -1131,27 +1133,27 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-start gap-3">
           <BaseIcon :path="mdiShield" class="text-blue-600 dark:text-blue-400 mt-0.5" size="20" />
           <div class="flex-1">
-            <h4 class="font-semibold text-blue-900 dark:text-blue-100 mb-1">What are Blocklists?</h4>
+            <h4 class="font-semibold text-blue-900 dark:text-blue-100 mb-1">{{ t('dns.whatAreBlocklists') }}</h4>
             <p class="text-sm text-blue-800 dark:text-blue-200 mb-2">
-              Blocklists are large domain lists automatically downloaded from external sources and regularly updated. 
-              They contain thousands/millions of ads, trackers, and malicious domains.
+              {{ t('dns.blocklistDesc') }}
+              
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               <div class="flex items-center gap-2">
                 <span class="text-blue-600 dark:text-blue-400">✓</span>
-                <span class="text-blue-700 dark:text-blue-300">Auto-updates (daily/weekly)</span>
+                <span class="text-blue-700 dark:text-blue-300">{{ t('dns.blAuto') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-blue-600 dark:text-blue-400">✓</span>
-                <span class="text-blue-700 dark:text-blue-300">Supports multiple formats</span>
+                <span class="text-blue-700 dark:text-blue-300">{{ t('dns.blFormats') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-blue-600 dark:text-blue-400">✓</span>
-                <span class="text-blue-700 dark:text-blue-300">Contains millions of domains</span>
+                <span class="text-blue-700 dark:text-blue-300">{{ t('dns.blMillions') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-blue-600 dark:text-blue-400">✓</span>
-                <span class="text-blue-700 dark:text-blue-300">Examples: AdGuard, OISD, StevenBlack</span>
+                <span class="text-blue-700 dark:text-blue-300">{{ t('dns.blExamples') }}</span>
               </div>
             </div>
           </div>
@@ -1160,8 +1162,8 @@ const deleteClientBan = async (clientIP) => {
 
       <div v-if="blocklists.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiShield" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No blocklists configured</p>
-        <BaseButton label="Add Your First Blocklist" :icon="mdiPlus" color="info" @click="isAddBlocklistModalActive = true" />
+        <p class="text-slate-500 mb-4">{{ t('dns.noBlocklists') }}</p>
+        <BaseButton :label="t('dns.addFirstBlocklist')" :icon="mdiPlus" color="info" @click="isAddBlocklistModalActive = true" />
       </div>
 
       <div v-else class="space-y-4 mt-4">
@@ -1207,9 +1209,9 @@ const deleteClientBan = async (clientIP) => {
 
     <!-- Filters Tab -->
     <CardBox v-if="activeTab === 'filters'">
-      <SectionTitleLineWithButton :icon="mdiWeb" title="Custom Filters" main>
+      <SectionTitleLineWithButton :icon="mdiWeb" :title="t('dns.customFilters')" main>
         <BaseButton
-          label="Add Filter"
+          :label="t('dns.addFilter')"
           :icon="mdiPlus"
           color="info"
           small
@@ -1222,31 +1224,31 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-start gap-3">
           <BaseIcon :path="mdiWeb" class="text-emerald-600 dark:text-emerald-400 mt-0.5" size="20" />
           <div class="flex-1">
-            <h4 class="font-semibold text-emerald-900 dark:text-emerald-100 mb-1">What are Custom Filters?</h4>
+            <h4 class="font-semibold text-emerald-900 dark:text-emerald-100 mb-1">{{ t('dns.whatAreFilters') }}</h4>
             <p class="text-sm text-emerald-800 dark:text-emerald-200 mb-2">
-              Custom Filters are manually added domain rules. 
-              Use them to block or allow specific domains.
+              {{ t('dns.filterDesc') }}
+              
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               <div class="flex items-center gap-2">
                 <span class="text-emerald-600 dark:text-emerald-400">✓</span>
-                <span class="text-emerald-700 dark:text-emerald-300">Manual control (you add them)</span>
+                <span class="text-emerald-700 dark:text-emerald-300">{{ t('dns.cfManual') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-emerald-600 dark:text-emerald-400">✓</span>
-                <span class="text-emerald-700 dark:text-emerald-300">Regex and wildcard support</span>
+                <span class="text-emerald-700 dark:text-emerald-300">{{ t('dns.cfRegex') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-emerald-600 dark:text-emerald-400">✓</span>
-                <span class="text-emerald-700 dark:text-emerald-300">Blacklist: Block domain</span>
+                <span class="text-emerald-700 dark:text-emerald-300">{{ t('dns.blacklistBlock') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-emerald-600 dark:text-emerald-400">✓</span>
-                <span class="text-emerald-700 dark:text-emerald-300">Whitelist: Allow domain</span>
+                <span class="text-emerald-700 dark:text-emerald-300">{{ t('dns.whitelistAllow') }}</span>
               </div>
             </div>
             <div class="mt-3 p-2 bg-emerald-100 dark:bg-emerald-900/30 rounded text-xs text-emerald-800 dark:text-emerald-200">
-              <strong>💡 Usage:</strong> Block domains that escape blocklists, or whitelist domains that are blocked but you need access to.
+              <strong>{{ t('dns.tipUsage') }}</strong> {{ t('dns.filterUsageText') }}
             </div>
           </div>
         </div>
@@ -1254,8 +1256,8 @@ const deleteClientBan = async (clientIP) => {
 
       <div v-if="customFilters.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No custom filters configured</p>
-        <BaseButton label="Add Your First Filter" :icon="mdiPlus" color="info" @click="isAddFilterModalActive = true" />
+        <p class="text-slate-500 mb-4">{{ t('dns.noFilters') }}</p>
+        <BaseButton :label="t('dns.addFirstFilter')" :icon="mdiPlus" color="info" @click="isAddFilterModalActive = true" />
       </div>
 
       <div v-else class="space-y-4 mt-4">
@@ -1295,11 +1297,11 @@ const deleteClientBan = async (clientIP) => {
 
     <!-- DNS Rewrites Tab -->
     <CardBox v-if="activeTab === 'rewrites'">
-      <SectionTitleLineWithButton :icon="mdiWeb" title="DNS Rewrites" main>
+      <SectionTitleLineWithButton :icon="mdiWeb" :title="t('dns.dnsRewrites')" main>
         <BaseButton
           :icon="mdiPlus"
           color="info"
-          label="Add Rewrite"
+          :label="t('dns.addRewrite')"
           @click="isAddRewriteModalActive = true"
         />
       </SectionTitleLineWithButton>
@@ -1309,31 +1311,31 @@ const deleteClientBan = async (clientIP) => {
         <div class="flex items-start gap-3">
           <BaseIcon :path="mdiWeb" class="text-purple-600 dark:text-purple-400 mt-0.5" size="20" />
           <div class="flex-1">
-            <h4 class="font-semibold text-purple-900 dark:text-purple-100 mb-1">What are DNS Rewrites?</h4>
+            <h4 class="font-semibold text-purple-900 dark:text-purple-100 mb-1">{{ t('dns.whatAreRewrites') }}</h4>
             <p class="text-sm text-purple-800 dark:text-purple-200 mb-2">
-              DNS Rewrites allow you to define custom DNS responses for specific domains. 
-              Redirect domains to different IP addresses or other domains.
+              {{ t('dns.rewriteDesc') }}
+              
             </p>
             <div class="grid grid-cols-1 md:grid-cols-2 gap-2 text-xs">
               <div class="flex items-center gap-2">
                 <span class="text-purple-600 dark:text-purple-400">✓</span>
-                <span class="text-purple-700 dark:text-purple-300">Local development (*.test.local → 127.0.0.1)</span>
+                <span class="text-purple-700 dark:text-purple-300">{{ t('dns.rwLocalDev') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-purple-600 dark:text-purple-400">✓</span>
-                <span class="text-purple-700 dark:text-purple-300">Redirect to internal services</span>
+                <span class="text-purple-700 dark:text-purple-300">{{ t('dns.rwRedirect') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-purple-600 dark:text-purple-400">✓</span>
-                <span class="text-purple-700 dark:text-purple-300">Create CNAME aliases</span>
+                <span class="text-purple-700 dark:text-purple-300">{{ t('dns.rwCname') }}</span>
               </div>
               <div class="flex items-center gap-2">
                 <span class="text-purple-600 dark:text-purple-400">✓</span>
-                <span class="text-purple-700 dark:text-purple-300">Wildcard support (*.domain.com)</span>
+                <span class="text-purple-700 dark:text-purple-300">{{ t('dns.rwWildcard') }}</span>
               </div>
             </div>
             <div class="mt-3 p-2 bg-purple-100 dark:bg-purple-900/30 rounded text-xs text-purple-800 dark:text-purple-200">
-              <strong>🔄 Difference:</strong> Rewrite redirects, not blocks. Blocklist/Filter blocks domains, Rewrite redirects them to your specified IP/domain.
+              <strong>{{ t('dns.diffLabel') }}</strong> {{ t('dns.rewriteDiffText') }}
             </div>
           </div>
         </div>
@@ -1341,7 +1343,7 @@ const deleteClientBan = async (clientIP) => {
 
       <div class="mt-6 space-y-4">
         <div v-if="rewrites.length === 0" class="text-center py-12 text-slate-500">
-          No DNS rewrite rules added yet
+          {{ t('dns.noRewrites') }}
         </div>
 
         <div v-for="rewrite in rewrites" :key="rewrite.id" class="group relative bg-slate-50 dark:bg-slate-800/50 rounded-lg p-6 hover:shadow-md transition-all border border-slate-200 dark:border-slate-700">
@@ -1426,9 +1428,9 @@ const deleteClientBan = async (clientIP) => {
 
     <!-- Logs Tab -->
     <CardBox v-if="activeTab === 'logs'">
-      <SectionTitleLineWithButton :icon="mdiChartLine" title="Query Logs" main>
+      <SectionTitleLineWithButton :icon="mdiChartLine" :title="t('dns.queryLogs')" main>
         <BaseButton
-          label="Refresh"
+          :label="t('common.refresh')"
           :icon="mdiRefresh"
           color="info"
           small
@@ -1445,7 +1447,7 @@ const deleteClientBan = async (clientIP) => {
           <input
             v-model="searchQuery"
             type="text"
-            placeholder="Search by client IP, domain or response..."
+            :placeholder="t('dns.logSearchPlaceholder')"
             class="w-full pl-10 pr-10 py-2.5 border border-slate-300 dark:border-slate-600 rounded-lg bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500 focus:border-transparent transition-all"
             @keyup.enter="doLogsSearch"
           />
@@ -1461,7 +1463,7 @@ const deleteClientBan = async (clientIP) => {
           </div>
         </div>
         <BaseButton
-          label="Search"
+          :label="t('common.search')"
           :icon="mdiMagnify"
           color="info"
           small
@@ -1472,12 +1474,12 @@ const deleteClientBan = async (clientIP) => {
 
       <div v-if="!logsLoading && queryLogs.length === 0 && logsTotal === 0" class="text-center py-12">
         <BaseIcon :path="mdiChartLine" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500">No query logs available</p>
+        <p class="text-slate-500">{{ t('dns.noQueryLogs') }}</p>
       </div>
 
       <div v-else-if="!logsLoading && searchQuery && logsTotal === 0" class="text-center py-12">
         <BaseIcon :path="mdiMagnify" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500">No results for search</p>
+        <p class="text-slate-500">{{ t('dns.noSearchResults') }}</p>
         <p class="text-sm text-slate-400 mt-2">No logs matching "{{ searchQuery }}"</p>
       </div>
 
@@ -1485,14 +1487,14 @@ const deleteClientBan = async (clientIP) => {
         <table class="min-w-full text-sm">
           <thead>
             <tr class="text-left text-slate-500 border-b border-slate-100 dark:border-slate-700">
-              <th class="py-3">Time</th>
-              <th class="py-3">Client IP</th>
-              <th class="py-3">Domain</th>
-              <th class="py-3">Type</th>
-              <th class="py-3">Response</th>
-              <th class="py-3">Status</th>
-              <th class="py-3">Response Time</th>
-              <th class="py-3 text-center w-20">Actions</th>
+              <th class="py-3">{{ t('dns.time') }}</th>
+              <th class="py-3">{{ t('dns.clientIp') }}</th>
+              <th class="py-3">{{ t('dns.domain') }}</th>
+              <th class="py-3">{{ t('dns.type') }}</th>
+              <th class="py-3">{{ t('dns.response') }}</th>
+              <th class="py-3">{{ t('common.status') }}</th>
+              <th class="py-3">{{ t('dns.responseTime') }}</th>
+              <th class="py-3 text-center w-20">{{ t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -1558,14 +1560,14 @@ const deleteClientBan = async (clientIP) => {
                   <!-- Real-time status loaded -->
                   <template v-else>
                     <!-- Global Actions -->
-                    <div class="px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">Global</div>
+                    <div class="px-3 py-1 text-xs font-semibold text-slate-500 dark:text-slate-400 uppercase">{{ t('dns.global') }}</div>
                     
                     <button
                       v-if="currentLogStatus.global_domain_block"
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                       @click="removeGlobalBlock(log.domain)"
                     >
-                      ✅ Allow domain (globally)
+                      {{ t('dns.allowDomainGlobally') }}
                     </button>
                     
                     <button
@@ -1573,7 +1575,7 @@ const deleteClientBan = async (clientIP) => {
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                       @click="blockDomainGlobally(log.domain)"
                     >
-                      🚫 Block domain (globally)
+                      {{ t('dns.blockDomainGloballyMenu') }}
                     </button>
 
                     <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
@@ -1586,7 +1588,7 @@ const deleteClientBan = async (clientIP) => {
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                       @click="removeClientDomainRule(log.client_ip, log.domain, 'block')"
                     >
-                      ✅ Allow for this client
+                      {{ t('dns.allowForClient') }}
                     </button>
                     
                     <button
@@ -1594,7 +1596,7 @@ const deleteClientBan = async (clientIP) => {
                       class="w-full px-4 py-2 text-left text-sm hover:bg-slate-100 dark:hover:bg-slate-700"
                       @click="blockDomainForClient(log.client_ip, log.domain)"
                     >
-                      🚫 Block for this client
+                      {{ t('dns.blockForClient') }}
                     </button>
 
                     <div class="border-t border-slate-200 dark:border-slate-700 my-1"></div>
@@ -1605,7 +1607,7 @@ const deleteClientBan = async (clientIP) => {
                       class="w-full px-4 py-2 text-left text-sm hover:bg-green-50 dark:hover:bg-green-900/20 text-green-600"
                       @click="unblockClient(log.client_ip)"
                     >
-                      ✅ Unban this client
+                      {{ t('dns.unbanClient') }}
                     </button>
                     
                     <button
@@ -1613,7 +1615,7 @@ const deleteClientBan = async (clientIP) => {
                       class="w-full px-4 py-2 text-left text-sm hover:bg-red-50 dark:hover:bg-red-900/20 text-red-600"
                       @click="blockClient(log.client_ip)"
                     >
-                      🚫 Ban this client (IP Ban)
+                      {{ t('dns.banClient') }}
                     </button>
                   </template>
                 </div>
@@ -1637,7 +1639,7 @@ const deleteClientBan = async (clientIP) => {
             <option :value="100">100</option>
             <option :value="500">500</option>
           </select>
-          <span class="text-sm text-slate-500 dark:text-slate-400">per page</span>
+          <span class="text-sm text-slate-500 dark:text-slate-400">{{ t('dns.perPage') }}</span>
         </div>
         <div class="flex items-center gap-2">
           <BaseButton
@@ -1663,9 +1665,9 @@ const deleteClientBan = async (clientIP) => {
 
     <!-- Custom Rules Tab -->
     <CardBox v-if="activeTab === 'custom-rules'">
-      <SectionTitleLineWithButton :icon="mdiShieldCheck" title="Custom Rules" main>
+      <SectionTitleLineWithButton :icon="mdiShieldCheck" :title="t('dns.tabs.custom-rules')" main>
         <BaseButton
-          label="Refresh"
+          :label="t('common.refresh')"
           :icon="mdiRefresh"
           color="info"
           small
@@ -1675,20 +1677,20 @@ const deleteClientBan = async (clientIP) => {
 
       <!-- Global Filters -->
       <div class="mt-6">
-        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">🌍 Global Filters</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">{{ t('dns.globalFilters') }}</h3>
         <div v-if="customRules.global_filters.length === 0" class="text-center py-8 text-slate-500">
-          No global custom filters
+          {{ t('dns.noGlobalFilters') }}
         </div>
         <div v-else class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead>
               <tr class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <th class="py-3">Domain</th>
-                <th class="py-3">Type</th>
-                <th class="py-3">Comment</th>
-                <th class="py-3">Regex</th>
-                <th class="py-3">Wildcard</th>
-                <th class="py-3 text-center">Actions</th>
+                <th class="py-3">{{ t('dns.domain') }}</th>
+                <th class="py-3">{{ t('dns.type') }}</th>
+                <th class="py-3">{{ t('dns.comment') }}</th>
+                <th class="py-3">{{ t('dns.regex') }}</th>
+                <th class="py-3">{{ t('dns.wildcardCol') }}</th>
+                <th class="py-3 text-center">{{ t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -1725,21 +1727,21 @@ const deleteClientBan = async (clientIP) => {
 
       <!-- Client-Specific Rules -->
       <div class="mt-8">
-        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">👤 Client-Specific Domain Rules</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">{{ t('dns.clientSpecificRules') }}</h3>
         <div v-if="customRules.client_rules.length === 0" class="text-center py-8 text-slate-500">
-          No client-specific rules
+          {{ t('dns.noClientRules') }}
         </div>
         <div v-else class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead>
               <tr class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <th class="py-3">Client IP</th>
-                <th class="py-3">Domain</th>
-                <th class="py-3">Type</th>
-                <th class="py-3">Comment</th>
-                <th class="py-3">Regex</th>
-                <th class="py-3">Wildcard</th>
-                <th class="py-3 text-center">Actions</th>
+                <th class="py-3">{{ t('dns.clientIp') }}</th>
+                <th class="py-3">{{ t('dns.domain') }}</th>
+                <th class="py-3">{{ t('dns.type') }}</th>
+                <th class="py-3">{{ t('dns.comment') }}</th>
+                <th class="py-3">{{ t('dns.regex') }}</th>
+                <th class="py-3">{{ t('dns.wildcardCol') }}</th>
+                <th class="py-3 text-center">{{ t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody>
@@ -1777,28 +1779,28 @@ const deleteClientBan = async (clientIP) => {
 
       <!-- Banned Clients -->
       <div class="mt-8">
-        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">🚫 Banned Clients (IP Ban)</h3>
+        <h3 class="text-lg font-semibold text-slate-700 dark:text-slate-300 mb-3">{{ t('dns.bannedClients') }}</h3>
         <div v-if="customRules.banned_clients.length === 0" class="text-center py-8 text-slate-500">
-          No banned clients
+          {{ t('dns.noBannedClients') }}
         </div>
         <div v-else class="overflow-x-auto">
           <table class="min-w-full text-sm">
             <thead>
               <tr class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-                <th class="py-3">Client IP</th>
-                <th class="py-3">Reason</th>
-                <th class="py-3">Banned At</th>
-                <th class="py-3 text-center">Actions</th>
+                <th class="py-3">{{ t('dns.clientIp') }}</th>
+                <th class="py-3">{{ t('dns.reason') }}</th>
+                <th class="py-3">{{ t('dns.bannedAt') }}</th>
+                <th class="py-3 text-center">{{ t('common.actions') }}</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="client in customRules.banned_clients" :key="client.id" class="border-b border-slate-100 dark:border-slate-800">
                 <td class="py-3 font-medium">{{ client.client_ip }}</td>
-                <td class="py-3 text-slate-600 dark:text-slate-400">{{ client.block_reason || 'Manually banned' }}</td>
+                <td class="py-3 text-slate-600 dark:text-slate-400">{{ client.block_reason || t('dns.manuallyBanned') }}</td>
                 <td class="py-3 text-xs">{{ client.blocked_at ? formatDate(client.blocked_at) : '-' }}</td>
                 <td class="py-3 text-center">
                   <BaseButton
-                    label="Unban"
+                    :label="t('dns.unban')"
                     color="success"
                     small
                     @click="deleteClientBan(client.client_ip)"
@@ -1816,49 +1818,49 @@ const deleteClientBan = async (clientIP) => {
     <!-- Config Modal -->
     <CardBoxModal
       v-model="isConfigModalActive"
-      title="DNS Server Configuration"
+      :title="t('dns.configModalTitle')"
       has-cancel
-      button-label="Save"
+      :button-label="t('common.save')"
       @confirm="saveConfig"
     >
-      <FormField label="Server Enabled">
+      <FormField :label="t('dns.serverEnabled')">
         <FormCheckRadio
           v-model="config.enabled"
           name="enabled"
           type="checkbox"
-          label="Enable DNS Server"
+          :label="t('dns.enableDnsServer')"
         />
       </FormField>
 
-      <FormField label="UDP Port">
+      <FormField :label="t('dns.udpPort')">
         <FormControl v-model="config.udp_port" type="number" placeholder="53" />
       </FormField>
 
-      <FormField label="TCP Port">
+      <FormField :label="t('dns.tcpPort')">
         <FormControl v-model="config.tcp_port" type="number" placeholder="53" />
       </FormField>
 
-      <FormField label="DNS-over-HTTPS (DoH)">
+      <FormField :label="t('dns.doh')">
         <FormCheckRadio
           v-model="config.doh_enabled"
           name="doh_enabled"
           type="checkbox"
-          label="Enable DoH"
+          :label="t('dns.enableDoh')"
         />
         <FormControl v-model="config.doh_port" type="number" placeholder="443" class="mt-2" />
       </FormField>
 
-      <FormField label="DNS-over-TLS (DoT)">
+      <FormField :label="t('dns.dot')">
         <FormCheckRadio
           v-model="config.dot_enabled"
           name="dot_enabled"
           type="checkbox"
-          label="Enable DoT"
+          :label="t('dns.enableDot')"
         />
         <FormControl v-model="config.dot_port" type="number" placeholder="853" class="mt-2" />
       </FormField>
 
-      <FormField label="Upstream DNS Servers (one per line)">
+      <FormField :label="t('dns.upstreamServers')">
         <FormControl 
           v-model="formattedUpstreamDNS" 
           type="textarea" 
@@ -1870,75 +1872,75 @@ const deleteClientBan = async (clientIP) => {
         </p>
       </FormField>
 
-      <FormField label="Blocking">
+      <FormField :label="t('dns.blocking')">
         <FormCheckRadio
           v-model="config.blocking_enabled"
           name="blocking_enabled"
           type="checkbox"
-          label="Enable domain blocking"
+          :label="t('dns.enableBlocking')"
         />
       </FormField>
 
-      <FormField label="Query Logging">
+      <FormField :label="t('dns.queryLogging')">
         <FormCheckRadio
           v-model="config.query_logging"
           name="query_logging"
           type="checkbox"
-          label="Enable query logging"
+          :label="t('dns.enableQueryLogging')"
         />
         <FormControl v-model="config.log_retention_days" type="number" placeholder="7" class="mt-2" />
-        <p class="text-xs text-gray-500 mt-1">Log retention in days</p>
+        <p class="text-xs text-gray-500 mt-1">{{ t('dns.logRetentionHelp') }}</p>
       </FormField>
 
-      <FormField label="Cache">
+      <FormField :label="t('dns.cache')">
         <FormCheckRadio
           v-model="config.cache_enabled"
           name="cache_enabled"
           type="checkbox"
-          label="Enable DNS cache"
+          :label="t('dns.enableCache')"
         />
         <FormControl v-model="config.cache_ttl" type="number" placeholder="3600" class="mt-2" />
-        <p class="text-xs text-gray-500 mt-1">Cache TTL in seconds</p>
+        <p class="text-xs text-gray-500 mt-1">{{ t('dns.cacheTtlHelp') }}</p>
       </FormField>
 
-      <FormField label="Rate Limiting">
+      <FormField :label="t('dns.rateLimiting')">
         <FormCheckRadio
           v-model="config.rate_limit_enabled"
           name="rate_limit_enabled"
           type="checkbox"
-          label="Enable rate limiting"
+          :label="t('dns.enableRateLimiting')"
         />
         <FormControl v-model="config.rate_limit_qps" type="number" placeholder="100" class="mt-2" />
-        <p class="text-xs text-gray-500 mt-1">Queries per second limit</p>
+        <p class="text-xs text-gray-500 mt-1">{{ t('dns.rateLimitHelp') }}</p>
       </FormField>
     </CardBoxModal>
 
     <!-- Add Blocklist Modal -->
     <CardBoxModal
       v-model="isAddBlocklistModalActive"
-      title="Add Blocklist"
+      :title="t('dns.addBlocklist')"
       has-cancel
-      button-label="Add"
+      :button-label="t('common.add')"
       @confirm="addBlocklist"
     >
-      <FormField label="Name">
+      <FormField :label="t('common.name')">
         <FormControl v-model="newBlocklist.name" placeholder="AdGuard DNS" required />
       </FormField>
 
-      <FormField label="URL">
+      <FormField :label="t('dns.url')">
         <FormControl v-model="newBlocklist.url" placeholder="https://..." required />
       </FormField>
 
-      <FormField label="Update Interval (seconds)">
+      <FormField :label="t('dns.updateInterval')">
         <FormControl v-model="newBlocklist.update_interval" type="number" placeholder="86400" />
       </FormField>
 
-      <FormField label="Enabled">
+      <FormField :label="t('common.enabled')">
         <FormCheckRadio
           v-model="newBlocklist.enabled"
           name="blocklist_enabled"
           type="checkbox"
-          label="Enable this blocklist"
+          :label="t('dns.enableThisBlocklist')"
         />
       </FormField>
     </CardBoxModal>
@@ -1946,30 +1948,30 @@ const deleteClientBan = async (clientIP) => {
     <!-- Edit Blocklist Modal -->
     <CardBoxModal
       v-model="isEditBlocklistModalActive"
-      title="Edit Blocklist"
+      :title="t('dns.editBlocklist')"
       has-cancel
-      button-label="Update"
+      :button-label="t('common.update')"
       @confirm="updateBlocklist"
     >
       <div v-if="editingBlocklist">
-        <FormField label="Name">
+        <FormField :label="t('common.name')">
           <FormControl v-model="editingBlocklist.name" placeholder="AdGuard DNS" required />
         </FormField>
 
-        <FormField label="URL">
+        <FormField :label="t('dns.url')">
           <FormControl v-model="editingBlocklist.url" placeholder="https://..." required />
         </FormField>
 
-        <FormField label="Update Interval (seconds)">
+        <FormField :label="t('dns.updateInterval')">
           <FormControl v-model="editingBlocklist.update_interval" type="number" placeholder="86400" />
         </FormField>
 
-        <FormField label="Enabled">
+        <FormField :label="t('common.enabled')">
           <FormCheckRadio
             v-model="editingBlocklist.enabled"
             name="edit_blocklist_enabled"
             type="checkbox"
-            label="Enable this blocklist"
+            :label="t('dns.enableThisBlocklist')"
           />
         </FormField>
       </div>
@@ -1978,84 +1980,84 @@ const deleteClientBan = async (clientIP) => {
     <!-- Add Filter Modal -->
     <CardBoxModal
       v-model="isAddFilterModalActive"
-      title="Add Custom Filter"
+      :title="t('dns.addCustomFilter')"
       has-cancel
-      button-label="Add"
+      :button-label="t('common.add')"
       @confirm="addFilter"
     >
-      <FormField label="Domain">
+      <FormField :label="t('dns.domain')">
         <FormControl v-model="newFilter.domain" placeholder="example.com" required />
       </FormField>
 
-      <FormField label="Type">
+      <FormField :label="t('dns.type')">
         <select v-model="newFilter.type" class="w-full px-3 py-2 border rounded">
-          <option value="blacklist">Blacklist</option>
-          <option value="whitelist">Whitelist</option>
+          <option value="blacklist">{{ t('dns.blacklist') }}</option>
+          <option value="whitelist">{{ t('dns.whitelist') }}</option>
         </select>
       </FormField>
 
-      <FormField label="Options">
+      <FormField :label="t('dns.options')">
         <FormCheckRadio
           v-model="newFilter.is_regex"
           name="is_regex"
           type="checkbox"
-          label="Regex pattern"
+          :label="t('dns.regexPattern')"
         />
         <FormCheckRadio
           v-model="newFilter.is_wildcard"
           name="is_wildcard"
           type="checkbox"
-          label="Wildcard (*.example.com)"
+          :label="t('dns.wildcard')"
           class="mt-2"
         />
       </FormField>
 
-      <FormField label="Comment">
-        <FormControl v-model="newFilter.comment" placeholder="Optional comment" />
+      <FormField :label="t('dns.comment')">
+        <FormControl v-model="newFilter.comment" :placeholder="t('dns.optionalComment')" />
       </FormField>
     </CardBoxModal>
 
     <!-- Add DNS Rewrite Modal -->
     <CardBoxModal
       v-model="isAddRewriteModalActive"
-      title="Add DNS Rewrite"
+      :title="t('dns.addDnsRewrite')"
       has-cancel
-      button-label="Add"
+      :button-label="t('common.add')"
       @confirm="addRewrite"
     >
       <div class="space-y-4">
         <!-- Domain Field with Info -->
-        <FormField label="Domain Name">
+        <FormField :label="t('dns.domainName')">
           <FormControl v-model="newRewrite.domain" placeholder="example.org or *.example.org" required />
           <div class="mt-2 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg text-sm text-blue-700 dark:text-blue-300">
-            <div class="font-medium mb-1">Examples:</div>
+            <div class="font-medium mb-1">{{ t('dns.examples') }}</div>
             <ul class="list-disc list-inside space-y-1 text-xs">
-              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">example.org</code> - This domain only</li>
-              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">*.example.org</code> - All subdomains (api.example.org, cdn.example.org, etc.)</li>
+              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">example.org</code> - {{ t('dns.rwExThisOnly') }}</li>
+              <li><code class="bg-white dark:bg-slate-800 px-1 rounded">*.example.org</code> - {{ t('dns.rwExSubdomains') }}</li>
             </ul>
           </div>
         </FormField>
 
         <!-- Answer/Target Field with Info -->
-        <FormField label="Target (IP Address / Domain)">
+        <FormField :label="t('dns.target')">
           <FormControl v-model="newRewrite.answer" placeholder="192.168.1.1 or target.example.com" required />
           <div class="mt-2 p-3 bg-emerald-50 dark:bg-emerald-900/20 rounded-lg text-sm text-emerald-700 dark:text-emerald-300">
-            <div class="font-medium mb-1">Usage:</div>
+            <div class="font-medium mb-1">{{ t('dns.usage') }}</div>
             <ul class="list-disc list-inside space-y-1 text-xs">
-              <li><strong>IP Address:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">192.168.1.100</code> - Resolve to this IP</li>
-              <li><strong>Domain:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">real.example.com</code> - Create CNAME record</li>
-              <li><strong>Special:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">A</code> - Preserve A records from upstream</li>
-              <li><strong>Special:</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">AAAA</code> - Preserve AAAA records from upstream</li>
+              <li><strong>{{ t('dns.lblIpAddress') }}</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">192.168.1.100</code> - {{ t('dns.rwResolveIp') }}</li>
+              <li><strong>{{ t('dns.lblDomain') }}</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">real.example.com</code> - {{ t('dns.rwCreateCname') }}</li>
+              <li><strong>{{ t('dns.lblSpecial') }}</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">A</code> - {{ t('dns.rwPreserveA') }}</li>
+              <li><strong>{{ t('dns.lblSpecial') }}</strong> <code class="bg-white dark:bg-slate-800 px-1 rounded">AAAA</code> - {{ t('dns.rwPreserveAaaa') }}</li>
             </ul>
           </div>
         </FormField>
 
         <!-- Type Field -->
-        <FormField label="Record Type">
+        <FormField :label="t('dns.recordType')">
           <select v-model="newRewrite.type" class="w-full px-3 py-2 border dark:border-slate-600 rounded bg-white dark:bg-slate-800">
             <option value="A">A (IPv4)</option>
             <option value="AAAA">AAAA (IPv6)</option>
-            <option value="CNAME">CNAME (Alias)</option>
+            <option value="CNAME">{{ t('dns.recordCnameAlias') }}</option>
           </select>
           <div class="mt-1 text-xs text-slate-500">
             Choose A/AAAA for IP address, CNAME for domain
@@ -2063,17 +2065,17 @@ const deleteClientBan = async (clientIP) => {
         </FormField>
 
         <!-- Comment Field -->
-        <FormField label="Description (Optional)">
-          <FormControl v-model="newRewrite.comment" placeholder="Note about this rewrite rule..." />
+        <FormField :label="t('dns.descriptionOptional')">
+          <FormControl v-model="newRewrite.comment" :placeholder="t('dns.rewriteNotePlaceholder')" />
         </FormField>
 
         <!-- Enabled Checkbox -->
-        <FormField label="Durum">
+        <FormField :label="t('common.status')">
           <FormCheckRadio
             v-model="newRewrite.enabled"
             name="rewrite_enabled"
             type="checkbox"
-            label="Enable rule"
+            :label="t('dns.enableRule')"
           />
         </FormField>
       </div>
@@ -2082,38 +2084,38 @@ const deleteClientBan = async (clientIP) => {
     <!-- Edit DNS Rewrite Modal -->
     <CardBoxModal
       v-model="isEditRewriteModalActive"
-      title="Edit DNS Rewrite"
+      :title="t('dns.editDnsRewrite')"
       has-cancel
-      button-label="Update"
+      :button-label="t('common.update')"
       @confirm="updateRewrite"
     >
       <div v-if="editingRewrite" class="space-y-4">
-        <FormField label="Domain Name">
+        <FormField :label="t('dns.domainName')">
           <FormControl v-model="editingRewrite.domain" placeholder="example.org or *.example.org" required />
         </FormField>
 
-        <FormField label="Target (IP Address / Domain)">
+        <FormField :label="t('dns.target')">
           <FormControl v-model="editingRewrite.answer" placeholder="192.168.1.1 or target.example.com" required />
         </FormField>
 
-        <FormField label="Record Type">
+        <FormField :label="t('dns.recordType')">
           <select v-model="editingRewrite.type" class="w-full px-3 py-2 border dark:border-slate-600 rounded bg-white dark:bg-slate-800">
             <option value="A">A (IPv4)</option>
             <option value="AAAA">AAAA (IPv6)</option>
-            <option value="CNAME">CNAME (Alias)</option>
+            <option value="CNAME">{{ t('dns.recordCnameAlias') }}</option>
           </select>
         </FormField>
 
-        <FormField label="Description (Optional)">
-          <FormControl v-model="editingRewrite.comment" placeholder="Note about this rewrite rule..." />
+        <FormField :label="t('dns.descriptionOptional')">
+          <FormControl v-model="editingRewrite.comment" :placeholder="t('dns.rewriteNotePlaceholder')" />
         </FormField>
 
-        <FormField label="Durum">
+        <FormField :label="t('common.status')">
           <FormCheckRadio
             v-model="editingRewrite.enabled"
             name="edit_rewrite_enabled"
             type="checkbox"
-            label="Enable rule"
+            :label="t('dns.enableRule')"
           />
         </FormField>
       </div>
@@ -2122,10 +2124,10 @@ const deleteClientBan = async (clientIP) => {
     <!-- Delete Confirmation Modal -->
     <CardBoxModal
       v-model="isDeleteModalActive"
-      title="Confirm Delete"
+      :title="t('dns.confirmDelete')"
       button="danger"
       has-cancel
-      button-label="Delete"
+      :button-label="t('common.delete')"
       @confirm="confirmDelete"
     >
       <p>Are you sure you want to delete this {{ deleteTarget.type }}?</p>
@@ -2137,7 +2139,7 @@ const deleteClientBan = async (clientIP) => {
     <!-- Response Detail Modal -->
     <CardBoxModal
       v-model="selectedResponse"
-      title="DNS Response"
+      :title="t('dns.dnsResponse')"
       has-cancel
     >
       <div class="bg-slate-50 dark:bg-slate-800 p-4 rounded-lg">
@@ -2146,7 +2148,7 @@ const deleteClientBan = async (clientIP) => {
         </p>
       </div>
       <p class="text-xs text-slate-500 mt-2">
-        You can select and copy the text (Ctrl+C / Cmd+C)
+        {{ t('dns.copyHint') }}
       </p>
     </CardBoxModal>
   </div>

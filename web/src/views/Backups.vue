@@ -12,8 +12,10 @@ import FormControl from '@/components/FormControl.vue'
 import FormField from '@/components/FormField.vue'
 import ApiService from '@/services/ApiService'
 import { useToast } from 'vue-toastification'
+import { useI18n } from 'vue-i18n'
 
 const toast = useToast()
+const { t } = useI18n()
 
 const loading = ref(false)
 const creating = ref(false)
@@ -69,13 +71,13 @@ const fetchBackups = async () => {
     if (!listRes.data.error) {
       backups.value = listRes.data.data || []
     } else {
-      toast.error(listRes.data.msg || 'Failed to load backups')
+      toast.error(listRes.data.msg || t('bk.loadFailed'))
     }
     if (cfgRes && !cfgRes.data.error && cfgRes.data.data) {
       config.value = { max_backups: cfgRes.data.data.max_backups || 10 }
     }
   } catch (err) {
-    toast.error('Failed to load backups: ' + (err.message || ''))
+    toast.error(t('bk.loadFailedMsg') + (err.message || ''))
   } finally {
     loading.value = false
   }
@@ -84,20 +86,20 @@ const fetchBackups = async () => {
 const saveConfig = async () => {
   const n = Number(config.value.max_backups)
   if (!Number.isFinite(n) || n < 1) {
-    toast.error('Keep last must be at least 1')
+    toast.error(t('bk.keepLastMin'))
     return
   }
   savingConfig.value = true
   try {
     const res = await ApiService.updateBackupConfig({ max_backups: Math.round(n) })
     if (!res.data.error) {
-      toast.success('Settings saved')
+      toast.success(t('bk.settingsSaved'))
       await fetchBackups()
     } else {
-      toast.error(res.data.msg || 'Failed to save settings')
+      toast.error(res.data.msg || t('bk.saveSettingsFailed'))
     }
   } catch (err) {
-    toast.error('Failed to save settings: ' + (err.response?.data?.msg || err.message || ''))
+    toast.error(t('bk.saveSettingsFailedMsg') + (err.response?.data?.msg || err.message || ''))
   } finally {
     savingConfig.value = false
   }
@@ -108,13 +110,13 @@ const createBackup = async () => {
   try {
     const res = await ApiService.createBackup('manual')
     if (!res.data.error) {
-      toast.success('Backup created')
+      toast.success(t('bk.backupCreated'))
       await fetchBackups()
     } else {
-      toast.error(res.data.msg || 'Failed to create backup')
+      toast.error(res.data.msg || t('bk.createFailed'))
     }
   } catch (err) {
-    toast.error('Failed to create backup: ' + (err.message || ''))
+    toast.error(t('bk.createFailedMsg') + (err.message || ''))
   } finally {
     creating.value = false
   }
@@ -133,13 +135,13 @@ const confirmRestore = async () => {
   try {
     const res = await ApiService.restoreBackup(b.id)
     if (!res.data.error) {
-      toast.info('Restore started — server will restart in a few seconds. You will need to re-login.')
+      toast.info(t('bk.restoreStarted'))
     } else {
-      toast.error(res.data.msg || 'Restore failed')
+      toast.error(res.data.msg || t('bk.restoreFailed'))
       restoring.value = false
     }
   } catch (err) {
-    toast.error('Restore failed: ' + (err.message || ''))
+    toast.error(t('bk.restoreFailedMsg') + (err.message || ''))
     restoring.value = false
   }
 }
@@ -157,7 +159,7 @@ const downloadBackup = async (b) => {
     document.body.removeChild(a)
     URL.revokeObjectURL(url)
   } catch (err) {
-    toast.error('Download failed: ' + (err.message || ''))
+    toast.error(t('bk.downloadFailedMsg') + (err.message || ''))
   }
 }
 
@@ -173,14 +175,14 @@ const onFileSelected = async (event) => {
   try {
     const res = await ApiService.uploadBackup(file)
     if (!res.data.error) {
-      toast.success('Backup uploaded')
+      toast.success(t('bk.backupUploaded'))
       await fetchBackups()
     } else {
-      toast.error(res.data.msg || 'Upload failed')
+      toast.error(res.data.msg || t('bk.uploadFailed'))
     }
   } catch (err) {
-    const msg = err.response?.data?.msg || err.message || 'Upload failed'
-    toast.error('Upload failed: ' + msg)
+    const msg = err.response?.data?.msg || err.message || t('bk.uploadFailed')
+    toast.error(t('bk.uploadFailedMsg') + msg)
   } finally {
     uploading.value = false
   }
@@ -198,13 +200,13 @@ const confirmDelete = async () => {
   try {
     const res = await ApiService.deleteBackup(b.id)
     if (!res.data.error) {
-      toast.success('Backup deleted')
+      toast.success(t('bk.backupDeleted'))
       await fetchBackups()
     } else {
-      toast.error(res.data.msg || 'Failed to delete backup')
+      toast.error(res.data.msg || t('bk.deleteFailed'))
     }
   } catch (err) {
-    toast.error('Failed to delete backup: ' + (err.message || ''))
+    toast.error(t('bk.deleteFailedMsg') + (err.message || ''))
   }
 }
 
@@ -215,31 +217,25 @@ onMounted(fetchBackups)
   <SectionMain>
     <CardBoxModal
       v-model="showRestoreModal"
-      title="Restore backup?"
+      :title="t('bk.restoreModalTitle')"
       button="warning"
-      button-label="Restore & Restart"
+      :button-label="t('bk.restoreRestart')"
       has-cancel
       @confirm="confirmRestore"
     >
-      <p class="mb-2">
-        This replaces the current data directory with the contents of
-        <strong>{{ restoreTarget?.id }}</strong> and restarts the server.
-      </p>
-      <p class="text-sm text-slate-500">
-        The current state will be discarded. If you want to keep it, take a manual backup first.
-        You will need to log in again after the restart.
-      </p>
+      <p class="mb-2" v-html="t('bk.restoreText1', { id: restoreTarget?.id })"></p>
+      <p class="text-sm text-slate-500">{{ t('bk.restoreText2') }}</p>
     </CardBoxModal>
 
     <CardBoxModal
       v-model="showDeleteModal"
-      title="Delete backup?"
+      :title="t('bk.deleteModalTitle')"
       button="danger"
-      button-label="Delete"
+      :button-label="t('common.delete')"
       has-cancel
       @confirm="confirmDelete"
     >
-      Permanently delete <strong>{{ deleteTarget?.id }}</strong>?
+      <span v-html="t('bk.deleteConfirm', { id: deleteTarget?.id })"></span>
     </CardBoxModal>
 
     <input
@@ -250,14 +246,14 @@ onMounted(fetchBackups)
       @change="onFileSelected"
     />
 
-    <SectionTitleLineWithButton :icon="mdiArchive" title="Backups" main>
+    <SectionTitleLineWithButton :icon="mdiArchive" :title="t('bk.title')" main>
       <BaseButtons>
         <BaseButton
           :icon="mdiRefresh"
           color="info"
           small
           :disabled="loading"
-          label="Refresh"
+          :label="t('common.refresh')"
           @click="fetchBackups"
         />
         <BaseButton
@@ -265,7 +261,7 @@ onMounted(fetchBackups)
           color="info"
           small
           :disabled="uploading"
-          :label="uploading ? 'Uploading…' : 'Upload'"
+          :label="uploading ? t('bk.uploading') : t('bk.upload')"
           @click="triggerUpload"
         />
         <BaseButton
@@ -273,7 +269,7 @@ onMounted(fetchBackups)
           color="success"
           small
           :disabled="creating || restoring"
-          :label="creating ? 'Creating…' : 'Backup Now'"
+          :label="creating ? t('bk.creating') : t('bk.backupNow')"
           @click="createBackup"
         />
       </BaseButtons>
@@ -281,7 +277,7 @@ onMounted(fetchBackups)
 
     <CardBox class="mb-4">
       <div class="flex flex-wrap items-end gap-4">
-        <FormField label="Keep last N backups" class="!mb-0">
+        <FormField :label="t('bk.keepLast')" class="!mb-0">
           <FormControl
             v-model.number="config.max_backups"
             type="number"
@@ -294,29 +290,26 @@ onMounted(fetchBackups)
           color="info"
           small
           :disabled="savingConfig"
-          :label="savingConfig ? 'Saving…' : 'Save Settings'"
+          :label="savingConfig ? t('bk.saving') : t('bk.saveSettings')"
           @click="saveConfig"
         />
         <p class="text-xs text-slate-500 flex-1 min-w-[200px]">
-          After every Create or Upload, the oldest backups beyond this limit are pruned automatically.
+          {{ t('bk.pruneHint') }}
         </p>
       </div>
     </CardBox>
 
     <CardBox>
-      <p class="text-sm text-slate-500 mb-3">
-        Snapshots of <code>~/.docker-environment/data/</code> stored at <code>~/redock_backup/</code>.
-        A backup is taken automatically before every binary update.
-      </p>
+      <p class="text-sm text-slate-500 mb-3" v-html="t('bk.snapshotsHint')"></p>
 
-      <div v-if="loading && backups.length === 0" class="text-center py-12 text-slate-500">Loading…</div>
+      <div v-if="loading && backups.length === 0" class="text-center py-12 text-slate-500">{{ t('bk.loading') }}</div>
 
       <div v-else-if="backups.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiArchive" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No backups yet</p>
+        <p class="text-slate-500 mb-4">{{ t('bk.noBackups') }}</p>
         <BaseButtons class="justify-center">
-          <BaseButton :icon="mdiContentSave" color="success" label="Create First Backup" :disabled="creating" @click="createBackup" />
-          <BaseButton :icon="mdiUpload" color="info" label="Upload Backup" :disabled="uploading" @click="triggerUpload" />
+          <BaseButton :icon="mdiContentSave" color="success" :label="t('bk.createFirstBackup')" :disabled="creating" @click="createBackup" />
+          <BaseButton :icon="mdiUpload" color="info" :label="t('bk.uploadBackup')" :disabled="uploading" @click="triggerUpload" />
         </BaseButtons>
       </div>
 
@@ -324,15 +317,15 @@ onMounted(fetchBackups)
         <table class="min-w-full text-sm">
           <thead>
             <tr class="text-left text-slate-500 border-b border-slate-200 dark:border-slate-700">
-              <th class="py-2 pr-4">ID</th>
-              <th class="py-2 pr-4">Created</th>
-              <th class="py-2 pr-4">Reason</th>
-              <th class="py-2 pr-4">Files</th>
-              <th class="py-2 pr-4">Skipped</th>
-              <th class="py-2 pr-4">Size (compressed)</th>
-              <th class="py-2 pr-4">Size (uncompressed)</th>
-              <th class="py-2 pr-4">Version</th>
-              <th class="py-2 pr-4 text-right">Actions</th>
+              <th class="py-2 pr-4">{{ t('bk.id') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.created') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.reason') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.files') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.skipped') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.sizeCompressed') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.sizeUncompressed') }}</th>
+              <th class="py-2 pr-4">{{ t('bk.version') }}</th>
+              <th class="py-2 pr-4 text-right">{{ t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -345,7 +338,7 @@ onMounted(fetchBackups)
               <td class="py-2 pr-4">{{ formatDate(b.created_at) }}</td>
               <td class="py-2 pr-4">
                 <span class="px-2 py-0.5 rounded text-xs" :class="reasonClass(b.trigger_reason)">
-                  {{ b.trigger_reason || 'unknown' }}
+                  {{ b.trigger_reason || t('bk.unknown') }}
                 </span>
               </td>
               <td class="py-2 pr-4">{{ b.file_count || '-' }}</td>
@@ -353,7 +346,7 @@ onMounted(fetchBackups)
                 <span
                   v-if="b.skipped_count"
                   class="px-2 py-0.5 rounded text-xs bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
-                  :title="'Files skipped due to permission or read errors. See server logs for paths.'"
+                  :title="t('bk.skippedTitle')"
                 >
                   {{ b.skipped_count }}
                 </span>

@@ -20,6 +20,9 @@ import {
   mdiRouter
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 // State
 const status = ref(null)
@@ -175,9 +178,9 @@ const confirmDelete = async () => {
 const copy = async (text) => {
   try {
     await navigator.clipboard.writeText(text)
-    copyToast.value = 'Copied to clipboard'
+    copyToast.value = t('common.copied')
   } catch {
-    copyToast.value = 'Copy failed'
+    copyToast.value = t('common.copyFailed')
   }
   setTimeout(() => (copyToast.value = ''), 1500)
 }
@@ -222,16 +225,16 @@ onUnmounted(stopInstallPoll)
         <div>
           <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
             <BaseIcon :path="mdiIncognito" size="40" class="mr-4" />
-            Onion Services
+            {{ t('os.title') }}
           </h1>
           <p class="text-indigo-100 text-lg">
-            Tor hidden services bound to your API Gateway routes
+            {{ t('os.subtitle') }}
           </p>
         </div>
         <div class="mt-6 lg:mt-0 flex space-x-3">
           <BaseButton :icon="mdiRefresh" color="white" outline :disabled="loading" @click="refreshAll" />
           <BaseButton
-            label="Add Onion"
+            :label="t('os.addOnion')"
             :icon="mdiPlus"
             color="white"
             :disabled="!torInstalled || noRoutes || systemServiceConflict"
@@ -246,22 +249,18 @@ onUnmounted(stopInstallPoll)
       <div class="flex items-start gap-4">
         <BaseIcon :path="mdiAlertCircleOutline" size="32" class="text-amber-500 flex-shrink-0" />
         <div class="flex-1">
-          <h3 class="font-semibold text-lg mb-2">Tor is not installed on this host</h3>
-          <p class="text-slate-600 dark:text-slate-300 mb-4">
-            Onion services need the <code class="px-1 bg-slate-100 dark:bg-slate-800 rounded">tor</code>
-            daemon. Redock detected that it is not available on <code>PATH</code>.
-            Install it and this page will refresh automatically — your data and configurations are preserved.
-          </p>
+          <h3 class="font-semibold text-lg mb-2">{{ t('os.torNotInstalled') }}</h3>
+          <p class="text-slate-600 dark:text-slate-300 mb-4" v-html="t('os.torNeedsDaemon')"></p>
           <div v-if="status.install_hint" class="bg-slate-900 text-slate-100 rounded-lg p-4 font-mono text-sm whitespace-pre overflow-x-auto">{{ status.install_hint.command }}</div>
           <div v-if="status.install_hint?.url" class="mt-3">
             <a
 :href="status.install_hint.url" target="_blank" rel="noopener"
                class="text-indigo-600 dark:text-indigo-400 hover:underline text-sm">
-              Documentation: {{ status.install_hint.url }}
+              {{ t('os.documentation') }} {{ status.install_hint.url }}
             </a>
           </div>
           <div class="mt-4 text-xs text-slate-500">
-            Detected OS: <code>{{ status.install_hint?.os || '?' }}</code> · Arch:
+            {{ t('os.detectedOs') }} <code>{{ status.install_hint?.os || '?' }}</code> · {{ t('os.arch') }}
             <code>{{ status.install_hint?.arch || '?' }}</code>
           </div>
         </div>
@@ -273,12 +272,8 @@ onUnmounted(stopInstallPoll)
       <div class="flex items-start gap-3">
         <BaseIcon :path="mdiAlertCircleOutline" size="24" class="text-red-500 flex-shrink-0" />
         <div class="flex-1">
-          <h3 class="font-semibold">Conflicting system Tor service detected</h3>
-          <p class="text-sm text-slate-600 dark:text-slate-300 mt-1 mb-3">
-            The OS-managed <code>tor</code> service is currently active. Redock
-            manages its own Tor instance — running both causes bootstrap failures.
-            Disable the system service:
-          </p>
+          <h3 class="font-semibold">{{ t('os.conflictTitle') }}</h3>
+          <p class="text-sm text-slate-600 dark:text-slate-300 mt-1 mb-3" v-html="t('os.conflictText')"></p>
           <div class="bg-slate-900 text-slate-100 rounded-lg p-3 font-mono text-sm">sudo systemctl disable --now tor</div>
         </div>
       </div>
@@ -289,9 +284,9 @@ onUnmounted(stopInstallPoll)
       <div class="flex items-start gap-3">
         <BaseIcon :path="mdiAlertCircleOutline" size="24" class="text-amber-500 flex-shrink-0" />
         <div>
-          <h3 class="font-semibold">No API Gateway routes available</h3>
+          <h3 class="font-semibold">{{ t('os.noRoutesTitle') }}</h3>
           <p class="text-sm text-slate-600 dark:text-slate-300 mt-1">
-            Create an API Gateway route first, then come back to expose it as an onion service.
+            {{ t('os.noRoutesText') }}
           </p>
         </div>
       </div>
@@ -303,39 +298,39 @@ onUnmounted(stopInstallPoll)
         <div class="flex items-center gap-3">
           <BaseIcon :path="mdiCheckCircleOutline" size="32" class="text-emerald-500" />
           <div>
-            <div class="font-semibold">Tor installed</div>
+            <div class="font-semibold">{{ t('os.torInstalled') }}</div>
             <div class="text-xs text-slate-500 truncate" :title="status.binary_path">{{ status.binary_path }}</div>
             <div class="text-xs text-slate-400">{{ status.version }}</div>
           </div>
         </div>
       </CardBox>
       <CardBox>
-        <div class="text-sm text-slate-500">Tor daemon</div>
+        <div class="text-sm text-slate-500">{{ t('os.torDaemon') }}</div>
         <div class="text-xl font-semibold mt-1">
-          <span v-if="torRunning" class="text-emerald-600">Running</span>
-          <span v-else class="text-slate-500">Idle (starts on first service)</span>
+          <span v-if="torRunning" class="text-emerald-600">{{ t('os.running') }}</span>
+          <span v-else class="text-slate-500">{{ t('os.idleStarts') }}</span>
         </div>
       </CardBox>
       <CardBox>
-        <div class="text-sm text-slate-500">Configured services</div>
+        <div class="text-sm text-slate-500">{{ t('os.configuredServices') }}</div>
         <div class="text-2xl font-bold mt-1">{{ status.onion_count }}</div>
       </CardBox>
     </div>
 
     <!-- List -->
     <CardBox v-if="torInstalled">
-      <SectionTitleLineWithButton :icon="mdiIncognito" title="Hidden services" main />
+      <SectionTitleLineWithButton :icon="mdiIncognito" :title="t('os.hiddenServices')" main />
 
       <div v-if="loading" class="text-center py-12">
         <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-        <p class="text-slate-500 mt-4">Loading...</p>
+        <p class="text-slate-500 mt-4">{{ t('common.loading') }}</p>
       </div>
 
       <div v-else-if="list.length === 0" class="text-center py-12">
         <BaseIcon :path="mdiIncognito" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-        <p class="text-slate-500 mb-4">No onion services yet.</p>
+        <p class="text-slate-500 mb-4">{{ t('os.noOnion') }}</p>
         <BaseButton
-          label="Create your first"
+          :label="t('os.createFirst')"
           :icon="mdiPlus"
           color="info"
           :disabled="noRoutes"
@@ -355,18 +350,18 @@ onUnmounted(stopInstallPoll)
               <span
                 v-if="item.enabled"
                 class="text-xs px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-400"
-              >enabled</span>
+              >{{ t('common.enabled') }}</span>
               <span
                 v-else
                 class="text-xs px-2 py-0.5 rounded-full bg-slate-200 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
-              >disabled</span>
+              >{{ t('common.disabled') }}</span>
             </div>
             <div class="flex items-center gap-2 text-sm font-mono break-all">
-              <span class="text-indigo-700 dark:text-indigo-400">{{ item.onion_address || '(not published yet)' }}</span>
+              <span class="text-indigo-700 dark:text-indigo-400">{{ item.onion_address || t('os.notPublished') }}</span>
               <button
                 v-if="item.onion_address"
                 class="text-slate-400 hover:text-indigo-500"
-                title="Copy"
+                :title="t('common.copy')"
                 @click="copy(item.onion_address)"
               >
                 <BaseIcon :path="mdiContentCopy" size="16" />
@@ -375,18 +370,18 @@ onUnmounted(stopInstallPoll)
             <div class="text-xs text-slate-500 mt-2 flex flex-wrap gap-x-4 gap-y-1">
               <span v-if="item.route_id">
                 <BaseIcon :path="mdiRouter" size="12" class="inline mr-1" />
-                Gateway route: <code>{{ routeLabel(item.route_id) }}</code>
+                {{ t('os.gatewayRoutePrefix') }} <code>{{ routeLabel(item.route_id) }}</code>
               </span>
               <span v-else>
-                Direct: <code>{{ item.target_host }}:{{ item.target_port }}</code>
+                {{ t('os.direct') }} <code>{{ item.target_host }}:{{ item.target_port }}</code>
               </span>
-              <span>Virtual port: <code>{{ item.virtual_port }}</code></span>
+              <span>{{ t('os.virtualPort') }} <code>{{ item.virtual_port }}</code></span>
             </div>
           </div>
 
           <div class="flex items-center gap-3">
             <!-- Enable/disable switch -->
-            <label class="inline-flex items-center cursor-pointer" :title="item.enabled ? 'Disable' : 'Enable'">
+            <label class="inline-flex items-center cursor-pointer" :title="item.enabled ? t('os.disable') : t('os.enable')">
               <input
                 type="checkbox"
                 class="sr-only peer"
@@ -397,8 +392,8 @@ onUnmounted(stopInstallPoll)
                 <div class="absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"></div>
               </div>
             </label>
-            <BaseButton :icon="mdiPencil" color="info" small title="Edit" @click="openEdit(item)" />
-            <BaseButton :icon="mdiDelete" color="danger" small title="Delete" @click="openDelete(item)" />
+            <BaseButton :icon="mdiPencil" color="info" small :title="t('common.edit')" @click="openEdit(item)" />
+            <BaseButton :icon="mdiDelete" color="danger" small :title="t('common.delete')" @click="openDelete(item)" />
           </div>
         </div>
       </div>
@@ -413,49 +408,47 @@ v-if="copyToast"
     <!-- Add modal -->
     <CardBoxModal
       v-model="isAddModalActive"
-      title="Add onion service"
-      button-label="Create"
+      :title="t('os.addOnionTitle')"
+      :button-label="t('common.create')"
       button="info"
       :button-disabled="submitting"
       has-cancel
       @confirm="submitCreate"
     >
-      <FormField label="Name">
+      <FormField :label="t('common.name')">
         <FormControl v-model="form.name" placeholder="my-app" />
       </FormField>
 
-      <FormField label="Gateway route">
+      <FormField :label="t('os.gatewayRoute')">
         <select v-model="form.route_id" class="w-full px-3 py-2 rounded border bg-white dark:bg-slate-900 dark:border-slate-700">
           <option v-for="r in routes" :key="r.id" :value="r.id">
             {{ r.name || r.id }} {{ r.hosts && r.hosts.length ? '— ' + r.hosts.join(', ') : '' }}
           </option>
         </select>
-        <p class="text-xs text-slate-500 mt-1">
-          The new .onion address will be appended to this route's <code>hosts</code> list.
-        </p>
+        <p class="text-xs text-slate-500 mt-1" v-html="t('os.routeAppendHint')"></p>
       </FormField>
 
       <div v-if="lastError" class="text-sm text-red-600 dark:text-red-400 mt-2">{{ lastError }}</div>
       <p class="text-xs text-slate-500 mt-2">
-        First service triggers Tor bootstrap (10–60 seconds). Subsequent ones publish quickly.
+        {{ t('os.bootstrapHint') }}
       </p>
     </CardBoxModal>
 
     <!-- Edit modal -->
     <CardBoxModal
       v-model="isEditModalActive"
-      title="Edit onion service"
-      button-label="Save"
+      :title="t('os.editOnionTitle')"
+      :button-label="t('common.save')"
       button="info"
       :button-disabled="submitting"
       has-cancel
       @confirm="submitEdit"
     >
-      <FormField label="Name">
+      <FormField :label="t('common.name')">
         <FormControl v-model="form.name" />
       </FormField>
 
-      <FormField label="Gateway route">
+      <FormField :label="t('os.gatewayRoute')">
         <select v-model="form.route_id" class="w-full px-3 py-2 rounded border bg-white dark:bg-slate-900 dark:border-slate-700">
           <option v-for="r in routes" :key="r.id" :value="r.id">
             {{ r.name || r.id }} {{ r.hosts && r.hosts.length ? '— ' + r.hosts.join(', ') : '' }}
@@ -463,36 +456,32 @@ v-if="copyToast"
         </select>
       </FormField>
 
-      <FormField label="Status">
+      <FormField :label="t('common.status')">
         <label class="inline-flex items-center cursor-pointer mt-1">
           <input v-model="form.enabled" type="checkbox" class="sr-only peer" />
           <div class="w-10 h-5 bg-slate-300 dark:bg-slate-600 rounded-full peer peer-checked:bg-emerald-500 transition-colors relative">
             <div class="absolute top-0.5 left-0.5 bg-white w-4 h-4 rounded-full transition-transform peer-checked:translate-x-5"></div>
           </div>
-          <span class="ml-3 text-sm">{{ form.enabled ? 'Enabled' : 'Disabled' }}</span>
+          <span class="ml-3 text-sm">{{ form.enabled ? t('common.enabled') : t('common.disabled') }}</span>
         </label>
       </FormField>
 
       <div v-if="lastError" class="text-sm text-red-600 dark:text-red-400 mt-2">{{ lastError }}</div>
       <p class="text-xs text-slate-500 mt-2">
-        The .onion address is preserved across edits (re-published with the same private key).
+        {{ t('os.editPreserveHint') }}
       </p>
     </CardBoxModal>
 
     <!-- Delete modal -->
     <CardBoxModal
       v-model="isDeleteModalActive"
-      title="Delete onion service"
-      button-label="Delete"
+      :title="t('os.deleteOnionTitle')"
+      :button-label="t('common.delete')"
       button="danger"
       has-cancel
       @confirm="confirmDelete"
     >
-      <p>
-        Permanently delete <strong>{{ selected?.name }}</strong>?
-        The .onion address <code>{{ selected?.onion_address }}</code> will be discarded
-        and cannot be recovered without the private key.
-      </p>
+      <p v-html="t('os.deleteConfirm', { name: selected?.name, addr: selected?.onion_address })"></p>
     </CardBoxModal>
   </div>
 </template>

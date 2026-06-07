@@ -30,6 +30,9 @@ import {
   mdiViewList
 } from '@mdi/js';
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 // Reactive state
 const list = ref([])
@@ -89,7 +92,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
 
-const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleLabel = computed(() => isGridLayout.value ? t('lp.listView') : t('lp.gridView'))
 const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
@@ -222,13 +225,13 @@ onMounted(() => {
           <div>
             <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
               <BaseIcon :path="mdiNetwork" size="40" class="mr-4" />
-              Local Proxy Manager
+              {{ t('lp.title') }}
             </h1>
-            <p class="text-blue-100 text-lg">Network traffic forwarding and proxy management</p>
+            <p class="text-blue-100 text-lg">{{ t('lp.subtitle') }}</p>
           </div>
           <div class="mt-6 lg:mt-0 flex space-x-3">
             <BaseButton
-              label="Start All"
+              :label="t('lp.startAll')"
               :icon="mdiPlay"
               color="white"
               outline
@@ -236,7 +239,7 @@ onMounted(() => {
               @click="startAllProxies"
             />
             <BaseButton
-              label="Add Proxy"
+              :label="t('lp.addProxy')"
               :icon="mdiPlus"
               color="white"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -252,7 +255,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ proxyStats.total }}</div>
-              <div class="text-sm text-blue-600/70 dark:text-blue-400/70">Total Proxies</div>
+              <div class="text-sm text-blue-600/70 dark:text-blue-400/70">{{ t('lp.totalProxies') }}</div>
             </div>
             <BaseIcon :path="mdiServer" size="48" class="text-blue-500 opacity-20" />
           </div>
@@ -262,7 +265,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ proxyStats.active }}</div>
-              <div class="text-sm text-green-600/70 dark:text-green-400/70">Active Proxies</div>
+              <div class="text-sm text-green-600/70 dark:text-green-400/70">{{ t('lp.activeProxies') }}</div>
             </div>
             <BaseIcon :path="mdiPlay" size="48" class="text-green-500 opacity-20" />
           </div>
@@ -272,7 +275,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-gray-600 dark:text-gray-400">{{ proxyStats.inactive }}</div>
-              <div class="text-sm text-gray-600/70 dark:text-gray-400/70">Inactive Proxies</div>
+              <div class="text-sm text-gray-600/70 dark:text-gray-400/70">{{ t('lp.inactiveProxies') }}</div>
             </div>
             <BaseIcon :path="mdiStop" size="48" class="text-gray-500 opacity-20" />
           </div>
@@ -281,13 +284,13 @@ onMounted(() => {
 
       <!-- Proxy List -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiConnection" title="Active Proxy Connections" main>
+        <SectionTitleLineWithButton :icon="mdiConnection" :title="t('lp.activeProxyConnections')" main>
           <div class="flex flex-col gap-3 md:flex-row md:items-center">
             <div class="w-full md:w-64">
               <FormControl
                 v-model="searchQuery"
                 :icon="mdiMagnify"
-                placeholder="Search proxies"
+                :placeholder="t('lp.searchProxies')"
               />
             </div>
             <BaseButton
@@ -311,17 +314,17 @@ onMounted(() => {
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-          <p class="text-slate-500 dark:text-slate-400 mt-4">Loading proxies...</p>
+          <p class="text-slate-500 dark:text-slate-400 mt-4">{{ t('lp.loadingProxies') }}</p>
         </div>
 
         <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiNetwork" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
           <p class="text-slate-500 dark:text-slate-400 mb-4">
-            {{ searchQuery ? 'No proxies match your search.' : 'No proxy configurations found.' }}
+            {{ searchQuery ? t('lp.noMatch') : t('lp.noProxies') }}
           </p>
           <BaseButton
             v-if="!searchQuery"
-            label="Create Your First Proxy"
+            :label="t('lp.createFirst')"
             :icon="mdiPlus"
             color="info"
             @click="isAddModalActive = true"
@@ -370,7 +373,7 @@ onMounted(() => {
                     getStatusColor(proxy.status)
                   ]"
                 >
-                  {{ proxy.status === 'active' ? 'Active' : 'Inactive' }}
+                  {{ proxy.status === 'active' ? t('lp.active') : t('lp.inactive') }}
                 </span>
               </div>
             </div>
@@ -380,7 +383,7 @@ onMounted(() => {
                 :icon="proxy.status === 'active' ? mdiStop : mdiPlay" 
                 :color="proxy.status === 'active' ? 'danger' : 'success'"
                 small
-                :title="proxy.status === 'active' ? 'Stop Proxy' : 'Start Proxy'"
+                :title="proxy.status === 'active' ? t('lp.stopProxy') : t('lp.startProxy')"
                 @click="toggleProxyStatus(proxy)"
               />
               
@@ -388,14 +391,14 @@ onMounted(() => {
                 :icon="mdiPencil" 
                 color="info"
                 small
-                title="Edit"
+                :title="t('common.edit')"
               />
               
               <BaseButton 
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                title="Delete"
+                :title="t('common.delete')"
                 @click="deleteModal(proxy)"
               />
             </div>
@@ -405,7 +408,7 @@ onMounted(() => {
         <!-- Pagination -->
         <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 px-6 pb-4">
           <div class="text-sm text-slate-500 dark:text-slate-400">
-            Showing {{ paginationInfo }}
+            {{ t('lp.showing') }} {{ paginationInfo }}
           </div>
           <div class="flex items-center gap-2">
             <BaseButton
@@ -440,14 +443,14 @@ onMounted(() => {
       <!-- Add Proxy Modal -->
       <CardBoxModal 
         v-model="isAddModalActive" 
-        title="Add New Proxy" 
+        :title="t('lp.addNewProxy')" 
         button="success" 
-        button-label="Create Proxy"
+        :button-label="t('lp.createProxy')"
         has-cancel
         @confirm="addSubmit"
       >
         <form class="space-y-6">
-          <FormField label="Proxy Name" help="A friendly name for this proxy">
+          <FormField :label="t('lp.proxyName')" :help="t('lp.proxyNameHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiServer" size="20" class="text-slate-400" />
@@ -461,7 +464,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Local Port" help="Port on local machine">
+          <FormField :label="t('lp.localPort')" :help="t('lp.localPortHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
@@ -476,7 +479,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Remote Host" help="Target hostname or IP address">
+          <FormField :label="t('lp.remoteHost')" :help="t('lp.remoteHostHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiEarth" size="20" class="text-slate-400" />
@@ -490,7 +493,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Remote Port" help="Port on remote host">
+          <FormField :label="t('lp.remotePort')" :help="t('lp.remotePortHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
@@ -505,7 +508,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Timeout (seconds)" help="Connection timeout in seconds">
+          <FormField :label="t('lp.timeout')" :help="t('lp.timeoutHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiTimer" size="20" class="text-slate-400" />
@@ -525,9 +528,9 @@ onMounted(() => {
       <!-- Delete Confirmation Modal -->
       <CardBoxModal 
         v-model="isDeleteModalActive" 
-        title="Delete Proxy" 
+        :title="t('lp.deleteProxy')" 
         button="danger" 
-        button-label="Delete Proxy"
+        :button-label="t('lp.deleteProxy')"
         has-cancel
         @confirm="deleteSubmit"
       >
@@ -540,15 +543,13 @@ onMounted(() => {
           </div>
           
           <p class="text-slate-600 dark:text-slate-400">
-            This will permanently delete the proxy configuration. This action cannot be undone.
+            {{ t('lp.deleteProxyText') }}
           </p>
           
           <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
             <div class="flex items-start">
               <BaseIcon :path="mdiDelete" size="20" class="text-yellow-600 dark:text-yellow-400 mt-0.5 mr-2 flex-shrink-0" />
-              <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>Warning:</strong> If this proxy is currently active, it will be stopped and removed.
-              </p>
+              <p class="text-sm text-yellow-800 dark:text-yellow-200" v-html="t('lp.warningActive')"></p>
             </div>
           </div>
         </div>

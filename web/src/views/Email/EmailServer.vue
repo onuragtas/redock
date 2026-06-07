@@ -46,8 +46,10 @@ import {
 } from '@mdi/js';
 import { computed, onMounted, ref, watch } from "vue";
 import { useToast } from 'vue-toastification';
+import { useI18n } from 'vue-i18n';
 
 const toast = useToast();
+const { t } = useI18n();
 
 // State
 const loading = ref(false);
@@ -317,7 +319,7 @@ const loadEmails = async (mailboxId, folder = 'INBOX') => {
     }
   } catch (error) {
     console.error('Failed to load emails:', error);
-    toast.error('Failed to load emails');
+    toast.error(t('em.failedToLoadEmails'));
   } finally {
     loading.value = false;
   }
@@ -386,13 +388,13 @@ const startServer = async () => {
   try {
     const response = await ApiService.post('/api/email/server/start');
     if (!response.data.error) {
-      toast.success('✅ Email server started');
+      toast.success(t('em.serverStarted'));
       await loadServerStatus();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   } finally {
     loading.value = false;
   }
@@ -403,13 +405,13 @@ const stopServer = async () => {
   try {
     const response = await ApiService.post('/api/email/server/stop');
     if (!response.data.error) {
-      toast.success('✅ Email server stopped');
+      toast.success(t('em.serverStopped'));
       await loadServerStatus();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   } finally {
     loading.value = false;
   }
@@ -417,7 +419,7 @@ const stopServer = async () => {
 
 const updateServerIP = async () => {
   if (!serverIPForm.value.ip_address) {
-    toast.error('❌ Please enter an IP address');
+    toast.error(t('em.enterIpAddress'));
     return;
   }
 
@@ -429,14 +431,14 @@ const updateServerIP = async () => {
     
     if (!response.data.error) {
       toast.success('✅ ' + response.data.msg);
-      toast.info('☁️ DNS records are being updated in Cloudflare...', { timeout: 5000 });
+      toast.info(t('em.dnsUpdatingCloudflare'), { timeout: 5000 });
       isEditingIP.value = false;
       await loadServerStatus();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   } finally {
     loading.value = false;
   }
@@ -446,8 +448,8 @@ const addDomain = async () => {
   try {
     const response = await ApiService.post('/api/email/domains', newDomain.value);
     if (!response.data.error) {
-      toast.success('✅ Domain added successfully');
-      toast.info('☁️ Checking Cloudflare for automatic DNS setup...', { timeout: 3000 });
+      toast.success(t('em.domainAdded'));
+      toast.info(t('em.checkingCloudflare'), { timeout: 3000 });
       await loadDomains();
       isAddDomainModalActive.value = false;
       newDomain.value = { domain: '', description: '' };
@@ -455,7 +457,7 @@ const addDomain = async () => {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
@@ -472,39 +474,39 @@ const editDomain = async () => {
   try {
     const response = await ApiService.put(`/api/email/domains/${selectedDomain.value.id}`, editDomainForm.value);
     if (!response.data.error) {
-      toast.success('✅ Domain updated successfully');
-      toast.info('☁️ DNS records queued for update...', { timeout: 3000 });
+      toast.success(t('em.domainUpdated'));
+      toast.info(t('em.dnsQueued'), { timeout: 3000 });
       await loadDomains();
       isEditDomainModalActive.value = false;
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
 const deleteDomain = async (domainId) => {
-  if (!confirm('Are you sure you want to delete this domain? All associated mailboxes must be deleted first.')) {
+  if (!confirm(t('em.confirmDeleteDomain'))) {
     return;
   }
   
   try {
     const response = await ApiService.delete(`/api/email/domains/${domainId}`);
     if (!response.data.error) {
-      toast.success('✅ Domain deleted successfully');
+      toast.success(t('em.domainDeleted'));
       await loadDomains();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
 const openAddMailboxModal = () => {
   if (domains.value.length === 0) {
-    toast.error('❌ Please add a domain first before creating mailboxes');
+    toast.error(t('em.addDomainFirst'));
     return;
   }
   isAddMailboxModalActive.value = true;
@@ -513,13 +515,13 @@ const openAddMailboxModal = () => {
 const addMailbox = async () => {
   try {
     if (!newMailbox.value.domain_id) {
-      toast.error('❌ Please select a domain');
+      toast.error(t('em.selectDomainErr'));
       return;
     }
     
     const response = await ApiService.post('/api/email/mailboxes', newMailbox.value);
     if (!response.data.error) {
-      toast.success('✅ Mailbox created successfully');
+      toast.success(t('em.mailboxCreated'));
       await loadMailboxes();
       isAddMailboxModalActive.value = false;
       newMailbox.value = { domain_id: '', username: '', password: '', name: '' };
@@ -527,7 +529,7 @@ const addMailbox = async () => {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
@@ -557,15 +559,15 @@ const editMailbox = async () => {
     
     const response = await ApiService.put(`/api/email/mailboxes/${selectedMailbox.value.id}`, payload);
     if (!response.data.error) {
-      toast.success('✅ Mailbox updated successfully');
-      toast.info('☁️ DNS records queued for update...', { timeout: 3000 });
+      toast.success(t('em.mailboxUpdated'));
+      toast.info(t('em.dnsQueued'), { timeout: 3000 });
       await loadMailboxes();
       isEditMailboxModalActive.value = false;
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
@@ -580,17 +582,17 @@ const openUpdatePasswordModal = (mailbox) => {
 
 const updateMailboxPassword = async () => {
   if (!updatePasswordForm.value.password) {
-    toast.error('❌ Password is required');
+    toast.error(t('em.passwordRequired'));
     return;
   }
 
   if (updatePasswordForm.value.password !== updatePasswordForm.value.confirmPassword) {
-    toast.error('❌ Passwords do not match');
+    toast.error(t('em.passwordsNoMatch'));
     return;
   }
 
   if (updatePasswordForm.value.password.length < 6) {
-    toast.error('❌ Password must be at least 6 characters');
+    toast.error(t('em.passwordMin'));
     return;
   }
 
@@ -601,47 +603,47 @@ const updateMailboxPassword = async () => {
     );
     
     if (!response.data.error) {
-      toast.success('✅ Password updated successfully! You can now send emails.');
+      toast.success(t('em.passwordUpdated'));
       isUpdatePasswordModalActive.value = false;
       updatePasswordForm.value = { password: '', confirmPassword: '' };
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
 const deleteMailbox = async (mailboxId) => {
-  if (!confirm('Are you sure you want to delete this mailbox? All emails will be permanently deleted.')) {
+  if (!confirm(t('em.confirmDeleteMailbox'))) {
     return;
   }
   
   try {
     const response = await ApiService.delete(`/api/email/mailboxes/${mailboxId}`);
     if (!response.data.error) {
-      toast.success('✅ Mailbox deleted successfully');
+      toast.success(t('em.mailboxDeleted'));
       await loadMailboxes();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Error: ' + error.message);
+    toast.error(t('em.errorPrefix') + error.message);
   }
 };
 
 const sendEmail = async () => {
   if (!selectedMailbox.value) {
-    toast.error('Please select a mailbox first');
+    toast.error(t('em.selectMailboxFirst'));
     return;
   }
   const toList = newEmail.value.to.split(/[,;]/).map(e => e.trim()).filter(Boolean);
   if (!toList.length) {
-    toast.error('Enter at least one recipient');
+    toast.error(t('em.enterRecipient'));
     return;
   }
   if (!(newEmail.value.subject || '').trim()) {
-    toast.error('Enter subject');
+    toast.error(t('em.enterSubject'));
     return;
   }
   try {
@@ -655,7 +657,7 @@ const sendEmail = async () => {
       emailData
     );
     if (!response.data.error) {
-      toast.success('✅ Email sent');
+      toast.success(t('em.emailSent'));
       isComposeModalActive.value = false;
       newEmail.value = { to: '', subject: '', body: '' };
       loadEmails(selectedMailbox.value, selectedFolder.value);
@@ -663,7 +665,7 @@ const sendEmail = async () => {
       toast.error('❌ ' + response.data.msg);
     }
   } catch (error) {
-    toast.error('❌ Failed to send: ' + (error.response?.data?.msg || error.message));
+    toast.error(t('em.failedToSend') + (error.response?.data?.msg || error.message));
   }
 };
 
@@ -682,7 +684,7 @@ const formatTime = (date) => {
   if (days === 0) {
     return d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
   } else if (days === 1) {
-    return 'Yesterday';
+    return t('em.yesterday');
   } else if (days < 7) {
     return d.toLocaleDateString('en-US', { weekday: 'short' });
   } else if (now.getFullYear() === d.getFullYear()) {
@@ -736,15 +738,15 @@ const openComposeNew = () => {
 
 const toggleStar = (email) => {
   email.flagged = !email.flagged;
-  toast.info(email.flagged ? '⭐ Starred' : 'Unstarred');
+  toast.info(email.flagged ? t('em.starred') : t('em.unstarred'));
 };
 
 const onArchive = () => {
-  toast.info('Archive feature coming soon.');
+  toast.info(t('em.archiveSoon'));
 };
 
 const onMoveToTrash = () => {
-  toast.info('Move to trash coming soon.');
+  toast.info(t('em.trashSoon'));
 };
 
 const formatFileSize = (bytes) => {
@@ -794,13 +796,13 @@ onMounted(() => {
 
 <template>
   <div>
-    <SectionTitleLineWithButton :icon="mdiEmail" title="Email Server" main>
+    <SectionTitleLineWithButton :icon="mdiEmail" :title="t('em.title')" main>
       <BaseButton
         v-if="!serverRunning"
         :icon="mdiPlay"
         color="success"
         :disabled="loading"
-        label="Start Server"
+        :label="t('em.startServer')"
         @click="startServer"
       />
       <BaseButton
@@ -808,7 +810,7 @@ onMounted(() => {
         :icon="mdiStop"
         color="danger"
         :disabled="loading"
-        label="Stop Server"
+        :label="t('em.stopServer')"
         @click="stopServer"
       />
     </SectionTitleLineWithButton>
@@ -818,10 +820,10 @@ onMounted(() => {
       <CardBox>
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Status</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.status') }}</p>
             <p class="text-2xl font-semibold mt-1">
               <span :class="serverRunning ? 'text-green-500' : 'text-red-500'">
-                {{ serverRunning ? '🟢 Running' : '🔴 Stopped' }}
+                {{ serverRunning ? t('em.running') : t('em.stopped') }}
               </span>
             </p>
           </div>
@@ -832,7 +834,7 @@ onMounted(() => {
       <CardBox>
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Domains</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.domains') }}</p>
             <p class="text-2xl font-semibold mt-1">{{ domains.length }}</p>
           </div>
           <BaseIcon :path="mdiDomain" :size="48" class="text-purple-500" />
@@ -842,7 +844,7 @@ onMounted(() => {
       <CardBox>
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Mailboxes</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.mailboxes') }}</p>
             <p class="text-2xl font-semibold mt-1">{{ mailboxes.length }}</p>
           </div>
           <BaseIcon :path="mdiAccount" :size="48" class="text-green-500" />
@@ -852,7 +854,7 @@ onMounted(() => {
       <CardBox>
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">Emails</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.emails') }}</p>
             <p class="text-2xl font-semibold mt-1">{{ totalEmailCount }}</p>
           </div>
           <BaseIcon :path="mdiEmailOpen" :size="48" class="text-orange-500" />
@@ -874,7 +876,7 @@ onMounted(() => {
           ]"
           @click="activeTab = tab"
         >
-          {{ tab.charAt(0).toUpperCase() + tab.slice(1) }}
+          {{ t('em.tab_' + tab) }}
         </button>
       </div>
     </div>
@@ -883,25 +885,25 @@ onMounted(() => {
     <div v-if="activeTab === 'overview'">
       <CardBox class="mb-6">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-semibold">Server Information</h3>
+          <h3 class="text-xl font-semibold">{{ t('em.serverInformation') }}</h3>
           <BaseButton :icon="mdiRefresh" color="info" small @click="loadServerStatus" />
         </div>
 
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">Container</p>
-            <p class="font-semibold">{{ serverStatus.container_name || 'N/A' }}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.container') }}</p>
+            <p class="font-semibold">{{ serverStatus.container_name || t('em.na') }}</p>
           </div>
           <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">Hostname</p>
-            <p class="font-semibold">{{ serverStatus.hostname || 'N/A' }}</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.hostname') }}</p>
+            <p class="font-semibold">{{ serverStatus.hostname || t('em.na') }}</p>
           </div>
           <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">SMTP Port</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.smtpPort') }}</p>
             <p class="font-semibold">{{ serverStatus.smtp_port }}</p>
           </div>
           <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">IMAP Port</p>
+            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.imapPort') }}</p>
             <p class="font-semibold">{{ serverStatus.imap_port }} / {{ serverStatus.imaps_port }}</p>
           </div>
         </div>
@@ -912,14 +914,14 @@ onMounted(() => {
         <div class="flex items-center justify-between mb-6">
           <div class="flex items-center gap-3">
             <BaseIcon :path="mdiCog" class="text-blue-600" w="w-6" h="h-6" />
-            <h3 class="text-xl font-semibold">Server Configuration</h3>
+            <h3 class="text-xl font-semibold">{{ t('em.serverConfiguration') }}</h3>
           </div>
           <BaseButton
             v-if="!isEditingIP"
             :icon="mdiPencil"
             color="info"
             small
-            label="Edit IP"
+            :label="t('em.editIp')"
             @click="isEditingIP = true"
           />
         </div>
@@ -929,17 +931,17 @@ onMounted(() => {
           <div v-if="!isEditingIP" class="p-4 bg-gray-50 dark:bg-gray-800 rounded-lg">
             <div class="flex items-center justify-between">
               <div>
-                <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">Public IP Address</p>
+                <p class="text-sm text-gray-500 dark:text-gray-400 mb-1">{{ t('em.publicIpAddress') }}</p>
                 <p class="text-lg font-mono font-semibold">
-                  {{ serverStatus.ip_address || '🔄 Auto-detecting...' }}
+                  {{ serverStatus.ip_address || t('em.autoDetecting') }}
                 </p>
                 <p v-if="serverStatus.ip_address" class="text-xs text-gray-500 mt-2">
-                  💡 This IP is used in SPF records for email authentication
+                  {{ t('em.ipSpfHint') }}
                 </p>
               </div>
               <div v-if="serverStatus.ip_address" class="text-right">
                 <span class="inline-flex items-center px-3 py-1 rounded-full bg-green-100 text-green-800 dark:bg-green-900/20 dark:text-green-400 text-sm font-medium">
-                  ✅ Configured
+                  {{ t('em.configured') }}
                 </span>
               </div>
             </div>
@@ -947,31 +949,29 @@ onMounted(() => {
 
           <!-- IP Edit Form -->
           <div v-else class="p-4 bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg">
-            <FormField label="Public IP Address" help="Your server's public IPv4 address for SPF/DNS records">
+            <FormField :label="t('em.publicIpAddress')" :help="t('em.publicIpHelp')">
               <FormControl
                 v-model="serverIPForm.ip_address"
                 type="text"
-                placeholder="e.g., 157.180.1.14"
+                :placeholder="t('em.ipPlaceholder')"
                 :icon="mdiCog"
               />
             </FormField>
             <div class="flex gap-2 mt-4">
               <BaseButton
                 color="success"
-                label="Save IP"
+                :label="t('em.saveIp')"
                 :disabled="!serverIPForm.ip_address"
                 @click="updateServerIP"
               />
               <BaseButton
                 color="danger"
                 outline
-                label="Cancel"
+                :label="t('common.cancel')"
                 @click="isEditingIP = false; serverIPForm.ip_address = serverStatus.ip_address"
               />
             </div>
-            <p class="text-xs text-blue-700 dark:text-blue-300 mt-3">
-              💡 <strong>Auto-Detection:</strong> System automatically detects your public IP on startup (via ifconfig.me). You can manually override it here if needed.
-            </p>
+            <p class="text-xs text-blue-700 dark:text-blue-300 mt-3" v-html="t('em.autoDetectionNote')"></p>
           </div>
         </div>
       </CardBox>
@@ -981,7 +981,7 @@ onMounted(() => {
         <div class="flex items-center justify-between mb-6">
           <div class="flex items-center gap-3">
             <BaseIcon :path="mdiCloud" class="text-blue-600" w="w-6" h="h-6" />
-            <h3 class="text-xl font-semibold">Cloudflare Integration</h3>
+            <h3 class="text-xl font-semibold">{{ t('em.cloudflareIntegration') }}</h3>
           </div>
         </div>
 
@@ -991,36 +991,36 @@ onMounted(() => {
               <BaseIcon :path="mdiInformationOutline" class="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-1" w="w-6" h="h-6" />
               <div class="flex-1">
                 <h4 class="font-semibold text-blue-900 dark:text-blue-100 mb-2">
-                  🚀 Automatic DNS Configuration
+                  {{ t('em.autoDnsConfig') }}
                 </h4>
                 <p class="text-sm text-blue-700 dark:text-blue-300 mb-3">
-                  When you add a new email domain, the system automatically creates DNS records in Cloudflare if the domain exists in your account.
+                  {{ t('em.autoDnsDesc') }}
                 </p>
                 <div class="space-y-2 text-sm text-blue-800 dark:text-blue-200">
                   <div class="flex items-center gap-2">
                     <span class="font-mono bg-blue-100 dark:bg-blue-800 px-2 py-0.5 rounded">SPF</span>
-                    <span>Sender Policy Framework record</span>
+                    <span>{{ t('em.spfDesc') }}</span>
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="font-mono bg-blue-100 dark:bg-blue-800 px-2 py-0.5 rounded">DKIM</span>
-                    <span>DomainKeys Identified Mail with RSA key</span>
+                    <span>{{ t('em.dkimDesc') }}</span>
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="font-mono bg-blue-100 dark:bg-blue-800 px-2 py-0.5 rounded">DMARC</span>
-                    <span>Domain-based Message Authentication</span>
+                    <span>{{ t('em.dmarcDesc') }}</span>
                   </div>
                   <div class="flex items-center gap-2">
                     <span class="font-mono bg-blue-100 dark:bg-blue-800 px-2 py-0.5 rounded">MX</span>
-                    <span>Mail Exchange record</span>
+                    <span>{{ t('em.mxDesc') }}</span>
                   </div>
                 </div>
                 <div class="mt-4 pt-4 border-t border-blue-200 dark:border-blue-700">
                   <p class="text-sm text-blue-700 dark:text-blue-300">
-                    💡 <strong>Setup:</strong> Add your Cloudflare API token in the 
+                    💡 <strong>{{ t('em.setupBold') }}</strong> {{ t('em.setupText1') }}
                     <router-link to="/cloudflare" class="underline hover:text-blue-900 dark:hover:text-blue-100">
-                      Cloudflare settings
+                      {{ t('em.cfSettingsLink') }}
                     </router-link>
-                    and sync your zones to enable this feature.
+                    {{ t('em.setupText2') }}
                   </p>
                 </div>
               </div>
@@ -1034,17 +1034,17 @@ onMounted(() => {
     <div v-if="activeTab === 'domains'">
       <CardBox class="mb-6">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-semibold">Email Domains</h3>
+          <h3 class="text-xl font-semibold">{{ t('em.emailDomains') }}</h3>
           <BaseButton
             :icon="mdiPlus"
             color="success"
-            label="Add Domain"
+            :label="t('em.addDomain')"
             @click="isAddDomainModalActive = true"
           />
         </div>
 
         <div v-if="domains.length === 0" class="text-center py-12 text-gray-500">
-          No domains yet. Add your first domain!
+          {{ t('em.noDomains') }}
         </div>
 
         <div v-else class="space-y-4">
@@ -1064,13 +1064,13 @@ onMounted(() => {
                   'px-3 py-1 rounded-full text-sm font-medium',
                   domain.enabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
                 ]">
-                  {{ domain.enabled ? '✅ Active' : '❌ Disabled' }}
+                  {{ domain.enabled ? t('em.active') : t('em.disabled') }}
                 </span>
                 <BaseButton
                   :icon="mdiPencil"
                   color="info"
                   small
-                  label="Edit"
+                  :label="t('common.edit')"
                   @click="openEditDomainModal(domain)"
                 />
                 <BaseButton
@@ -1090,11 +1090,11 @@ onMounted(() => {
     <div v-if="activeTab === 'mailboxes'">
       <CardBox class="mb-6">
         <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-semibold">Mailboxes</h3>
+          <h3 class="text-xl font-semibold">{{ t('em.mailboxes') }}</h3>
           <BaseButton
             :icon="mdiEmailPlus"
             color="success"
-            label="Create Mailbox"
+            :label="t('em.createMailbox')"
             :disabled="domains.length === 0"
             @click="openAddMailboxModal"
           />
@@ -1102,12 +1102,12 @@ onMounted(() => {
         
         <div v-if="domains.length === 0" class="mb-4 p-4 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
           <p class="text-yellow-800 dark:text-yellow-200">
-            ⚠️ Please add a domain first before creating mailboxes.
+            {{ t('em.addDomainFirstWarn') }}
           </p>
         </div>
 
         <div v-if="mailboxes.length === 0" class="text-center py-12 text-gray-500">
-          No mailboxes yet. Create your first mailbox!
+          {{ t('em.noMailboxes') }}
         </div>
 
         <div v-else class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -1148,8 +1148,8 @@ onMounted(() => {
               </div>
             </div>
             <div class="text-sm text-gray-600 dark:text-gray-400">
-              <p>Messages: {{ mailbox.message_count || 0 }}</p>
-              <p>Last Login: {{ formatDate(mailbox.last_login) || 'Never' }}</p>
+              <p>{{ t('em.messagesCount', { n: mailbox.message_count || 0 }) }}</p>
+              <p>{{ t('em.lastLogin', { value: formatDate(mailbox.last_login) || t('em.never') }) }}</p>
             </div>
           </div>
         </div>
@@ -1165,7 +1165,7 @@ onMounted(() => {
           class="px-4 py-2 max-w-xs focus:ring focus:outline-none border-gray-300 dark:border-gray-700 rounded-lg w-full border bg-white dark:bg-slate-800 font-medium"
           @change="loadFolders(selectedMailbox); loadEmails(selectedMailbox, selectedFolder)"
         >
-          <option value="" disabled>Select an email account</option>
+          <option value="" disabled>{{ t('em.selectEmailAccount') }}</option>
           <option v-for="mailbox in mailboxes" :key="mailbox.id" :value="mailbox.id">
             {{ mailbox.email }}
           </option>
@@ -1180,7 +1180,7 @@ onMounted(() => {
           <BaseButton
             :icon="mdiPencil"
             color="info"
-            label="New email"
+            :label="t('em.newEmail')"
             class="mb-6 w-full justify-center"
             @click="openComposeNew"
           />
@@ -1212,8 +1212,8 @@ onMounted(() => {
           <!-- List Header -->
           <div class="px-4 py-3 border-b border-gray-200 dark:border-gray-700 flex items-center justify-between">
             <div class="flex items-center gap-2">
-              <h3 class="font-semibold text-lg">{{ folders.find(f => f.value === selectedFolder)?.name || 'Inbox' }}</h3>
-              <span class="text-sm text-gray-500">({{ totalEmailCount }} e-posta)</span>
+              <h3 class="font-semibold text-lg">{{ folders.find(f => f.value === selectedFolder)?.name || t('em.inbox') }}</h3>
+              <span class="text-sm text-gray-500">{{ t('em.emailsCount', { n: totalEmailCount }) }}</span>
             </div>
             <BaseButton :icon="mdiRefresh" color="light" small @click="loadEmails(selectedMailbox, selectedFolder)" />
           </div>
@@ -1222,7 +1222,7 @@ onMounted(() => {
           <div v-if="loading" class="flex-1 flex items-center justify-center text-gray-500">
             <div class="text-center">
               <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-              <p>Loading emails...</p>
+              <p>{{ t('em.loadingEmails') }}</p>
             </div>
           </div>
 
@@ -1230,8 +1230,8 @@ onMounted(() => {
           <div v-else-if="threads.length === 0" class="flex-1 flex items-center justify-center text-gray-500">
             <div class="text-center">
               <BaseIcon :path="mdiEmailOpen" class="w-16 h-16 mx-auto mb-4 text-gray-300" />
-              <p class="text-lg font-medium mb-2">No emails in {{ selectedFolder }}</p>
-              <p class="text-sm">This folder is empty</p>
+              <p class="text-lg font-medium mb-2">{{ t('em.noEmailsIn', { folder: selectedFolder }) }}</p>
+              <p class="text-sm">{{ t('em.folderEmpty') }}</p>
             </div>
           </div>
 
@@ -1265,15 +1265,15 @@ onMounted(() => {
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between mb-1">
                       <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
-                        {{ email.from || 'Unknown' }}
+                        {{ email.from || t('em.unknown') }}
                       </p>
                       <span class="text-xs text-gray-500 ml-2 shrink-0">{{ formatTime(email.date) }}</span>
                     </div>
                     <p :class="['text-sm truncate mb-1', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
-                      {{ email.subject || '(No subject)' }}
+                      {{ email.subject || t('em.noSubject') }}
                     </p>
                     <p class="text-sm text-gray-500 dark:text-gray-500 truncate">
-                      {{ email.snippet || (email.body_plain || '').substring(0, 100) || 'No preview' }}
+                      {{ email.snippet || (email.body_plain || '').substring(0, 100) || t('em.noPreview') }}
                     </p>
                   </div>
                   <BaseIcon
@@ -1299,7 +1299,7 @@ onMounted(() => {
                   <button
                     type="button"
                     class="mt-1 shrink-0 p-0.5 rounded hover:bg-gray-200 dark:hover:bg-gray-600"
-                    :aria-label="expandedThreadIds.has(thread.thread_id) ? 'Collapse' : 'Expand'"
+                    :aria-label="expandedThreadIds.has(thread.thread_id) ? t('em.collapse') : t('em.expand')"
                     @click.stop="toggleThreadRow(thread.thread_id, $event)"
                   >
                     <BaseIcon
@@ -1312,16 +1312,16 @@ onMounted(() => {
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between mb-1">
                       <p class="truncate font-medium text-gray-700 dark:text-gray-300">
-                        {{ thread.messages[0]?.from || 'Unknown' }}
+                        {{ thread.messages[0]?.from || t('em.unknown') }}
                       </p>
                       <span class="text-xs text-gray-500 ml-2 shrink-0">{{ formatTime(thread.date) }}</span>
                     </div>
                     <p class="text-sm truncate mb-1 font-medium text-gray-600 dark:text-gray-400">
-                      {{ thread.subject || '(No subject)' }}
+                      {{ thread.subject || t('em.noSubject') }}
                       <span class="text-gray-500 dark:text-gray-500 font-normal">({{ thread.count }})</span>
                     </p>
                     <p class="text-sm text-gray-500 truncate">
-                      {{ (thread.messages[0]?.body_plain || '').substring(0, 80) || 'No preview' }}
+                      {{ (thread.messages[0]?.body_plain || '').substring(0, 80) || t('em.noPreview') }}
                     </p>
                   </div>
                 </div>
@@ -1351,7 +1351,7 @@ onMounted(() => {
                       <p :class="['text-sm truncate', !email.seen ? 'font-semibold text-gray-900 dark:text-white' : 'text-gray-600 dark:text-gray-400']">
                         {{ email.from }} · {{ formatTime(email.date) }}
                       </p>
-                      <p class="text-xs text-gray-500 truncate">{{ email.subject || '(No subject)' }}</p>
+                      <p class="text-xs text-gray-500 truncate">{{ email.subject || t('em.noSubject') }}</p>
                     </div>
                     <BaseIcon v-if="email.has_attachments" :path="mdiAttachment" class="text-gray-400 shrink-0" w="w-4" h="h-4" />
                   </div>
@@ -1377,23 +1377,23 @@ onMounted(() => {
             <!-- Thread Header -->
             <div class="px-6 py-4 border-b border-gray-200 dark:border-gray-700">
               <div class="flex items-start justify-between mb-2">
-                <h2 class="text-xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || '(No subject)' }}</h2>
+                <h2 class="text-xl font-semibold flex-1 pr-4">{{ selectedEmail.subject || t('em.noSubject') }}</h2>
                 <button class="text-gray-500 hover:text-gray-700 dark:hover:text-gray-300" @click="showEmailDetail = false">
                   <BaseIcon :path="mdiArrowLeft" w="w-6" h="h-6" />
                 </button>
               </div>
               <div class="flex items-center gap-2">
-                <BaseButton :icon="mdiReply" label="Reply" color="light" small @click="openReplyCompose(false)" />
-                <BaseButton :icon="mdiReplyAll" label="Reply all" color="light" small @click="openReplyCompose(true)" />
-                <BaseButton :icon="mdiArchive" label="Archive" color="light" small @click="onArchive" />
-                <BaseButton :icon="mdiTrashCan" label="Move to trash" color="danger" small @click="onMoveToTrash" />
+                <BaseButton :icon="mdiReply" :label="t('em.reply')" color="light" small @click="openReplyCompose(false)" />
+                <BaseButton :icon="mdiReplyAll" :label="t('em.replyAll')" color="light" small @click="openReplyCompose(true)" />
+                <BaseButton :icon="mdiArchive" :label="t('em.archive')" color="light" small @click="onArchive" />
+                <BaseButton :icon="mdiTrashCan" :label="t('em.moveToTrash')" color="danger" small @click="onMoveToTrash" />
               </div>
             </div>
 
             <!-- Konu zinciri (orijinal + cevaplar) + mail içindeki alıntı -->
             <div class="flex-1 overflow-y-auto px-6 py-4 space-y-6">
               <template v-if="threadLoading">
-                <p class="text-sm text-gray-500">Loading...</p>
+                <p class="text-sm text-gray-500">{{ t('common.loading') }}</p>
               </template>
               <template v-else-if="threadMessages.length === 0">
                 <!-- HTML gövde: tek kart -->
@@ -1430,7 +1430,7 @@ onMounted(() => {
                     </div>
                     <div class="email-body-content text-sm pt-3 border-t border-gray-200 dark:border-gray-600">
                       <div v-if="seg.content" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted" v-html="plainTextToHtml(seg.content)"></div>
-                      <p v-else class="text-gray-500 dark:text-gray-400">No content</p>
+                      <p v-else class="text-gray-500 dark:text-gray-400">{{ t('em.noContent') }}</p>
                     </div>
                   </CardBox>
                 </template>
@@ -1454,7 +1454,7 @@ onMounted(() => {
                     <div v-if="msg.body_html" class="prose prose-sm dark:prose-invert max-w-none email-quoted" v-html="msg.body_html"></div>
                     <template v-else>
                       <div v-if="msg.body_plain" class="prose prose-sm dark:prose-invert max-w-none email-body-plain email-quoted" v-html="plainTextToHtml(msg.body_plain)"></div>
-                      <p v-else class="text-gray-500 dark:text-gray-400">No content</p>
+                      <p v-else class="text-gray-500 dark:text-gray-400">{{ t('em.noContent') }}</p>
                     </template>
                   </div>
                 </CardBox>
@@ -1463,7 +1463,7 @@ onMounted(() => {
 
             <!-- Attachments -->
             <div v-if="selectedEmail.attachments && selectedEmail.attachments.length > 0" class="px-6 py-4 border-t border-gray-200 dark:border-gray-700">
-              <h4 class="font-semibold mb-3">Attachments ({{ selectedEmail.attachments.length }})</h4>
+              <h4 class="font-semibold mb-3">{{ t('em.attachmentsCount', { n: selectedEmail.attachments.length }) }}</h4>
               <div class="space-y-2">
                 <div
                   v-for="(attachment, idx) in selectedEmail.attachments"
@@ -1475,7 +1475,7 @@ onMounted(() => {
                     <p class="text-sm font-medium">{{ attachment.filename }}</p>
                     <p class="text-xs text-gray-500">{{ formatFileSize(attachment.size) }}</p>
                   </div>
-                  <BaseButton label="Download" color="light" small />
+                  <BaseButton :label="t('em.download')" color="light" small />
                 </div>
               </div>
             </div>
@@ -1487,8 +1487,8 @@ onMounted(() => {
       <div v-else class="h-full flex items-center justify-center bg-white dark:bg-slate-800 rounded-lg border border-gray-200 dark:border-gray-700">
         <div class="text-center text-gray-500">
           <BaseIcon :path="mdiEmail" class="w-20 h-20 mx-auto mb-4 text-gray-300" />
-          <p class="text-lg font-medium mb-2">Select email account</p>
-          <p class="text-sm">Select an account above to read emails</p>
+          <p class="text-lg font-medium mb-2">{{ t('em.selectEmailAccountTitle') }}</p>
+          <p class="text-sm">{{ t('em.selectAccountAbove') }}</p>
         </div>
       </div>
     </div>
@@ -1496,8 +1496,8 @@ onMounted(() => {
     <!-- Add Domain Modal -->
     <CardBoxModal
       v-model="isAddDomainModalActive"
-      title="Add Email Domain"
-      button-label="Add"
+      :title="t('em.addEmailDomain')"
+      :button-label="t('common.add')"
       has-cancel
       @confirm="addDomain"
     >
@@ -1507,50 +1507,50 @@ onMounted(() => {
           <BaseIcon :path="mdiCloud" class="text-blue-600 dark:text-blue-400 flex-shrink-0 mt-0.5" w="w-5" h="h-5" />
           <div class="flex-1">
             <h4 class="font-semibold text-blue-900 dark:text-blue-100 mb-1">
-              🚀 Cloudflare Auto DNS
+              {{ t('em.cfAutoDns') }}
             </h4>
             <p class="text-sm text-blue-700 dark:text-blue-300">
-              If this domain exists in your Cloudflare account, SPF, DKIM, and DMARC records will be automatically created for email authentication.
+              {{ t('em.cfAutoDnsDesc') }}
             </p>
           </div>
         </div>
       </div>
 
-      <FormField label="Domain">
+      <FormField :label="t('em.domain')">
         <FormControl v-model="newDomain.domain" placeholder="example.com" required />
       </FormField>
-      <FormField label="Description">
-        <FormControl v-model="newDomain.description" placeholder="Optional description" />
+      <FormField :label="t('em.description')">
+        <FormControl v-model="newDomain.description" :placeholder="t('em.optionalDescription')" />
       </FormField>
     </CardBoxModal>
 
     <!-- Add Mailbox Modal -->
     <CardBoxModal
       v-model="isAddMailboxModalActive"
-      title="Create Mailbox"
-      button-label="Create"
+      :title="t('em.createMailbox')"
+      :button-label="t('common.create')"
       has-cancel
       @confirm="addMailbox"
     >
-      <FormField label="Domain">
+      <FormField :label="t('em.domain')">
         <select
           v-model.number="newMailbox.domain_id"
           class="px-3 py-2 max-w-full focus:ring focus:outline-none border-gray-700 rounded w-full h-12 border bg-white dark:bg-slate-800"
           required
         >
-          <option value="" disabled selected>{{ domains.length === 0 ? 'No domains available - Add a domain first' : 'Select Domain' }}</option>
+          <option value="" disabled selected>{{ domains.length === 0 ? t('em.noDomainsAvailable') : t('em.selectDomain') }}</option>
           <option v-for="domain in domains" :key="domain.id" :value="domain.id">
             {{ domain.domain }}
           </option>
         </select>
       </FormField>
-      <FormField label="Username">
+      <FormField :label="t('em.username')">
         <FormControl v-model="newMailbox.username" placeholder="username" required />
       </FormField>
-      <FormField label="Password">
-        <FormControl v-model="newMailbox.password" type="password" placeholder="Password" required />
+      <FormField :label="t('em.password')">
+        <FormControl v-model="newMailbox.password" type="password" :placeholder="t('em.password')" required />
       </FormField>
-      <FormField label="Display Name">
+      <FormField :label="t('em.displayName')">
         <FormControl v-model="newMailbox.name" placeholder="John Doe" />
       </FormField>
     </CardBoxModal>
@@ -1558,23 +1558,23 @@ onMounted(() => {
     <!-- Compose Email Modal -->
     <CardBoxModal
       v-model="isComposeModalActive"
-      title="New email"
-      button-label="Send"
+      :title="t('em.newEmail')"
+      :button-label="t('em.send')"
       has-cancel
       @confirm="sendEmail"
     >
-      <FormField label="To">
-        <FormControl v-model="newEmail.to" placeholder="recipient@example.com (comma-separated for multiple)" />
-        <p class="text-xs text-gray-500 mt-1">Use comma or semicolon for multiple recipients</p>
+      <FormField :label="t('em.to')">
+        <FormControl v-model="newEmail.to" :placeholder="t('em.toPlaceholder')" />
+        <p class="text-xs text-gray-500 mt-1">{{ t('em.multipleRecipientsHint') }}</p>
       </FormField>
-      <FormField label="Subject">
-        <FormControl v-model="newEmail.subject" placeholder="Subject" />
+      <FormField :label="t('em.subject')">
+        <FormControl v-model="newEmail.subject" :placeholder="t('em.subject')" />
       </FormField>
-      <FormField label="Message">
+      <FormField :label="t('em.message')">
         <FormControl
           v-model="newEmail.body"
           type="textarea"
-          placeholder="Write your message..."
+          :placeholder="t('em.writeMessage')"
           :rows="8"
         />
       </FormField>
@@ -1583,81 +1583,77 @@ onMounted(() => {
     <!-- Update Password Modal -->
     <CardBoxModal
       v-model="isUpdatePasswordModalActive"
-      title="Update Mailbox Password"
-      button-label="Update Password"
+      :title="t('em.updateMailboxPassword')"
+      :button-label="t('em.updatePassword')"
       has-cancel
       @confirm="updateMailboxPassword"
     >
       <div v-if="selectedMailbox" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
         <p class="text-sm text-blue-800 dark:text-blue-200">
-          <strong>Mailbox:</strong> {{ selectedMailbox.email }}
+<strong>{{ t('em.mailboxLabel') }}</strong> {{ selectedMailbox.email }}
         </p>
         <p class="text-xs text-blue-600 dark:text-blue-400 mt-1">
-          💡 After updating the password, you'll be able to send emails from this mailbox.
+          {{ t('em.passwordUpdateHint') }}
         </p>
       </div>
       
-      <FormField label="New Password">
+      <FormField :label="t('em.newPassword')">
         <FormControl
           v-model="updatePasswordForm.password"
           type="password"
-          placeholder="Enter new password"
+          :placeholder="t('em.enterNewPassword')"
           autocomplete="new-password"
           required
         />
       </FormField>
       
-      <FormField label="Confirm Password">
+      <FormField :label="t('em.confirmPassword')">
         <FormControl
           v-model="updatePasswordForm.confirmPassword"
           type="password"
-          placeholder="Confirm new password"
+          :placeholder="t('em.confirmNewPassword')"
           autocomplete="new-password"
           required
         />
       </FormField>
       
       <div class="mt-4 p-3 bg-yellow-50 dark:bg-yellow-900/20 border border-yellow-200 dark:border-yellow-800 rounded-lg">
-        <p class="text-xs text-yellow-800 dark:text-yellow-200">
-          <strong>Why update password?</strong><br>
-          If you're seeing "password not found in cache" errors when sending emails, 
-          updating the password will fix it. This can happen after a server restart.
-        </p>
+        <p class="text-xs text-yellow-800 dark:text-yellow-200" v-html="t('em.whyUpdatePassword')"></p>
       </div>
     </CardBoxModal>
 
     <!-- Edit Domain Modal -->
     <CardBoxModal
       v-model="isEditDomainModalActive"
-      title="Edit Domain"
-      button-label="Save Changes"
+      :title="t('em.editDomain')"
+      :button-label="t('em.saveChanges')"
       has-cancel
       @confirm="editDomain"
     >
       <div v-if="selectedDomain" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
         <p class="text-sm text-blue-800 dark:text-blue-200">
-          <strong>Domain:</strong> {{ selectedDomain.domain }}
+<strong>{{ t('em.domainLabel') }}</strong> {{ selectedDomain.domain }}
         </p>
       </div>
 
-      <FormField label="Description">
-        <FormControl v-model="editDomainForm.description" placeholder="Domain description" />
+      <FormField :label="t('em.description')">
+        <FormControl v-model="editDomainForm.description" :placeholder="t('em.domainDescription')" />
       </FormField>
       
-      <FormField label="Status">
+      <FormField :label="t('common.status')">
         <label class="flex items-center space-x-3 cursor-pointer">
           <input
             v-model="editDomainForm.enabled"
             type="checkbox"
             class="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
           />
-          <span class="text-sm font-medium">Enable Domain</span>
+          <span class="text-sm font-medium">{{ t('em.enableDomain') }}</span>
         </label>
       </FormField>
 
       <div class="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
         <p class="text-xs text-green-800 dark:text-green-200">
-          ☁️ DNS records (SPF, DKIM, DMARC, MX) will be automatically updated in Cloudflare after saving.
+          {{ t('em.dnsAutoUpdateFull') }}
         </p>
       </div>
     </CardBoxModal>
@@ -1665,31 +1661,31 @@ onMounted(() => {
     <!-- Edit Mailbox Modal -->
     <CardBoxModal
       v-model="isEditMailboxModalActive"
-      title="Edit Mailbox Settings"
-      button-label="Save Changes"
+      :title="t('em.editMailboxSettings')"
+      :button-label="t('em.saveChanges')"
       has-cancel
       @confirm="editMailbox"
     >
       <div v-if="selectedMailbox" class="mb-4 p-3 bg-blue-50 dark:bg-blue-900/20 rounded-lg">
         <p class="text-sm text-blue-800 dark:text-blue-200">
-          <strong>Mailbox:</strong> {{ selectedMailbox.email }}
+<strong>{{ t('em.mailboxLabel') }}</strong> {{ selectedMailbox.email }}
         </p>
       </div>
 
-      <FormField label="Display Name">
+      <FormField :label="t('em.displayName')">
         <FormControl v-model="editMailboxForm.name" placeholder="John Doe" />
       </FormField>
       
-      <FormField label="Quota (bytes)">
+      <FormField :label="t('em.quotaBytes')">
         <FormControl
           v-model.number="editMailboxForm.quota"
           type="number"
           placeholder="10737418240"
         />
-        <p class="text-xs text-gray-500 mt-1">Default: 10GB = 10737418240 bytes</p>
+        <p class="text-xs text-gray-500 mt-1">{{ t('em.quotaHint') }}</p>
       </FormField>
       
-      <FormField label="Forward To (optional)">
+      <FormField :label="t('em.forwardTo')">
         <FormControl
           v-model="editMailboxForm.forward_to"
           type="email"
@@ -1697,30 +1693,30 @@ onMounted(() => {
         />
       </FormField>
       
-      <FormField label="Auto Reply Message (optional)">
+      <FormField :label="t('em.autoReplyMsg')">
         <FormControl
           v-model="editMailboxForm.auto_reply_msg"
           type="textarea"
-          placeholder="I'm out of office..."
+          :placeholder="t('em.outOfOffice')"
         />
       </FormField>
       
-      <FormField label="New Password (optional)">
+      <FormField :label="t('em.newPasswordOptional')">
         <FormControl
           v-model="editMailboxForm.password"
           type="password"
-          placeholder="Leave empty to keep current"
+          :placeholder="t('em.leaveEmptyKeep')"
         />
       </FormField>
       
-      <FormField label="Status">
+      <FormField :label="t('common.status')">
         <label class="flex items-center space-x-3 cursor-pointer mb-3">
           <input
             v-model="editMailboxForm.enabled"
             type="checkbox"
             class="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
           />
-          <span class="text-sm font-medium">Enable Mailbox</span>
+          <span class="text-sm font-medium">{{ t('em.enableMailbox') }}</span>
         </label>
         
         <label class="flex items-center space-x-3 cursor-pointer mb-3">
@@ -1729,7 +1725,7 @@ onMounted(() => {
             type="checkbox"
             class="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
           />
-          <span class="text-sm font-medium">Keep Copy When Forwarding</span>
+          <span class="text-sm font-medium">{{ t('em.keepCopyForwarding') }}</span>
         </label>
         
         <label class="flex items-center space-x-3 cursor-pointer">
@@ -1738,13 +1734,13 @@ onMounted(() => {
             type="checkbox"
             class="w-5 h-5 text-blue-600 rounded focus:ring-2 focus:ring-blue-500"
           />
-          <span class="text-sm font-medium">Enable Auto Reply</span>
+          <span class="text-sm font-medium">{{ t('em.enableAutoReply') }}</span>
         </label>
       </FormField>
 
       <div class="mt-4 p-3 bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg">
         <p class="text-xs text-green-800 dark:text-green-200">
-          ☁️ DNS records will be automatically updated in Cloudflare after saving.
+          {{ t('em.dnsAutoUpdate') }}
         </p>
       </div>
     </CardBoxModal>

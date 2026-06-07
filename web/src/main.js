@@ -4,6 +4,7 @@ import { createApp } from 'vue'
 import ApiService from "@/services/ApiService"
 import { useMainStore } from '@/stores/main.js'
 import App from './App.vue'
+import i18n from './i18n'
 import router from './router'
 
 import 'datatables.net-dt/css/dataTables.dataTables.css'
@@ -27,7 +28,7 @@ const pinia = createPinia()
 // Create Vue app
 const app = createApp(App)
 ApiService.init(app);
-app.use(router).use(pinia).mount('#app')
+app.use(router).use(pinia).use(i18n).mount('#app')
 app.use(Toast, {});
 
 // Init main store
@@ -54,9 +55,11 @@ darkModeStore.set(true)
 // Default title tag
 const defaultDocumentTitle = 'Redock'
 
-// Set document title from route meta
+// Set document title from route meta, translated via the nav.* namespace when a
+// matching key exists (falls back to the route's English meta.title).
 router.afterEach((to) => {
-  document.title = to.meta?.title
-    ? `${to.meta.title} — ${defaultDocumentTitle}`
-    : defaultDocumentTitle
+  const { t, te } = i18n.global
+  const navKey = to.name ? `nav.${String(to.name).replace(/-/g, '_')}` : ''
+  const title = navKey && te(navKey) ? t(navKey) : to.meta?.title
+  document.title = title ? `${title} — ${defaultDocumentTitle}` : defaultDocumentTitle
 })

@@ -31,7 +31,9 @@ import {
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const router = useRouter();
 
 // Reactive state
@@ -96,7 +98,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
 
-const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleLabel = computed(() => isGridLayout.value ? t('de.listView') : t('de.gridView'))
 const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
@@ -222,13 +224,13 @@ onMounted(() => {
           <div>
             <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
               <BaseIcon :path="mdiDocker" size="40" class="mr-4" />
-              Personal Development Containers
+              {{ t('de.title') }}
             </h1>
-            <p class="text-emerald-100 text-lg">Manage isolated development environments for your team</p>
+            <p class="text-emerald-100 text-lg">{{ t('de.subtitle') }}</p>
           </div>
           <div class="mt-6 lg:mt-0 flex flex-wrap gap-3">
             <BaseButton
-              label="Refresh"
+              :label="t('common.refresh')"
               :icon="mdiRefresh"
               color="white"
               outline
@@ -237,7 +239,7 @@ onMounted(() => {
               @click="getPersonalContainers"
             />
             <BaseButton
-              label="Add Container"
+              :label="t('de.addContainer')"
               :icon="mdiPlus"
               color="white"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -252,7 +254,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ containerStats.total }}</div>
-              <div class="text-sm text-emerald-600/70 dark:text-emerald-400/70">Total Containers</div>
+              <div class="text-sm text-emerald-600/70 dark:text-emerald-400/70">{{ t('de.totalContainers') }}</div>
             </div>
             <BaseIcon :path="mdiDocker" size="48" class="text-emerald-500 opacity-20" />
           </div>
@@ -262,7 +264,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-teal-600 dark:text-teal-400">{{ containerStats.withRedockPort }}</div>
-              <div class="text-sm text-teal-600/70 dark:text-teal-400/70">With Redock Port</div>
+              <div class="text-sm text-teal-600/70 dark:text-teal-400/70">{{ t('de.withRedockPort') }}</div>
             </div>
             <BaseIcon :path="mdiCloudOutline" size="48" class="text-teal-500 opacity-20" />
           </div>
@@ -271,13 +273,13 @@ onMounted(() => {
 
       <!-- Containers Table -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiServer" title="Personal Development Containers" main>
+        <SectionTitleLineWithButton :icon="mdiServer" :title="t('de.title')" main>
           <div class="flex flex-col gap-3 md:flex-row md:items-center">
             <div class="w-full md:w-64">
               <FormControl
                 v-model="searchQuery"
                 :icon="mdiMagnify"
-                placeholder="Search containers"
+                :placeholder="t('de.searchContainers')"
               />
             </div>
             <BaseButton
@@ -301,17 +303,17 @@ onMounted(() => {
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-emerald-600"></div>
-          <p class="text-slate-500 dark:text-slate-400 mt-4">Loading containers...</p>
+          <p class="text-slate-500 dark:text-slate-400 mt-4">{{ t('de.loadingContainers') }}</p>
         </div>
 
         <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiDeveloperBoard" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
           <p class="text-slate-500 dark:text-slate-400 mb-4">
-            {{ searchQuery ? 'No containers match your search.' : 'No development containers found.' }}
+            {{ searchQuery ? t('de.noMatch') : t('de.noContainers') }}
           </p>
           <BaseButton
             v-if="!searchQuery"
-            label="Create Your First Container"
+            :label="t('de.createFirst')"
             :icon="mdiPlus"
             color="success"
             @click="isAddModalActive = true"
@@ -355,7 +357,7 @@ onMounted(() => {
                       : 'text-yellow-600 bg-yellow-100 dark:text-yellow-400 dark:bg-yellow-900/30'
                   ]"
                 >
-                  {{ container.redockPort ? 'Ready' : 'SSH Only' }}
+                  {{ container.redockPort ? t('de.ready') : t('de.sshOnly') }}
                 </span>
               </div>
             </div>
@@ -365,7 +367,7 @@ onMounted(() => {
                 :icon="mdiConsole" 
                 color="info"
                 small
-                title="SSH Access"
+                :title="t('de.sshAccess')"
                 @click="openTerminal(container)"
               />
               
@@ -373,7 +375,7 @@ onMounted(() => {
                 :icon="mdiPencil" 
                 color="warning"
                 small
-                title="Edit"
+                :title="t('common.edit')"
                 @click="editModal(container)"
               />
               
@@ -381,7 +383,7 @@ onMounted(() => {
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                title="Delete"
+                :title="t('common.delete')"
                 @click="deleteModal(container)"
               />
             </div>
@@ -391,7 +393,7 @@ onMounted(() => {
         <!-- Pagination -->
         <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
           <div class="text-sm text-slate-700 dark:text-slate-300">
-            Showing {{ paginationInfo }}
+            {{ t('de.showing', { info: paginationInfo }) }}
           </div>
           <div class="flex items-center gap-2">
             <BaseButton
@@ -426,14 +428,14 @@ onMounted(() => {
       <!-- Add Container Modal -->
       <CardBoxModal 
         v-model="isAddModalActive" 
-        title="Add Development Container" 
+        :title="t('de.addModalTitle')" 
         button="success" 
-        button-label="Create Container"
+        :button-label="t('de.createContainer')"
         has-cancel
         @confirm="addSubmit"
       >
         <form class="space-y-6">
-          <FormField label="Username" help="Container username for SSH access">
+          <FormField :label="t('de.username')" :help="t('de.usernameHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiAccountBox" size="20" class="text-slate-400" />
@@ -447,7 +449,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Password" help="SSH password for the container">
+          <FormField :label="t('de.password')" :help="t('de.passwordHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiKey" size="20" class="text-slate-400" />
@@ -455,14 +457,14 @@ onMounted(() => {
               <FormControl
                 v-model="create.password"
                 type="password"
-                placeholder="Enter password"
+                :placeholder="t('de.enterPassword')"
                 required
                 class="pl-10 pr-12"
               />
               <button
                 type="button"
                 class="absolute inset-y-0 right-0 pr-3 flex items-center text-blue-600 hover:text-blue-800"
-                title="Generate Password"
+                :title="t('de.generatePassword')"
                 @click="generatePassword"
               >
                 <BaseIcon :path="mdiRefresh" size="20" />
@@ -470,7 +472,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="SSH Port" help="Port for SSH access">
+          <FormField :label="t('de.sshPort')" :help="t('de.sshPortHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
@@ -485,7 +487,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Redock Port (Optional)" help="Port for Redock web interface">
+          <FormField :label="t('de.redockPortOptional')" :help="t('de.redockPortHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiCloudOutline" size="20" class="text-slate-400" />
@@ -504,14 +506,14 @@ onMounted(() => {
       <!-- Edit Container Modal -->
       <CardBoxModal 
         v-model="isEditModalActive" 
-        title="Edit Development Container" 
+        :title="t('de.editModalTitle')" 
         button="success" 
-        button-label="Update Container"
+        :button-label="t('de.updateContainer')"
         has-cancel
         @confirm="editSubmit"
       >
         <form class="space-y-6">
-          <FormField label="Username">
+          <FormField :label="t('de.username')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiAccountBox" size="20" class="text-slate-400" />
@@ -520,7 +522,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Password">
+          <FormField :label="t('de.password')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiKey" size="20" class="text-slate-400" />
@@ -529,7 +531,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="SSH Port">
+          <FormField :label="t('de.sshPort')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
@@ -538,7 +540,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Redock Port">
+          <FormField :label="t('de.redockPort')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiCloudOutline" size="20" class="text-slate-400" />
@@ -552,28 +554,24 @@ onMounted(() => {
       <!-- Delete Confirmation Modal -->
       <CardBoxModal 
         v-model="isDeleteModalActive" 
-        title="Delete Container" 
+        :title="t('de.deleteModalTitle')" 
         button="danger" 
-        button-label="Delete Container"
+        :button-label="t('de.deleteContainer')"
         has-cancel
         @confirm="deleteSubmit"
       >
         <div v-if="selectedContainer" class="space-y-4">
           <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg">
             <h4 class="font-semibold text-red-800 dark:text-red-200">{{ selectedContainer.username }}</h4>
-            <p class="text-sm text-red-600 dark:text-red-300 mt-1">SSH Port: {{ selectedContainer.port }}</p>
+            <p class="text-sm text-red-600 dark:text-red-300 mt-1">{{ t('de.sshPortLabel', { port: selectedContainer.port }) }}</p>
           </div>
           
-          <p class="text-slate-600 dark:text-slate-400">
-            This will permanently delete the development container and all its data.
-          </p>
+          <p class="text-slate-600 dark:text-slate-400">{{ t('de.deleteWarn') }}</p>
           
           <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg">
             <div class="flex items-start">
               <BaseIcon :path="mdiDelete" size="20" class="text-yellow-600 dark:text-yellow-400 mt-0.5 mr-2 flex-shrink-0" />
-              <p class="text-sm text-yellow-800 dark:text-yellow-200">
-                <strong>Warning:</strong> This action cannot be undone. Make sure to backup any important data.
-              </p>
+              <p class="text-sm text-yellow-800 dark:text-yellow-200" v-html="t('de.deleteWarnBold')"></p>
             </div>
           </div>
         </div>

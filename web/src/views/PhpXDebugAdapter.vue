@@ -32,6 +32,9 @@ import {
   mdiWeb
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 // Reactive state
 const settings = ref({
@@ -92,7 +95,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
 
-const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleLabel = computed(() => isGridLayout.value ? t('px.listView') : t('px.gridView'))
 const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
@@ -130,7 +133,7 @@ const getList = async () => {
 }
 
 const deleteModal = async (data) => {
-  if (!confirm(`Are you sure you want to delete mapping "${data.name}"?`)) {
+  if (!confirm(t('px.confirmDelete', { name: data.name }))) {
     return
   }
   
@@ -214,13 +217,13 @@ onMounted(() => {
           <div>
             <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
               <BaseIcon :path="mdiFileCode" size="40" class="mr-4" />
-              PHP XDebug Adapter
+              {{ t('px.title') }}
             </h1>
-            <p class="text-purple-100 text-lg">Debug PHP applications with IDE integration</p>
+            <p class="text-purple-100 text-lg">{{ t('px.subtitle') }}</p>
           </div>
           <div class="mt-6 lg:mt-0 flex flex-wrap gap-3">
             <BaseButton
-              label="Configuration"
+              :label="t('px.configuration')"
               :icon="mdiCog"
               color="white"
               outline
@@ -228,7 +231,7 @@ onMounted(() => {
               @click="isConfigurationModalActive = true"
             />
             <BaseButton
-              label="Refresh"
+              :label="t('common.refresh')"
               :icon="mdiRefresh"
               color="white"
               outline
@@ -237,7 +240,7 @@ onMounted(() => {
               @click="getList"
             />
             <BaseButton
-              label="Add Mapping"
+              :label="t('px.addMapping')"
               :icon="mdiPlus"
               color="white"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -255,25 +258,25 @@ onMounted(() => {
             <div class="w-16 h-16 mx-auto mb-4 bg-gradient-to-br from-purple-500 to-pink-600 rounded-2xl flex items-center justify-center">
               <BaseIcon :path="mdiBug" size="32" class="text-white" />
             </div>
-            <h3 class="text-lg font-semibold mb-2">Debug Adapter</h3>
+            <h3 class="text-lg font-semibold mb-2">{{ t('px.debugAdapter') }}</h3>
             <span 
               :class="[
                 'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium mb-4',
                 getStatusColor()
               ]"
             >
-              {{ isRunning ? 'Running' : 'Stopped' }}
+              {{ isRunning ? t('common.running') : t('common.stopped') }}
             </span>
             <div class="flex space-x-2">
               <BaseButton
-                label="Start Adapter"
+                :label="t('px.startAdapter')"
                 :icon="mdiPlay"
                 color="success"
                 class="flex-1"
                 @click="start()"
               />
               <BaseButton
-                label="Stop Adapter"
+                :label="t('px.stopAdapter')"
                 :icon="mdiStop"
                 color="danger"
                 class="flex-1"
@@ -289,7 +292,7 @@ onMounted(() => {
             <div class="flex items-center justify-between">
               <div>
                 <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{{ debugStats.total }}</div>
-                <div class="text-sm text-purple-600/70 dark:text-purple-400/70">Debug Mappings</div>
+                <div class="text-sm text-purple-600/70 dark:text-purple-400/70">{{ t('px.debugMappings') }}</div>
               </div>
               <BaseIcon :path="mdiMap" size="48" class="text-purple-500 opacity-20" />
             </div>
@@ -299,7 +302,7 @@ onMounted(() => {
             <div class="flex items-center justify-between">
               <div>
                 <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ debugStats.configured }}</div>
-                <div class="text-sm text-blue-600/70 dark:text-blue-400/70">Configuration</div>
+                <div class="text-sm text-blue-600/70 dark:text-blue-400/70">{{ t('px.configuration') }}</div>
               </div>
               <BaseIcon :path="mdiCog" size="48" class="text-blue-500 opacity-20" />
             </div>
@@ -309,13 +312,13 @@ onMounted(() => {
 
       <!-- Debug Mappings -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiMap" title="Debug Path Mappings" main>
+        <SectionTitleLineWithButton :icon="mdiMap" :title="t('px.debugPathMappings')" main>
           <div class="flex flex-col gap-3 md:flex-row md:items-center">
             <div class="w-full md:w-64">
               <FormControl
                 v-model="searchQuery"
                 :icon="mdiMagnify"
-                placeholder="Search mappings"
+                :placeholder="t('px.searchMappings')"
               />
             </div>
             <BaseButton
@@ -331,17 +334,17 @@ onMounted(() => {
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"></div>
-          <p class="text-slate-500 dark:text-slate-400 mt-4">Loading debug mappings...</p>
+          <p class="text-slate-500 dark:text-slate-400 mt-4">{{ t('px.loadingMappings') }}</p>
         </div>
 
         <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiFileCode" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
           <p class="text-slate-500 dark:text-slate-400 mb-4">
-            {{ searchQuery ? 'No mappings match your search.' : 'No debug mappings configured.' }}
+            {{ searchQuery ? t('px.noMatch') : t('px.noMappings') }}
           </p>
           <BaseButton
             v-if="!searchQuery"
-            label="Create Your First Mapping"
+            :label="t('px.createFirst')"
             :icon="mdiPlus"
             color="info"
             @click="isAddModalActive = true"
@@ -381,7 +384,7 @@ onMounted(() => {
                 :icon="mdiDelete" 
                 color="danger"
                 size="small"
-                title="Delete Mapping"
+                :title="t('px.deleteMappingTitle')"
                 @click="deleteModal(mapping)"
               />
             </div>
@@ -391,7 +394,7 @@ onMounted(() => {
         <!-- Pagination -->
         <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 px-6 pb-4">
           <div class="text-sm text-slate-500 dark:text-slate-400">
-            Showing {{ paginationInfo }}
+            {{ t('px.showing', { info: paginationInfo }) }}
           </div>
           <div class="flex items-center gap-2">
             <BaseButton
@@ -426,9 +429,9 @@ onMounted(() => {
       <!-- Add Mapping Modal -->
       <CardBoxModal 
         v-model="isAddModalActive" 
-        title="Add Debug Mapping" 
+        :title="t('px.addModalTitle')" 
         button="success" 
-        button-label="Add Mapping"
+        :button-label="t('px.addMapping')"
         has-cancel
         @confirm="addSubmit"
       >
@@ -436,14 +439,12 @@ onMounted(() => {
           <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
             <h4 class="font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center">
               <BaseIcon :path="mdiBug" size="20" class="mr-2" />
-              Debug Path Mapping
+              {{ t('px.debugPathMapping') }}
             </h4>
-            <p class="text-sm text-blue-600 dark:text-blue-300">
-              Map local project paths to debug URLs for IDE integration.
-            </p>
+            <p class="text-sm text-blue-600 dark:text-blue-300">{{ t('px.debugPathMappingDesc') }}</p>
           </div>
 
-          <FormField label="Project Name" help="A friendly name for this project">
+          <FormField :label="t('px.projectName')" :help="t('px.projectNameHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiFileCode" size="20" class="text-slate-400" />
@@ -457,7 +458,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Project Path" help="Local filesystem path to the project">
+          <FormField :label="t('px.projectPath')" :help="t('px.projectPathHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiFolder" size="20" class="text-slate-400" />
@@ -471,7 +472,7 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField label="Debug URL" help="URL where the debug server is accessible">
+          <FormField :label="t('px.debugUrl')" :help="t('px.debugUrlHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiWeb" size="20" class="text-slate-400" />
@@ -490,13 +491,13 @@ onMounted(() => {
           <div class="flex justify-end space-x-3">
             <BaseButton
               :icon="mdiClose"
-              label="Cancel"
+              :label="t('common.cancel')"
               color="lightDark"
               @click="isAddModalActive = false"
             />
             <BaseButton
               :icon="mdiCheck"
-              label="Save Mapping"
+              :label="t('px.saveMapping')"
               color="success"
               @click="addSubmit"
             />
@@ -507,9 +508,9 @@ onMounted(() => {
       <!-- Configuration Modal -->
       <CardBoxModal 
         v-model="isConfigurationModalActive" 
-        title="XDebug Adapter Configuration" 
+        :title="t('px.configModalTitle')" 
         button="success" 
-        button-label="Save Configuration"
+        :button-label="t('px.saveConfiguration')"
         has-cancel
         @confirm="saveConfiguration"
       >
@@ -517,14 +518,12 @@ onMounted(() => {
           <div class="bg-yellow-50 dark:bg-yellow-900/20 p-4 rounded-lg mb-6">
             <h4 class="font-semibold text-yellow-800 dark:text-yellow-200 mb-2 flex items-center">
               <BaseIcon :path="mdiCog" size="20" class="mr-2" />
-              Debug Adapter Settings
+              {{ t('px.debugAdapterSettings') }}
             </h4>
-            <p class="text-sm text-yellow-600 dark:text-yellow-300">
-              Configure the XDebug adapter listen address and port.
-            </p>
+            <p class="text-sm text-yellow-600 dark:text-yellow-300">{{ t('px.debugAdapterSettingsDesc') }}</p>
           </div>
 
-          <FormField label="Listen Address" help="IP address and port for XDebug connections">
+          <FormField :label="t('px.listenAddress')" :help="t('px.listenAddressHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiNetwork" size="20" class="text-slate-400" />
@@ -539,11 +538,11 @@ onMounted(() => {
           </FormField>
 
           <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-            <h5 class="font-medium text-gray-800 dark:text-gray-200 mb-2">Common Settings:</h5>
+            <h5 class="font-medium text-gray-800 dark:text-gray-200 mb-2">{{ t('px.commonSettings') }}</h5>
             <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400 font-mono">
-              <div>• 0.0.0.0:9003 (XDebug 3.x default)</div>
-              <div>• 0.0.0.0:9000 (XDebug 2.x default)</div>
-              <div>• 127.0.0.1:9003 (Local only)</div>
+              <div>• {{ t('px.csDefault3') }}</div>
+              <div>• {{ t('px.csDefault2') }}</div>
+              <div>• {{ t('px.csLocal') }}</div>
             </div>
           </div>
         </form>
@@ -552,13 +551,13 @@ onMounted(() => {
           <div class="flex justify-end space-x-3">
             <BaseButton
               :icon="mdiClose"
-              label="Cancel"
+              :label="t('common.cancel')"
               color="lightDark"
               @click="isConfigurationModalActive = false"
             />
             <BaseButton
               :icon="mdiCheck"
-              label="Save Configuration"
+              :label="t('px.saveConfiguration')"
               color="success"
               @click="saveConfiguration"
             />

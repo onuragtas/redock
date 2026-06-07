@@ -27,6 +27,9 @@ import {
   mdiViewList
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 // Reactive state
 const savedCommands = ref([])
@@ -77,7 +80,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: 2 })
 
-const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleLabel = computed(() => isGridLayout.value ? t('sc.listView') : t('sc.gridView'))
 const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
@@ -148,13 +151,13 @@ onMounted(() => {
           <div>
             <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
               <BaseIcon :path="mdiConsole" size="40" class="mr-4" />
-              Saved Commands
+              {{ t('sc.title') }}
             </h1>
-            <p class="text-indigo-100 text-lg">Quick access to frequently used terminal commands</p>
+            <p class="text-indigo-100 text-lg">{{ t('sc.subtitle') }}</p>
           </div>
           <div class="mt-6 lg:mt-0 flex space-x-3">
             <BaseButton
-              label="Refresh"
+              :label="t('common.refresh')"
               :icon="mdiRefresh"
               color="white"
               outline
@@ -163,7 +166,7 @@ onMounted(() => {
               @click="getAllSavedCommands"
             />
             <BaseButton
-              label="Add Command"
+              :label="t('sc.addCommand')"
               :icon="mdiPlus"
               color="white"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -179,7 +182,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-indigo-600 dark:text-indigo-400">{{ commandStats.total }}</div>
-              <div class="text-sm text-indigo-600/70 dark:text-indigo-400/70">Total Commands</div>
+              <div class="text-sm text-indigo-600/70 dark:text-indigo-400/70">{{ t('sc.totalCommands') }}</div>
             </div>
             <BaseIcon :path="mdiBookmark" size="48" class="text-indigo-500 opacity-20" />
           </div>
@@ -189,7 +192,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ commandStats.shell }}</div>
-              <div class="text-sm text-blue-600/70 dark:text-blue-400/70">Shell Commands</div>
+              <div class="text-sm text-blue-600/70 dark:text-blue-400/70">{{ t('sc.shellCommands') }}</div>
             </div>
             <BaseIcon :path="mdiConsole" size="48" class="text-blue-500 opacity-20" />
           </div>
@@ -199,7 +202,7 @@ onMounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ commandStats.docker }}</div>
-              <div class="text-sm text-green-600/70 dark:text-green-400/70">Docker Commands</div>
+              <div class="text-sm text-green-600/70 dark:text-green-400/70">{{ t('sc.dockerCommands') }}</div>
             </div>
             <BaseIcon :path="mdiConsole" size="48" class="text-green-500 opacity-20" />
           </div>
@@ -208,13 +211,13 @@ onMounted(() => {
 
       <!-- Commands List -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiHistory" title="Command Library" main>
+        <SectionTitleLineWithButton :icon="mdiHistory" :title="t('sc.commandLibrary')" main>
           <div class="flex flex-col gap-3 md:flex-row md:items-center">
             <div class="w-full md:w-64">
               <FormControl
                 v-model="searchQuery"
                 :icon="mdiMagnify"
-                placeholder="Search commands"
+                :placeholder="t('sc.searchCommands')"
               />
             </div>
             <BaseButton
@@ -230,17 +233,17 @@ onMounted(() => {
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
-          <p class="text-slate-500 dark:text-slate-400 mt-4">Loading commands...</p>
+          <p class="text-slate-500 dark:text-slate-400 mt-4">{{ t('sc.loadingCommands') }}</p>
         </div>
 
         <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiConsole" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
           <p class="text-slate-500 dark:text-slate-400 mb-4">
-            {{ searchQuery ? 'No commands match your search.' : 'No saved commands found.' }}
+            {{ searchQuery ? t('sc.noMatch') : t('sc.noCommands') }}
           </p>
           <BaseButton
             v-if="!searchQuery"
-            label="Save Your First Command"
+            :label="t('sc.saveFirst')"
             :icon="mdiPlus"
             color="info"
             @click="isAddModalActive = true"
@@ -263,7 +266,7 @@ onMounted(() => {
               <div class="flex-1 space-y-3 min-w-0">
                 <div class="text-sm font-semibold text-slate-700 dark:text-slate-200 flex items-center gap-2">
                   <BaseIcon :path="mdiConsole" size="18" class="text-indigo-500" />
-                  Command {{ index + 1 }}
+                  {{ t('sc.commandN', { n: index + 1 }) }}
                 </div>
                 <div class="text-sm text-slate-500 dark:text-slate-400 font-mono bg-slate-100 dark:bg-slate-700 px-3 py-2 rounded-md break-words">
                   {{ command.command }}
@@ -276,7 +279,7 @@ onMounted(() => {
                 :icon="mdiDelete" 
                 color="danger"
                 size="small"
-                title="Delete Command"
+                :title="t('sc.deleteCommandTitle')"
                 @click="deleteSavedCommand(command)"
               />
             </div>
@@ -286,7 +289,7 @@ onMounted(() => {
         <!-- Pagination -->
         <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
           <div class="text-sm text-slate-700 dark:text-slate-300">
-            Showing {{ paginationInfo }}
+            {{ t('sc.showing', { info: paginationInfo }) }}
           </div>
           
           <div class="flex items-center gap-2">
@@ -324,9 +327,9 @@ onMounted(() => {
       <!-- Add Command Modal -->
       <CardBoxModal 
         v-model="isAddModalActive" 
-        title="Save New Command" 
+        :title="t('sc.saveModalTitle')" 
         button="success" 
-        button-label="Save Command"
+        :button-label="t('sc.saveCommand')"
         has-cancel
         @confirm="addSubmit"
       >
@@ -334,14 +337,12 @@ onMounted(() => {
           <div class="bg-blue-50 dark:bg-blue-900/20 p-4 rounded-lg mb-6">
             <h4 class="font-semibold text-blue-800 dark:text-blue-200 mb-2 flex items-center">
               <BaseIcon :path="mdiBookmark" size="20" class="mr-2" />
-              Quick Command Access
+              {{ t('sc.quickAccess') }}
             </h4>
-            <p class="text-sm text-blue-600 dark:text-blue-300">
-              Save frequently used commands for quick access and execution.
-            </p>
+            <p class="text-sm text-blue-600 dark:text-blue-300">{{ t('sc.quickAccessDesc') }}</p>
           </div>
 
-          <FormField label="Command" help="Enter the terminal command to save">
+          <FormField :label="t('sc.command')" :help="t('sc.commandHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiConsole" size="20" class="text-slate-400" />
@@ -356,7 +357,7 @@ onMounted(() => {
           </FormField>
 
           <div class="bg-gray-50 dark:bg-gray-800 p-4 rounded-lg">
-            <h5 class="font-medium text-gray-800 dark:text-gray-200 mb-2">Examples:</h5>
+            <h5 class="font-medium text-gray-800 dark:text-gray-200 mb-2">{{ t('sc.examples') }}</h5>
             <div class="space-y-2 text-sm text-gray-600 dark:text-gray-400 font-mono">
               <div>• docker-compose up -d</div>
               <div>• npm install && npm run build</div>
@@ -370,13 +371,13 @@ onMounted(() => {
           <div class="flex justify-end space-x-3">
             <BaseButton
               :icon="mdiClose"
-              label="Cancel"
+              :label="t('common.cancel')"
               color="lightDark"
               @click="isAddModalActive = false"
             />
             <BaseButton
               :icon="mdiCheck"
-              label="Save Command"
+              :label="t('sc.saveCommand')"
               color="success"
               @click="addSubmit"
             />
@@ -387,18 +388,16 @@ onMounted(() => {
       <!-- Delete Confirmation Modal -->
       <CardBoxModal 
         v-model="isDeleteModalActive" 
-        title="Delete Saved Command" 
+        :title="t('sc.deleteModalTitle')" 
         button="danger"
-        button-label="Delete Command"
+        :button-label="t('sc.deleteCommand')"
         has-cancel
         @confirm="deleteSubmit"
       >
         <div class="text-center">
           <BaseIcon :path="mdiAlert" size="48" class="mx-auto text-red-500 mb-4" />
-          <h3 class="text-lg font-semibold mb-2">Delete this command?</h3>
-          <p class="text-slate-600 dark:text-slate-400 mb-6">
-            This action cannot be undone. The following command will be removed:
-          </p>
+          <h3 class="text-lg font-semibold mb-2">{{ t('sc.deleteConfirm') }}</h3>
+          <p class="text-slate-600 dark:text-slate-400 mb-6">{{ t('sc.deleteWarn') }}</p>
           <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
             <code class="text-red-600 dark:text-red-400 break-all font-mono">{{ modalCommand.command }}</code>
           </div>
@@ -408,13 +407,13 @@ onMounted(() => {
           <div class="flex justify-end space-x-3">
             <BaseButton
               :icon="mdiClose"
-              label="Cancel"
+              :label="t('common.cancel')"
               color="lightDark"
               @click="isDeleteModalActive = false"
             />
             <BaseButton
               :icon="mdiDelete"
-              label="Delete Command"
+              :label="t('sc.deleteCommand')"
               color="danger"
               @click="deleteSubmit"
             />

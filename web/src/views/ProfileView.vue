@@ -1,5 +1,6 @@
 <script setup>
 import { reactive } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useMainStore } from '@/stores/main'
 import { mdiAccount, mdiMail, mdiAsterisk, mdiFormTextboxPassword, mdiGithub } from '@mdi/js'
 import SectionMain from '@/components/SectionMain.vue'
@@ -14,6 +15,7 @@ import UserCard from '@/components/UserCard.vue'
 import LayoutAuthenticated from '@/layouts/LayoutAuthenticated.vue'
 import SectionTitleLineWithButton from '@/components/SectionTitleLineWithButton.vue'
 
+const { t } = useI18n()
 const mainStore = useMainStore()
 
 const profileForm = reactive({
@@ -39,12 +41,12 @@ const submitPass = () => {
 <template>
   <LayoutAuthenticated>
     <SectionMain>
-      <SectionTitleLineWithButton :icon="mdiAccount" title="Profile" main>
+      <SectionTitleLineWithButton :icon="mdiAccount" :title="t('prof.title')" main>
         <BaseButton
           href="https://github.com/justboil/admin-one-vue-tailwind"
           target="_blank"
           :icon="mdiGithub"
-          label="Star on GitHub"
+          :label="t('prof.starGithub')"
           color="contrast"
           rounded-full
           small
@@ -55,11 +57,11 @@ const submitPass = () => {
 
       <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <CardBox is-form @submit.prevent="submitProfile">
-          <FormField label="Avatar" help="Max 500kb">
-            <FormFilePicker label="Upload" />
+          <FormField :label="t('prof.avatar')" :help="t('prof.avatarHelp')">
+            <FormFilePicker :label="t('prof.upload')" />
           </FormField>
 
-          <FormField label="Name" help="Required. Your name">
+          <FormField :label="t('prof.name')" :help="t('prof.nameHelp')">
             <FormControl
               v-model="profileForm.name"
               :icon="mdiAccount"
@@ -68,7 +70,7 @@ const submitPass = () => {
               autocomplete="username"
             />
           </FormField>
-          <FormField label="E-mail" help="Required. Your e-mail">
+          <FormField :label="t('prof.email')" :help="t('prof.emailHelp')">
             <FormControl
               v-model="profileForm.email"
               :icon="mdiMail"
@@ -81,14 +83,14 @@ const submitPass = () => {
 
           <template #footer>
             <BaseButtons>
-              <BaseButton color="info" type="submit" label="Submit" />
-              <BaseButton color="info" label="Options" outline />
+              <BaseButton color="info" type="submit" :label="t('prof.submit')" />
+              <BaseButton color="info" :label="t('prof.options')" outline />
             </BaseButtons>
           </template>
         </CardBox>
 
         <CardBox is-form @submit.prevent="submitPass">
-          <FormField label="Current password" help="Required. Your current password">
+          <FormField :label="t('prof.currentPassword')" :help="t('prof.currentPasswordHelp')">
             <FormControl
               v-model="passwordForm.password_current"
               :icon="mdiAsterisk"
@@ -101,7 +103,7 @@ const submitPass = () => {
 
           <BaseDivider />
 
-          <FormField label="New password" help="Required. New password">
+          <FormField :label="t('prof.newPassword')" :help="t('prof.newPasswordHelp')">
             <FormControl
               v-model="passwordForm.password"
               :icon="mdiFormTextboxPassword"
@@ -112,7 +114,7 @@ const submitPass = () => {
             />
           </FormField>
 
-          <FormField label="Confirm password" help="Required. New password one more time">
+          <FormField :label="t('prof.confirmPassword')" :help="t('prof.confirmPasswordHelp')">
             <FormControl
               v-model="passwordForm.password_confirmation"
               :icon="mdiFormTextboxPassword"
@@ -125,8 +127,8 @@ const submitPass = () => {
 
           <template #footer>
             <BaseButtons>
-              <BaseButton type="submit" color="info" label="Submit" />
-              <BaseButton color="info" label="Options" outline />
+              <BaseButton type="submit" color="info" :label="t('prof.submit')" />
+              <BaseButton color="info" :label="t('prof.options')" outline />
             </BaseButtons>
           </template>
         </CardBox>

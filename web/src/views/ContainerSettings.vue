@@ -1,5 +1,6 @@
 <script setup>
 import { onMounted, reactive, ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import ApiService from '@/services/ApiService'
 import BaseButton from '@/components/BaseButton.vue'
 import BaseIcon from '@/components/BaseIcon.vue'
@@ -17,6 +18,8 @@ import {
   mdiSwapVertical,
   mdiWrench
 } from '@mdi/js'
+
+const { t } = useI18n()
 
 const loading = ref(false)
 const saving = ref(false)
@@ -65,7 +68,7 @@ const fetchSettings = async () => {
     hydrateOverrides(incomingSettings.overrides || {})
   } catch (error) {
     status.type = 'error'
-    status.message = 'Failed to load container settings.'
+    status.message = t('cs.loadFailed')
     console.error('Failed to load service settings:', error)
   } finally {
     loading.value = false
@@ -107,11 +110,11 @@ const saveSettings = async () => {
       overrides: buildPayloadOverrides()
     })
     status.type = 'success'
-    status.message = 'Settings saved. Active containers will be recreated with the new parameters.'
+    status.message = t('cs.saved')
     await fetchSettings()
   } catch (error) {
     status.type = 'error'
-    status.message = 'Unable to save container settings.'
+    status.message = t('cs.saveFailed')
     console.error('Failed to save service settings:', error)
   } finally {
     saving.value = false
@@ -128,18 +131,18 @@ onMounted(() => {
     <div class="bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 text-white rounded-2xl p-8 shadow-lg">
       <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-6">
         <div>
-          <p class="uppercase tracking-wider text-sm text-blue-200 mb-2">Docker Controls</p>
+          <p class="uppercase tracking-wider text-sm text-blue-200 mb-2">{{ t('cs.dockerControls') }}</p>
           <h1 class="text-3xl lg:text-4xl font-bold flex items-center gap-3">
             <BaseIcon :path="mdiDocker" size="40" />
-            Container Settings
+            {{ t('cs.title') }}
           </h1>
-          <p class="text-blue-100 mt-2">Customize container names and exposed ports before launching services.</p>
+          <p class="text-blue-100 mt-2">{{ t('cs.subtitle') }}</p>
         </div>
         <BaseButton
           :icon="mdiRefresh"
           color="white"
           outline
-          label="Refresh"
+          :label="t('common.refresh')"
           :disabled="loading"
           @click="fetchSettings"
         />
@@ -147,19 +150,19 @@ onMounted(() => {
     </div>
 
     <CardBox>
-      <SectionTitleLineWithButton :icon="mdiWrench" title="General Options" main>
+      <SectionTitleLineWithButton :icon="mdiWrench" :title="t('cs.generalOptions')" main>
         <BaseButton
           :icon="mdiContentSave"
           color="success"
           :disabled="saving || loading"
-          label="Save Changes"
+          :label="t('cs.saveChanges')"
           @click="saveSettings"
         />
       </SectionTitleLineWithButton>
 
       <div class="grid gap-6 lg:grid-cols-2">
         <div>
-          <FormField label="Container Name Prefix" help="Prepended to every container name (example: dev-php-fpm)">
+          <FormField :label="t('cs.containerNamePrefix')" :help="t('cs.prefixHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center text-slate-400">
                 <BaseIcon :path="mdiRenameBox" size="20" />
@@ -176,12 +179,12 @@ onMounted(() => {
         <div class="bg-slate-50 dark:bg-slate-800 rounded-xl p-4 text-sm text-slate-600 dark:text-slate-300">
           <p class="font-semibold mb-2 flex items-center gap-2">
             <BaseIcon :path="mdiDatabaseCog" size="18" />
-            Tips
+            {{ t('cs.tips') }}
           </p>
           <ul class="space-y-1 list-disc list-inside">
-            <li>Prefix applies to every service unless a custom name is provided.</li>
-            <li>Port overrides accept <code>HOST:CONTAINER</code> per line (ex: <code>15432:5432</code>).</li>
-            <li>Leave a field blank to fall back to the default Compose value.</li>
+            <li>{{ t('cs.tip1') }}</li>
+            <li v-html="t('cs.tip2')"></li>
+            <li>{{ t('cs.tip3') }}</li>
           </ul>
         </div>
       </div>
@@ -200,12 +203,12 @@ onMounted(() => {
     </CardBox>
 
     <CardBox>
-      <SectionTitleLineWithButton :icon="mdiSwapVertical" title="Per-Service Overrides" main>
-        <span class="text-sm text-slate-500">{{ services.length }} services detected</span>
+      <SectionTitleLineWithButton :icon="mdiSwapVertical" :title="t('cs.perServiceOverrides')" main>
+        <span class="text-sm text-slate-500">{{ t('cs.servicesDetected', { n: services.length }) }}</span>
       </SectionTitleLineWithButton>
 
       <div v-if="loading" class="py-12 text-center text-slate-500">
-        Loading service metadata...
+        {{ t('cs.loadingMeta') }}
       </div>
 
       <div v-else class="grid gap-6 md:grid-cols-2">
@@ -216,23 +219,23 @@ onMounted(() => {
         >
           <div class="flex items-start justify-between gap-4">
             <div>
-              <p class="text-sm text-slate-500 uppercase tracking-wide">{{ service.image || 'Custom Image' }}</p>
+              <p class="text-sm text-slate-500 uppercase tracking-wide">{{ service.image || t('cs.customImage') }}</p>
               <h3 class="text-2xl font-semibold mt-1">{{ service.name }}</h3>
-              <p class="text-xs text-slate-500">Default container: {{ service.default_container_name }}</p>
-              <p class="text-xs text-slate-500">Current container: {{ service.effective_container_name }}</p>
+              <p class="text-xs text-slate-500">{{ t('cs.defaultContainer') }} {{ service.default_container_name }}</p>
+              <p class="text-xs text-slate-500">{{ t('cs.currentContainer') }} {{ service.effective_container_name }}</p>
             </div>
             <BaseButton
               :icon="mdiRefresh"
               color="lightDark"
               outline
               small
-              title="Reset overrides"
+              :title="t('cs.resetOverrides')"
               @click="clearOverride(service.name)"
             />
           </div>
 
           <div class="mt-4 space-y-4">
-            <FormField label="Custom Container Name" help="Overrides prefix for this service only">
+            <FormField :label="t('cs.customContainerName')" :help="t('cs.customNameHelp')">
               <FormControl
                 v-model="ensureOverrideState(service.name).customName"
                 :placeholder="`dev-${service.name}`"
@@ -240,7 +243,7 @@ onMounted(() => {
               />
             </FormField>
 
-            <FormField label="Port Overrides" help="One mapping per line (HOST:CONTAINER)">
+            <FormField :label="t('cs.portOverrides')" :help="t('cs.portOverridesHelp')">
               <FormControl
                 v-model="ensureOverrideState(service.name).ports"
                 type="textarea"
@@ -249,7 +252,7 @@ onMounted(() => {
                 :disabled="loading"
               />
               <p v-if="service.default_ports?.length" class="text-xs text-slate-500 mt-2">
-                Defaults: {{ service.default_ports.join(', ') }}
+                {{ t('cs.defaults') }} {{ service.default_ports.join(', ') }}
               </p>
             </FormField>
           </div>
@@ -261,7 +264,7 @@ onMounted(() => {
           :icon="mdiContentSave"
           color="success"
           :disabled="saving || loading"
-          label="Save All"
+          :label="t('cs.saveAll')"
           @click="saveSettings"
         />
       </div>

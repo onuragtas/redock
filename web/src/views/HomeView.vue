@@ -21,10 +21,12 @@ import {
   mdiStop
 } from '@mdi/js'
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useRouter } from 'vue-router'
 
 // Router
 const router = useRouter()
+const { t } = useI18n()
 
 // Reactive state
 const loading = ref(false)
@@ -165,11 +167,11 @@ const totalPages = computed(() => {
 
 const paginationInfo = computed(() => {
   const total = filteredContainers.value.length
-  if (total === 0) return 'No containers found'
+  if (total === 0) return t('home.noContainers')
 
   const start = (currentPage.value - 1) * itemsPerPage.value + 1
   const end = Math.min(start + itemsPerPage.value - 1, total)
-  return `${start}-${end} of ${total} containers`
+  return t('home.paginationInfo', { start, end, total })
 })
 
 // API Methods
@@ -332,13 +334,13 @@ onUnmounted(() => {
       <div class="bg-gradient-to-r from-blue-600 to-purple-600 rounded-xl p-6 text-white">
         <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
           <div>
-            <h1 class="text-2xl lg:text-3xl font-bold mb-2">Welcome to Redock DevStation</h1>
-            <p class="text-blue-100">Your all-in-one local development environment</p>
+            <h1 class="text-2xl lg:text-3xl font-bold mb-2">{{ t('home.welcome') }}</h1>
+            <p class="text-blue-100">{{ t('home.welcomeSubtitle') }}</p>
           </div>
           <div class="mt-4 lg:mt-0 bg-white/10 rounded-lg p-4 backdrop-blur-sm">
-            <div class="text-sm text-blue-100">Server IP</div>
-            <div class="text-lg font-mono font-semibold">{{ localIp || 'Loading...' }}</div>
-            <div class="text-sm text-blue-100 mt-2">Public IP</div>
+            <div class="text-sm text-blue-100">{{ t('home.serverIp') }}</div>
+            <div class="text-lg font-mono font-semibold">{{ localIp || t('common.loading') }}</div>
+            <div class="text-sm text-blue-100 mt-2">{{ t('home.publicIp') }}</div>
             <div class="text-lg font-mono font-semibold">{{ systemStats.public_ip || '—' }}</div>
           </div>
         </div>
@@ -383,7 +385,7 @@ onUnmounted(() => {
                     : 'text-blue-900 dark:text-blue-200'
                 ]"
               >
-                {{ hasCriticalUpdate ? '🚨 Critical Update Available' : '📦 Updates Available' }}
+                {{ hasCriticalUpdate ? t('home.criticalUpdate') : t('home.updatesAvailable') }}
               </h3>
               <p
                 :class="[
@@ -394,13 +396,13 @@ onUnmounted(() => {
                 ]"
               >
                 <template v-if="hasCriticalUpdate">
-                  A critical security update is available. Please update as soon as possible.
+                  {{ t('home.criticalUpdateDesc') }}
                 </template>
                 <template v-else-if="hasRecommendedUpdate">
-                  A recommended update is available with new features and improvements.
+                  {{ t('home.recommendedUpdateDesc') }}
                 </template>
                 <template v-else>
-                  {{ updateInfo.updates.length }} update{{ updateInfo.updates.length > 1 ? 's' : '' }} available for your system.
+                  {{ t('home.updatesCountDesc', { count: updateInfo.updates.length }) }}
                 </template>
               </p>
             </div>
@@ -414,7 +416,7 @@ onUnmounted(() => {
             ]"
             @click="goToUpdatesPage"
           >
-            <span>View Updates</span>
+            <span>{{ t('home.viewUpdates') }}</span>
             <BaseIcon :path="mdiArrowRight" size="18" />
           </button>
         </div>
@@ -426,7 +428,7 @@ onUnmounted(() => {
         <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-gray-400 text-sm">Current Version</p>
+              <p class="text-gray-400 text-sm">{{ t('home.currentVersion') }}</p>
               <p class="text-2xl font-bold text-green-400">{{ systemStats.current_version }}</p>
             </div>
           </div>
@@ -436,7 +438,7 @@ onUnmounted(() => {
         <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-gray-400 text-sm">System Uptime</p>
+              <p class="text-gray-400 text-sm">{{ t('home.systemUptime') }}</p>
               <p class="text-2xl font-bold text-blue-400">{{ systemStats.uptime_formatted }}</p>
             </div>
           </div>
@@ -446,7 +448,7 @@ onUnmounted(() => {
         <div class="bg-gray-800 rounded-xl p-6 border border-gray-700">
           <div class="flex items-center justify-between">
             <div>
-              <p class="text-gray-400 text-sm">Redock Uptime</p>
+              <p class="text-gray-400 text-sm">{{ t('home.redockUptime') }}</p>
               <p class="text-2xl font-bold text-yellow-400">{{ systemStats.redock_uptime_formatted }}</p>
             </div>
           </div>
@@ -458,7 +460,7 @@ onUnmounted(() => {
         <div class="p-6 border-b border-gray-700">
           <h2 class="text-xl font-semibold flex items-center">
             <BaseIcon :path="mdiMonitorDashboard" size="24" class="mr-3 text-blue-400" />
-            System Resources
+            {{ t('home.systemResources') }}
           </h2>
         </div>
         <div class="p-6">
@@ -466,7 +468,7 @@ onUnmounted(() => {
             <!-- CPU Usage -->
             <div class="space-y-3">
               <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-400">CPU Usage</span>
+                <span class="text-sm text-gray-400">{{ t('home.cpuUsage') }}</span>
                 <span class="text-sm font-medium">{{ systemStats.cpu_percent }}</span>
               </div>
               <div class="w-full bg-gray-700 rounded-full h-3">
@@ -480,7 +482,7 @@ onUnmounted(() => {
             <!-- Memory Usage -->
             <div class="space-y-3">
               <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-400">Memory Usage</span>
+                <span class="text-sm text-gray-400">{{ t('home.memoryUsage') }}</span>
                 <span class="text-sm font-medium">{{ systemStats.memory_percent }}</span>
               </div>
               <div class="w-full bg-gray-700 rounded-full h-3">
@@ -498,7 +500,7 @@ onUnmounted(() => {
             <!-- Disk Usage -->
             <div class="space-y-3">
               <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-400">Disk Usage</span>
+                <span class="text-sm text-gray-400">{{ t('home.diskUsage') }}</span>
                 <span class="text-sm font-medium">{{ systemStats.disk_percent }}</span>
               </div>
               <div class="w-full bg-gray-700 rounded-full h-3">
@@ -516,22 +518,22 @@ onUnmounted(() => {
             <!-- Network Activity -->
             <div class="space-y-3">
               <div class="flex justify-between items-center">
-                <span class="text-sm text-gray-400">Network Activity</span>
-                <span class="text-xs text-gray-500">Real-time</span>
+                <span class="text-sm text-gray-400">{{ t('home.networkActivity') }}</span>
+                <span class="text-xs text-gray-500">{{ t('home.realtime') }}</span>
               </div>
               <div class="space-y-2">
                 <div class="flex justify-between items-center">
-                  <span class="text-xs text-gray-500">↑ Upload:</span>
+                  <span class="text-xs text-gray-500">↑ {{ t('home.upload') }}:</span>
                   <span class="text-sm font-medium text-orange-400">{{ systemStats.upload_speed }}</span>
                 </div>
                 <div class="flex justify-between items-center">
-                  <span class="text-xs text-gray-500">↓ Download:</span>
+                  <span class="text-xs text-gray-500">↓ {{ t('home.download') }}:</span>
                   <span class="text-sm font-medium text-green-400">{{ systemStats.download_speed }}</span>
                 </div>
                 <div class="pt-2 border-t border-gray-700">
                   <div class="flex justify-between text-xs text-gray-500">
-                    <span>Total ↑: {{ systemStats.network_sent_total }}</span>
-                    <span>Total ↓: {{ systemStats.network_recv_total }}</span>
+                    <span>{{ t('home.total') }} ↑: {{ systemStats.network_sent_total }}</span>
+                    <span>{{ t('home.total') }} ↓: {{ systemStats.network_recv_total }}</span>
                   </div>
                 </div>
               </div>
@@ -545,7 +547,7 @@ onUnmounted(() => {
         <div class="p-6 border-b border-gray-700">
           <h2 class="text-xl font-semibold flex items-center">
             <BaseIcon :path="mdiCog" size="24" class="mr-3 text-green-400" />
-            Quick Actions
+            {{ t('home.quickActions') }}
           </h2>
         </div>
         <div class="p-6">
@@ -556,7 +558,7 @@ onUnmounted(() => {
               @click="executeQuickAction('install')"
             >
               <BaseIcon :path="mdiCloudDownload" size="20" />
-              <span>Install System</span>
+              <span>{{ t('home.installSystem') }}</span>
             </button>
 
             <button
@@ -565,7 +567,7 @@ onUnmounted(() => {
               @click="regenerateDevEnv"
             >
               <BaseIcon :path="mdiRefresh" size="20" />
-              <span>{{ userRegenerating ? 'Resetting…' : 'Reset Personal Development Containers' }}</span>
+              <span>{{ userRegenerating ? t('home.resetting') : t('home.resetDevContainers') }}</span>
             </button>
 
             <button
@@ -574,7 +576,7 @@ onUnmounted(() => {
               @click="executeQuickAction('regenerateXDebug')"
             >
               <BaseIcon :path="mdiRefresh" size="20" />
-              <span>Regenerate XDebug</span>
+              <span>{{ t('home.regenerateXDebug') }}</span>
             </button>
 
             <button
@@ -583,7 +585,7 @@ onUnmounted(() => {
               @click="executeQuickAction('restartNginx')"
             >
               <BaseIcon :path="mdiServer" size="20" />
-              <span>Restart Nginx</span>
+              <span>{{ t('home.restartNginx') }}</span>
             </button>
 
             <button
@@ -592,7 +594,7 @@ onUnmounted(() => {
               @click="executeQuickAction('updateDocker')"
             >
               <BaseIcon :path="mdiDownload" size="20" />
-              <span>Update Docker</span>
+              <span>{{ t('home.updateDocker') }}</span>
             </button>
 
             <button
@@ -601,7 +603,7 @@ onUnmounted(() => {
               @click="executeQuickAction('updateDockerImages')"
             >
               <BaseIcon :path="mdiCloudDownload" size="20" />
-              <span>Update Images</span>
+              <span>{{ t('home.updateImages') }}</span>
             </button>
           </div>
         </div>
@@ -613,7 +615,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{{ totalContainers }}</div>
-              <div class="text-sm text-emerald-600/70 dark:text-emerald-400/70">Total Containers</div>
+              <div class="text-sm text-emerald-600/70 dark:text-emerald-400/70">{{ t('home.totalContainers') }}</div>
             </div>
             <BaseIcon :path="mdiDocker" size="48" class="text-emerald-500 opacity-20" />
           </div>
@@ -623,7 +625,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ runningContainers }}</div>
-              <div class="text-sm text-green-600/70 dark:text-green-400/70">Running</div>
+              <div class="text-sm text-green-600/70 dark:text-green-400/70">{{ t('home.running') }}</div>
             </div>
             <BaseIcon :path="mdiPlay" size="48" class="text-green-500 opacity-20" />
           </div>
@@ -633,7 +635,7 @@ onUnmounted(() => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-red-600 dark:text-red-400">{{ stoppedContainers }}</div>
-              <div class="text-sm text-red-600/70 dark:text-red-400/70">Stopped</div>
+              <div class="text-sm text-red-600/70 dark:text-red-400/70">{{ t('home.stopped') }}</div>
             </div>
             <BaseIcon :path="mdiStop" size="48" class="text-red-500 opacity-20" />
           </div>
@@ -648,9 +650,9 @@ onUnmounted(() => {
             <div>
               <h2 class="text-xl font-bold text-white mb-2 flex items-center">
                 <BaseIcon :path="mdiDocker" size="32" class="mr-3" />
-                Container Management
+                {{ t('home.containerManagement') }}
               </h2>
-              <p class="text-blue-100 text-sm">Docker container lifecycle management</p>
+              <p class="text-blue-100 text-sm">{{ t('home.containerMgmtSubtitle') }}</p>
             </div>
             <div class="mt-4 lg:mt-0 flex items-center space-x-3">
               <!-- Search Input -->
@@ -661,7 +663,7 @@ onUnmounted(() => {
                 <input
                   v-model="searchQuery"
                   type="text"
-                  placeholder="Search containers..."
+                  :placeholder="t('home.searchContainers')"
                   class="pl-10 pr-4 py-2 bg-white/20 backdrop-blur border border-white/30 text-white placeholder-white/60 rounded-xl focus:outline-none focus:ring-2 focus:ring-white/50 focus:border-transparent transition-all duration-200 w-64"
                 />
               </div>
@@ -672,7 +674,7 @@ onUnmounted(() => {
                 @click="getContainerList"
               >
                 <BaseIcon :path="mdiRefresh" size="16" />
-                <span>Refresh</span>
+                <span>{{ t('common.refresh') }}</span>
               </button>
 
             </div>
@@ -683,18 +685,18 @@ onUnmounted(() => {
         <div class="p-6">
           <div v-if="loading" class="text-center py-12">
             <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
-            <p class="text-slate-500 dark:text-slate-400 mt-4">Loading containers...</p>
+            <p class="text-slate-500 dark:text-slate-400 mt-4">{{ t('home.loadingContainers') }}</p>
           </div>
 
           <div v-else-if="containers.length === 0" class="text-center py-12">
             <BaseIcon :path="mdiDocker" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-            <p class="text-slate-500 dark:text-slate-400 mb-4">No containers found</p>
+            <p class="text-slate-500 dark:text-slate-400 mb-4">{{ t('home.noContainers') }}</p>
           </div>
 
           <div v-else-if="filteredContainers.length === 0" class="text-center py-12">
             <BaseIcon :path="mdiMagnify" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
-            <p class="text-slate-500 dark:text-slate-400 mb-4">No containers match your search</p>
-            <p class="text-slate-400 dark:text-slate-500 text-sm">Try adjusting your search terms</p>
+            <p class="text-slate-500 dark:text-slate-400 mb-4">{{ t('home.noMatch') }}</p>
+            <p class="text-slate-400 dark:text-slate-500 text-sm">{{ t('home.adjustSearch') }}</p>
           </div>
 
           <div v-else class="space-y-4">
@@ -721,7 +723,7 @@ onUnmounted(() => {
                   <div class="flex items-center space-x-4 mt-1 text-sm text-slate-500 dark:text-slate-400">
                     <div class="flex items-center">
                       <BaseIcon :path="mdiServer" size="16" class="mr-1" />
-                      Status: {{ container.active ? 'Running' : 'Stopped' }}
+                      {{ t('common.status') }}: {{ container.active ? t('home.running') : t('home.stopped') }}
                     </div>
                   </div>
                 </div>
@@ -735,7 +737,7 @@ onUnmounted(() => {
                         : 'text-red-600 bg-red-100 dark:text-red-400 dark:bg-red-900/30'
                     ]"
                   >
-                    {{ container.active ? 'Active' : 'Inactive' }}
+                    {{ container.active ? t('home.active') : t('home.inactive') }}
                   </span>
                 </div>
               </div>
@@ -747,7 +749,7 @@ onUnmounted(() => {
                   class="inline-flex items-center px-3 py-2 text-sm bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-colors space-x-2 shadow-sm hover:shadow-md"
                 >
                   <BaseIcon :path="mdiConsole" size="16" />
-                  <span>Console</span>
+                  <span>{{ t('home.console') }}</span>
                 </router-link>
 
                 <button
@@ -762,7 +764,7 @@ onUnmounted(() => {
                   @click="toggleContainer(container)"
                 >
                   <BaseIcon :path="container.active ? mdiStop : mdiPlay" size="16" />
-                  <span>{{ container.active ? 'Stop' : 'Start' }}</span>
+                  <span>{{ container.active ? t('common.stop') : t('common.start') }}</span>
                 </button>
               </div>
             </div>
@@ -785,7 +787,7 @@ onUnmounted(() => {
                 @click="prevPage"
               >
                 <BaseIcon :path="mdiChevronLeft" size="16" />
-                <span>Previous</span>
+                <span>{{ t('home.previous') }}</span>
               </button>
 
               <div class="flex space-x-1">
@@ -814,7 +816,7 @@ onUnmounted(() => {
                 ]"
                 @click="nextPage"
               >
-                <span>Next</span>
+                <span>{{ t('home.next') }}</span>
                 <BaseIcon :path="mdiChevronRight" size="16" />
               </button>
             </div>

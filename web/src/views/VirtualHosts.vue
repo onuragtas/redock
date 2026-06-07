@@ -37,6 +37,9 @@ import {
     mdiWeb
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
+import { useI18n } from "vue-i18n";
+
+const { t } = useI18n();
 
 // Reactive state
 const virtualHosts = ref([])
@@ -104,7 +107,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS })
 
-const layoutToggleLabel = computed(() => isGridLayout.value ? 'List View' : 'Grid View')
+const layoutToggleLabel = computed(() => isGridLayout.value ? t('vh.listView') : t('vh.gridView'))
 const layoutToggleIcon = computed(() => isGridLayout.value ? mdiViewList : mdiViewGridOutline)
 
 // Methods
@@ -208,8 +211,8 @@ const toggleEnvMode = async (path) => {
 const getEnvModeLabel = (path) => {
   const envInfo = envModes.value[path]
   if (!envInfo || !envInfo.hasEnvConfig) return ''
-  if (envInfo.mode === 'dev') return 'Development'
-  if (envInfo.mode === 'prod') return 'Production'
+  if (envInfo.mode === 'dev') return t('vh.development')
+  if (envInfo.mode === 'prod') return t('vh.production')
   return ''
 }
 
@@ -372,13 +375,13 @@ onMounted(async () => {
           <div>
             <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
               <BaseIcon :path="mdiWeb" size="40" class="mr-4" />
-              Virtual Hosts Manager
+              {{ t('vh.title') }}
             </h1>
-            <p class="text-green-100 text-lg">Web server configuration and domain management</p>
+            <p class="text-green-100 text-lg">{{ t('vh.subtitle') }}</p>
           </div>
           <div class="mt-6 lg:mt-0 flex space-x-3">
             <BaseButton
-              label="Refresh"
+              :label="t('common.refresh')"
               :icon="mdiRefresh"
               color="white"
               outline
@@ -387,7 +390,7 @@ onMounted(async () => {
               @click="getAllVHosts"
             />
             <BaseButton
-              label="Create VHost"
+              :label="t('vh.createVhost')"
               :icon="mdiPlus"
               color="white"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
@@ -403,7 +406,7 @@ onMounted(async () => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ vhostStats.total }}</div>
-              <div class="text-sm text-green-600/70 dark:text-green-400/70">Total VHosts</div>
+              <div class="text-sm text-green-600/70 dark:text-green-400/70">{{ t('vh.totalVhosts') }}</div>
             </div>
             <BaseIcon :path="mdiWeb" size="48" class="text-green-500 opacity-20" />
           </div>
@@ -413,7 +416,7 @@ onMounted(async () => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-yellow-600 dark:text-yellow-400">{{ vhostStats.starred }}</div>
-              <div class="text-sm text-yellow-600/70 dark:text-yellow-400/70">Starred</div>
+              <div class="text-sm text-yellow-600/70 dark:text-yellow-400/70">{{ t('vh.starred') }}</div>
             </div>
             <BaseIcon :path="mdiStar" size="48" class="text-yellow-500 opacity-20" />
           </div>
@@ -423,7 +426,7 @@ onMounted(async () => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ vhostStats.nginx }}</div>
-              <div class="text-sm text-blue-600/70 dark:text-blue-400/70">Nginx Sites</div>
+              <div class="text-sm text-blue-600/70 dark:text-blue-400/70">{{ t('vh.nginxSites') }}</div>
             </div>
             <BaseIcon :path="mdiServer" size="48" class="text-blue-500 opacity-20" />
           </div>
@@ -433,7 +436,7 @@ onMounted(async () => {
           <div class="flex items-center justify-between">
             <div>
               <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">{{ vhostStats.apache }}</div>
-              <div class="text-sm text-purple-600/70 dark:text-purple-400/70">Apache Sites</div>
+              <div class="text-sm text-purple-600/70 dark:text-purple-400/70">{{ t('vh.apacheSites') }}</div>
             </div>
             <BaseIcon :path="mdiWeb" size="48" class="text-purple-500 opacity-20" />
           </div>
@@ -442,13 +445,13 @@ onMounted(async () => {
 
       <!-- Virtual Hosts List -->
       <CardBox>
-        <SectionTitleLineWithButton :icon="mdiFileDocument" title="Virtual Host Configurations" main>
+        <SectionTitleLineWithButton :icon="mdiFileDocument" :title="t('vh.configs')" main>
           <div class="flex flex-col gap-3 md:flex-row md:items-center">
             <div class="w-full md:w-64">
               <FormControl
                 v-model="searchQuery"
                 :icon="mdiMagnify"
-                placeholder="Search virtual hosts"
+                :placeholder="t('vh.searchVhosts')"
               />
             </div>
             <BaseButton
@@ -472,17 +475,17 @@ onMounted(async () => {
 
         <div v-if="loading" class="text-center py-12">
           <div class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-green-600"></div>
-          <p class="text-slate-500 dark:text-slate-400 mt-4">Loading virtual hosts...</p>
+          <p class="text-slate-500 dark:text-slate-400 mt-4">{{ t('vh.loadingVhosts') }}</p>
         </div>
 
         <div v-else-if="filteredItems.length === 0" class="text-center py-12">
           <BaseIcon :path="mdiWeb" size="64" class="mx-auto text-slate-300 dark:text-slate-600 mb-4" />
           <p class="text-slate-500 dark:text-slate-400 mb-4">
-            {{ searchQuery ? 'No virtual hosts match your search.' : 'No virtual hosts configured.' }}
+            {{ searchQuery ? t('vh.noMatch') : t('vh.noVhosts') }}
           </p>
           <BaseButton
             v-if="!searchQuery"
-            label="Create Your First VHost"
+            :label="t('vh.createFirst')"
             :icon="mdiPlus"
             color="info"
             @click="isAddModalActive = true"
@@ -515,7 +518,7 @@ onMounted(async () => {
                     :path="mdiStar" 
                     size="16" 
                     class="ml-2 text-yellow-500" 
-                    title="Favorited"
+                    :title="t('vh.favorited')"
                   />
                 </h3>
                 <div class="flex flex-col gap-2 text-sm text-slate-500 dark:text-slate-400">
@@ -528,7 +531,7 @@ onMounted(async () => {
                     :class="getServiceColor(vhost[0])"
                   >
                     <BaseIcon :path="getServiceIcon(vhost[0])" size="16" class="mr-1" />
-                    {{ vhost[0].includes('nginx') ? 'Nginx' : vhost[0].includes('apache') ? 'Apache' : 'Other' }}
+                    {{ vhost[0].includes('nginx') ? 'Nginx' : vhost[0].includes('apache') ? 'Apache' : t('vh.other') }}
                   </div>
                   <!-- Environment Mode Badge -->
                   <div 
@@ -550,7 +553,7 @@ onMounted(async () => {
                 :color="isStarred(vhost[0]) ? 'warning' : 'lightDark'"
                 small
                 :disabled="togglingStarred[vhost[0]]"
-                :title="isStarred(vhost[0]) ? 'Remove from favorites' : 'Add to favorites'"
+                :title="isStarred(vhost[0]) ? t('vh.removeFromFav') : t('vh.addToFav')"
                 @click="toggleStar(vhost[0])"
               />
               
@@ -558,11 +561,11 @@ onMounted(async () => {
               <BaseButton 
                 v-if="hasEnvConfig(vhost[0])"
                 :icon="envModes[vhost[0]]?.mode === 'dev' ? mdiToggleSwitchOff : mdiToggleSwitch"
-                :label="envModes[vhost[0]]?.mode === 'dev' ? 'Switch to Prod' : 'Switch to Dev'"
+                :label="envModes[vhost[0]]?.mode === 'dev' ? t('vh.switchToProd') : t('vh.switchToDev')"
                 :color="getEnvModeColor(vhost[0])"
                 small
                 :disabled="togglingEnv[vhost[0]]"
-                :title="envModes[vhost[0]]?.mode === 'dev' ? 'Switch to Production Mode' : 'Switch to Development Mode'"
+                :title="envModes[vhost[0]]?.mode === 'dev' ? t('vh.switchToProdMode') : t('vh.switchToDevMode')"
                 @click="toggleEnvMode(vhost[0])"
               />
               
@@ -571,7 +574,7 @@ onMounted(async () => {
                 :icon="mdiConsole" 
                 color="success"
                 small
-                title="Open Terminal"
+                :title="t('vh.openTerminal')"
                 @click="openTerminal(vhost[0])"
               />
               
@@ -579,7 +582,7 @@ onMounted(async () => {
                 :icon="mdiPencil" 
                 color="info"
                 small
-                title="Edit Configuration"
+                :title="t('vh.editConfig')"
                 @click="editVirtualHost(vhost)"
               />
               
@@ -587,7 +590,7 @@ onMounted(async () => {
                 :icon="mdiDelete" 
                 color="danger"
                 small
-                title="Delete VHost"
+                :title="t('vh.deleteVhost')"
                 @click="deleteVirtualHost(vhost)"
               />
             </div>
@@ -597,7 +600,7 @@ onMounted(async () => {
         <!-- Pagination -->
         <div v-if="filteredItems.length > 0" class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between mt-6 pt-6 border-t border-slate-200 dark:border-slate-700">
           <div class="text-sm text-slate-700 dark:text-slate-300">
-            Showing {{ paginationInfo }}
+            {{ t('vh.showing') }} {{ paginationInfo }}
           </div>
           
           <div class="flex items-center gap-2">
@@ -635,14 +638,14 @@ onMounted(async () => {
       <!-- Add VHost Modal -->
       <CardBoxModal 
         v-model="isAddModalActive" 
-        title="Create Virtual Host" 
+        :title="t('vh.createVirtualHost')" 
         button="success" 
-        button-label="Create Virtual Host"
+        :button-label="t('vh.createVirtualHost')"
         has-cancel
         @confirm="addSubmit"
       >
         <form class="space-y-6">
-          <FormField label="Web Server Service">
+          <FormField :label="t('vh.webServerService')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiServer" size="20" class="text-slate-400" />
@@ -657,7 +660,7 @@ onMounted(async () => {
             </div>
           </FormField>
 
-          <FormField label="Domain Name" help="The domain name for this virtual host">
+          <FormField :label="t('vh.domainName')" :help="t('vh.domainNameHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiDomain" size="20" class="text-slate-400" />
@@ -671,7 +674,7 @@ onMounted(async () => {
             </div>
           </FormField>
 
-          <FormField label="Configuration Type">
+          <FormField :label="t('vh.configType')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                 <BaseIcon :path="mdiCog" size="20" class="text-slate-400" />
@@ -688,7 +691,7 @@ onMounted(async () => {
 
           <!-- Default Configuration Fields -->
           <div v-if="createVirtualHost.configurationType === 'Default'" class="space-y-4">
-            <FormField label="Document Root Folder" help="Path to the website files">
+            <FormField :label="t('vh.docRootFolder')" :help="t('vh.docRootHelp')">
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                   <BaseIcon :path="mdiFolder" size="20" class="text-slate-400" />
@@ -701,7 +704,7 @@ onMounted(async () => {
               </div>
             </FormField>
 
-            <FormField label="PHP Service" help="PHP-FPM service to use">
+            <FormField :label="t('vh.phpService')" :help="t('vh.phpServiceHelp')">
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                   <BaseIcon :path="mdiFileCode" size="20" class="text-slate-400" />
@@ -718,7 +721,7 @@ onMounted(async () => {
 
           <!-- Proxy Pass Configuration -->
           <div v-if="createVirtualHost.configurationType === 'Proxy Pass'">
-            <FormField label="Proxy Port" help="Port to proxy requests to">
+            <FormField :label="t('vh.proxyPort')" :help="t('vh.proxyPortHelp')">
               <div class="relative">
                 <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
                   <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
@@ -738,9 +741,9 @@ onMounted(async () => {
       <!-- Edit VHost Modal -->
       <CardBoxModal 
         v-model="isEditModalActive" 
-        title="Edit Virtual Host" 
+        :title="t('vh.editVirtualHost')" 
         button="success" 
-        button-label="Update Configuration"
+        :button-label="t('vh.updateConfiguration')"
         has-cancel
         @confirm="editSubmit"
       >
@@ -751,16 +754,16 @@ onMounted(async () => {
               {{ modalPath }}
             </h4>
             <p class="text-sm text-blue-600 dark:text-blue-300">
-              Edit the virtual host configuration file directly.
+              {{ t('vh.editConfigHint') }}
             </p>
           </div>
 
-          <FormField label="Configuration Content">
+          <FormField :label="t('vh.configContent')">
             <FormControl
               v-model="virtualhostContent"
               type="textarea"
               rows="15"
-              placeholder="Virtual host configuration..."
+              :placeholder="t('vh.configPlaceholder')"
               class="font-mono text-sm"
             />
           </FormField>
@@ -770,13 +773,13 @@ onMounted(async () => {
           <div class="flex justify-end space-x-3">
             <BaseButton
               :icon="mdiClose"
-              label="Cancel"
+              :label="t('common.cancel')"
               color="lightDark"
               @click="isEditModalActive = false"
             />
             <BaseButton
               :icon="mdiCheck"
-              label="Save Configuration"
+              :label="t('vh.saveConfiguration')"
               color="success"
               @click="editSubmit"
             />
@@ -787,17 +790,17 @@ onMounted(async () => {
       <!-- Delete Confirmation Modal -->
       <CardBoxModal 
         v-model="isDeleteModalActive" 
-        title="Delete Virtual Host" 
+        :title="t('vh.deleteVirtualHost')" 
         button="danger"
-        button-label="Delete Virtual Host"
+        :button-label="t('vh.deleteVirtualHost')"
         has-cancel
         @confirm="deleteSubmit"
       >
         <div class="text-center">
           <BaseIcon :path="mdiAlert" size="48" class="mx-auto text-red-500 mb-4" />
-          <h3 class="text-lg font-semibold mb-2">Are you sure?</h3>
+          <h3 class="text-lg font-semibold mb-2">{{ t('vh.areYouSure') }}</h3>
           <p class="text-slate-600 dark:text-slate-400 mb-6">
-            This will permanently delete the virtual host configuration:
+            {{ t('vh.deleteVhostText') }}
           </p>
           <div class="bg-red-50 dark:bg-red-900/20 p-4 rounded-lg border border-red-200 dark:border-red-800">
             <code class="text-red-600 dark:text-red-400 break-all">{{ modalPath }}</code>
@@ -808,13 +811,13 @@ onMounted(async () => {
           <div class="flex justify-end space-x-3">
             <BaseButton
               :icon="mdiClose"
-              label="Cancel"
+              :label="t('common.cancel')"
               color="lightDark"
               @click="isDeleteModalActive = false"
             />
             <BaseButton
               :icon="mdiDelete"
-              label="Delete VHost"
+              :label="t('vh.deleteVhost')"
               color="danger"
               @click="deleteSubmit"
             />

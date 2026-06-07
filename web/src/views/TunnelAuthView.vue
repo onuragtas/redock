@@ -6,7 +6,9 @@ import ApiService from "@/services/ApiService";
 import { mdiAccountPlus, mdiLogin, mdiTunnel } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useI18n } from "vue-i18n";
 
+const { t } = useI18n();
 const route = useRoute();
 const router = useRouter();
 
@@ -26,7 +28,7 @@ const baseUrl = computed(() => {
 });
 const serverName = computed(() => {
   const n = route.query.server_name;
-  return typeof n === "string" ? n : "Tunnel server";
+  return typeof n === "string" ? n : t("ta.tunnelServerDefault");
 });
 
 // Origin where the Redock app runs; callback must point there (tunnel-auth may run on tunnel server).
@@ -87,13 +89,13 @@ const submit = async () => {
       token = res?.data?.data?.token ?? res?.data?.token;
     }
     if (!token) {
-      errorMsg.value = "Login or registration failed; no token received.";
+      errorMsg.value = t("ta.noToken");
       return;
     }
     
     const callback = callbackUrl.value;
     if (!callback) {
-      errorMsg.value = "Invalid state or base_url.";
+      errorMsg.value = t("ta.invalidState");
       return;
     }
     const tokenParams =
@@ -105,7 +107,7 @@ const submit = async () => {
     const sep = callback.includes("?") ? "&" : "?";
     window.location.href = callback + sep + tokenParams;
   } catch (e) {
-    const msg = e.response?.data?.msg || e.message || "Login or registration failed.";
+    const msg = e.response?.data?.msg || e.message || t("ta.loginFailed");
     errorMsg.value = msg;
   } finally {
     loading.value = false;
@@ -114,10 +116,10 @@ const submit = async () => {
 
 onMounted(() => {
   if (!state.value) {
-    errorMsg.value = "state is required. Use Connect from the Tunnel Proxy Client page.";
+    errorMsg.value = t("ta.stateRequired");
   }
   if (state.value && !baseUrl.value) {
-    errorMsg.value = "base_url is required.";
+    errorMsg.value = t("ta.baseUrlRequired");
   }
 });
 </script>
@@ -129,23 +131,23 @@ onMounted(() => {
         <div class="flex items-center justify-center gap-3 mb-6">
           <BaseIcon :path="mdiTunnel" size="40" class="text-purple-600 dark:text-purple-400" />
           <h1 class="text-2xl font-bold text-slate-800 dark:text-slate-100">
-            Sign in to tunnel server
+            {{ t('ta.title') }}
           </h1>
         </div>
         <p class="text-slate-600 dark:text-slate-400 text-sm mb-6">
-          Sign in or register for {{ serverName }} ({{ baseUrl || "—" }}).
+          {{ t('ta.subtitle', { name: serverName, url: baseUrl || '—' }) }}
         </p>
 
         <div v-if="!state || !baseUrl" class="rounded-lg bg-red-50 dark:bg-red-900/20 p-4 mb-6">
           <p class="text-sm text-red-700 dark:text-red-300">
-            {{ !state ? "state is missing." : "base_url is missing." }} Please open the Tunnel Proxy Client page and use "Connect" to get here.
+            {{ !state ? t('ta.stateMissing') : t('ta.baseUrlMissing') }} {{ t('ta.openClientHint') }}
           </p>
           <button
             type="button"
             class="mt-3 text-sm font-medium text-purple-600 dark:text-purple-400 hover:underline"
             @click="goBack"
           >
-            Back to Tunnel Proxy Client
+            {{ t('ta.backToClient') }}
           </button>
         </div>
 
@@ -162,7 +164,7 @@ onMounted(() => {
               @click="mode = 'login'; errorMsg = ''"
             >
               <BaseIcon :path="mdiLogin" size="18" />
-              Sign in
+              {{ t('ta.signIn') }}
             </button>
             <button
               type="button"
@@ -175,19 +177,19 @@ onMounted(() => {
               @click="mode = 'register'; errorMsg = ''"
             >
               <BaseIcon :path="mdiAccountPlus" size="18" />
-              Register
+              {{ t('ta.register') }}
             </button>
           </div>
 
           <form class="space-y-4" @submit.prevent="submit">
-            <FormField label="E-posta">
+            <FormField :label="t('common.email')">
               <FormControl
                 v-model="credentials.email"
                 type="email"
                 placeholder="email@example.com"
               />
             </FormField>
-            <FormField label="Password">
+            <FormField :label="t('ta.password')">
               <FormControl
                 v-model="credentials.password"
                 type="password"
@@ -205,7 +207,7 @@ onMounted(() => {
                 class="flex-1 px-4 py-2 rounded-lg border border-slate-300 dark:border-slate-600 text-slate-700 dark:text-slate-300 text-sm font-medium"
                 @click="goBack"
               >
-                Cancel
+                {{ t('common.cancel') }}
               </button>
               <button
                 type="submit"
@@ -213,7 +215,7 @@ onMounted(() => {
                 class="flex-1 px-4 py-2 rounded-lg bg-purple-600 text-white text-sm font-medium disabled:opacity-50 flex items-center justify-center gap-2"
               >
                 <span v-if="loading" class="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                <span v-else>{{ mode === "register" ? "Register" : "Sign in" }}</span>
+                <span v-else>{{ mode === 'register' ? t('ta.register') : t('ta.signIn') }}</span>
               </button>
             </div>
           </form>

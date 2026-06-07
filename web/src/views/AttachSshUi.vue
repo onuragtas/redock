@@ -1,6 +1,6 @@
 <template>
   <LayoutAuthenticated>
-      <SectionTitleLineWithButton :icon="mdiConsole()" title="Attach Shell" main></SectionTitleLineWithButton>
+      <SectionTitleLineWithButton :icon="mdiConsole()" :title="$t('attach.title')" main></SectionTitleLineWithButton>
       <iframe title="ssh_ui" :src="getSshUiUrl()" style="position:fixed; top:0; left:0; bottom:0; right:0; width:100%; height:100%; border:none; margin:0; padding:0; overflow:hidden; z-index:999999;"></iframe>
   </LayoutAuthenticated>
 </template>

@@ -29,6 +29,7 @@ import {
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 import { useToast } from "vue-toastification";
+import { useI18n } from "vue-i18n";
 
 const proxies = ref([]);
 const isDeleteModalActive = ref(false);
@@ -43,6 +44,7 @@ const serverConfig = ref({
 const cloudflareZones = ref([]);
 const configSaving = ref(false);
 const toast = useToast();
+const { t } = useI18n();
 
 // Whether a tunnel's protocol enables a transport ("all" or a "+"-combo like "http+tcp").
 function protoHas(tunnel, kind) {
@@ -63,23 +65,23 @@ function getConnectionLines(tunnel) {
   if (hasHTTP) {
     const scheme = protocol === "https" ? "https" : "http";
     lines.push({
-      label: protocol === "https" ? "HTTPS (Web)" : "HTTP (Web)",
+      label: protocol === "https" ? t("tps.connHttpLabelHttps") : t("tps.connHttpLabelHttp"),
       value: `${scheme}://${domain}`,
-      desc: "Open this URL in a browser or send requests to it."
+      desc: t("tps.connHttpDesc")
     });
   }
   if (hasTCP) {
     lines.push({
       label: "TCP",
       value: `${domain}:${port}`,
-      desc: "Raw TCP connection (connect with telnet, netcat, or a socket to this address)."
+      desc: t("tps.connTcpDesc")
     });
   }
   if (hasUDP) {
     lines.push({
       label: "UDP",
       value: `${domain}:${port}`,
-      desc: "Send UDP packets to this target address."
+      desc: t("tps.connUdpDesc")
     });
   }
   return lines;
@@ -87,9 +89,9 @@ function getConnectionLines(tunnel) {
 
 function copyConnection(value) {
   navigator.clipboard.writeText(value).then(() => {
-    toast.success("Copied to clipboard");
+    toast.success(t("common.copied"));
   }).catch(() => {
-    toast.error("Copy failed");
+    toast.error(t("common.copyFailed"));
   });
 }
 
@@ -181,7 +183,7 @@ const {
   toggleLayout
 } = useLayoutToggle(paginatedItems, { minItemsForGrid: GRID_MIN_ITEMS });
 const layoutToggleLabel = computed(() =>
-  isGridLayout.value ? "List View" : "Grid View"
+  isGridLayout.value ? t("tps.listView") : t("tps.gridView")
 );
 const layoutToggleIcon = computed(() =>
   isGridLayout.value ? mdiViewList : mdiViewGridOutline
@@ -300,10 +302,10 @@ const deleteAgent = async (agent) => {
   if (!confirm(`Delete agent '${agent.label || agent.client_id}' and all its assignments?`)) return;
   try {
     await ApiService.tunnelAgentDelete(agent.id);
-    toast.success("Agent deleted");
+    toast.success(t("tps.agentDeleted"));
     await loadAgents();
   } catch (e) {
-    toast.error("Failed to delete agent: " + (e.response?.data?.msg || e.message));
+    toast.error(t("tps.agentDeleteFailed") + (e.response?.data?.msg || e.message));
   }
 };
 
@@ -341,7 +343,7 @@ const saveAssignment = async () => {
   const tcpP = parseInt(f.local_tcp_port) || 0;
   const udpP = parseInt(f.local_udp_port) || 0;
   if (httpP <= 0 && tcpP <= 0 && udpP <= 0) {
-    toast.warning("Enter at least one local target (HTTP/TCP/UDP ip+port)");
+    toast.warning(t("tps.enterTarget"));
     return;
   }
   assignmentSaving.value = true;
@@ -366,9 +368,9 @@ const saveAssignment = async () => {
     }
     isAssignmentModalActive.value = false;
     await loadAgentAssignments(assignmentAgentId.value);
-    toast.success("Assignment saved (client applies within ~20s)");
+    toast.success(t("tps.assignmentSaved"));
   } catch (e) {
-    toast.error("Save failed: " + (e.response?.data?.msg || e.message));
+    toast.error(t("common.saveFailed") + (e.response?.data?.msg || e.message));
   } finally {
     assignmentSaving.value = false;
   }
@@ -379,7 +381,7 @@ const toggleAssignmentAutoConnect = async (agentId, a) => {
     await ApiService.tunnelAgentAssignmentUpdate(agentId, a.id, { auto_connect: !a.auto_connect });
     await loadAgentAssignments(agentId);
   } catch (e) {
-    toast.error("Update failed: " + (e.response?.data?.msg || e.message));
+    toast.error(t("common.updateFailed") + (e.response?.data?.msg || e.message));
   }
 };
 
@@ -388,9 +390,9 @@ const deleteAssignment = async (agentId, a) => {
   try {
     await ApiService.tunnelAgentAssignmentDelete(agentId, a.id);
     await loadAgentAssignments(agentId);
-    toast.success("Assignment deleted");
+    toast.success(t("tps.assignmentDeleted"));
   } catch (e) {
-    toast.error("Delete failed: " + (e.response?.data?.msg || e.message));
+    toast.error(t("common.deleteFailed") + (e.response?.data?.msg || e.message));
   }
 };
 
@@ -418,15 +420,15 @@ onMounted(() => {
             class="text-3xl lg:text-4xl font-bold mb-2 flex items-center"
           >
             <BaseIcon :path="mdiServerNetwork" size="40" class="mr-4" />
-            Tunnel Proxy Server
+            {{ t('tps.title') }}
           </h1>
           <p class="text-purple-100 text-lg">
-            Domain management – Redock tunnel server
+            {{ t('tps.subtitle') }}
           </p>
         </div>
         <div class="mt-6 lg:mt-0 flex space-x-3">
           <BaseButton
-            label="Refresh"
+            :label="t('common.refresh')"
             :icon="mdiRefresh"
             color="white"
             outline
@@ -439,7 +441,7 @@ onMounted(() => {
     </div>
 
     <CardBox class="mb-6">
-      <FormField label="Tunnel server" help="Enable/disable and Cloudflare zone. Tunnel subdomains are created under this zone; register/login use this setting.">
+      <FormField :label="t('tps.tunnelServer')" :help="t('tps.tunnelServerHelp')">
         <div class="flex flex-wrap items-center gap-6">
           <label class="flex items-center gap-2 cursor-pointer">
             <input
@@ -449,10 +451,10 @@ onMounted(() => {
               class="rounded border-slate-300 dark:border-slate-600"
               @change="saveConfigField({ enabled: $event.target.checked })"
             />
-            <span class="text-slate-700 dark:text-slate-200">Tunnel server enabled</span>
+            <span class="text-slate-700 dark:text-slate-200">{{ t('tps.tunnelServerEnabled') }}</span>
           </label>
           <div class="flex items-center gap-2">
-            <label for="cloudflare-zone" class="text-slate-700 dark:text-slate-200 shrink-0">Cloudflare zone:</label>
+            <label for="cloudflare-zone" class="text-slate-700 dark:text-slate-200 shrink-0">{{ t('tps.cloudflareZone') }}</label>
             <select
               id="cloudflare-zone"
               :value="serverConfig.cloudflare_zone_id"
@@ -460,7 +462,7 @@ onMounted(() => {
               :disabled="configLoading || configSaving"
               @change="onZoneChange(($event.target).value)"
             >
-              <option value="">— Select zone —</option>
+              <option value="">{{ t('tps.selectZone') }}</option>
               <option
                 v-for="z in cloudflareZones"
                 :key="z.zone_id"
@@ -484,7 +486,7 @@ onMounted(() => {
               {{ tunnelStats.total }}
             </div>
             <div class="text-sm text-purple-600/70 dark:text-purple-400/70">
-              Total domains
+              {{ t('tps.totalDomains') }}
             </div>
           </div>
           <BaseIcon :path="mdiServerNetwork" size="48" class="text-purple-500 opacity-20" />
@@ -499,7 +501,7 @@ onMounted(() => {
               {{ tunnelStats.active }}
             </div>
             <div class="text-sm text-emerald-600/70 dark:text-emerald-400/70">
-              Active (connected)
+              {{ t('tps.activeConnected') }}
             </div>
           </div>
           <BaseIcon :path="mdiConnection" size="48" class="text-emerald-500 opacity-20" />
@@ -514,7 +516,7 @@ onMounted(() => {
               {{ tunnelStats.total - tunnelStats.active }}
             </div>
             <div class="text-sm text-slate-500 dark:text-slate-400">
-              Not connected
+              {{ t('tps.notConnected') }}
             </div>
           </div>
           <BaseIcon :path="mdiTunnel" size="48" class="text-slate-400 opacity-30" />
@@ -525,7 +527,7 @@ onMounted(() => {
     <CardBox>
       <SectionTitleLineWithButton
         :icon="mdiConnection"
-        title="Tunnel Domains"
+        :title="t('tps.tunnelDomains')"
         main
       >
         <div class="flex flex-col gap-3 md:flex-row md:items-center">
@@ -533,7 +535,7 @@ onMounted(() => {
             <FormControl
               v-model="searchQuery"
               :icon="mdiMagnify"
-              placeholder="Search domains"
+              :placeholder="t('tps.searchDomains')"
             />
           </div>
           <BaseButton
@@ -560,7 +562,7 @@ onMounted(() => {
           class="inline-block animate-spin rounded-full h-8 w-8 border-b-2 border-purple-600"
         />
         <p class="text-slate-500 dark:text-slate-400 mt-4">
-          Loading domains...
+          {{ t('tps.loadingDomains') }}
         </p>
       </div>
 
@@ -576,8 +578,8 @@ onMounted(() => {
         <p class="text-slate-500 dark:text-slate-400 mb-4">
           {{
             searchQuery
-              ? "No domains match your search."
-              : "No domains defined yet."
+              ? t('tps.noDomainsMatch')
+              : t('tps.noDomains')
           }}
         </p>
       </div>
@@ -609,31 +611,31 @@ onMounted(() => {
                     :title="tunnel.status_summary"
                   >
                     <BaseIcon :path="mdiCircle" size="10" class="fill-current" />
-                    Active
+                    {{ t('tps.active') }}
                   </span>
                   <span
                     v-else-if="tunnel.started"
                     class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-200"
                     :title="tunnel.status_summary"
                   >
-                    Local client running
+                    {{ t('tps.localClientRunning') }}
                   </span>
                   <span
                     v-else
                     class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-slate-100 text-slate-600 dark:bg-slate-700 dark:text-slate-300"
                     :title="tunnel.status_summary"
                   >
-                    Idle
+                    {{ t('tps.idle') }}
                   </span>
                 </h3>
                 <div class="flex flex-wrap items-center gap-x-4 gap-y-2 text-sm text-slate-500 dark:text-slate-400">
-                  <span class="flex items-center gap-1" :title="'Owner: ' + (tunnel.owner_label || '—')">
+                  <span class="flex items-center gap-1" :title="t('tps.owner') + ': ' + (tunnel.owner_label || '—')">
                     <BaseIcon :path="mdiAccount" size="14" class="shrink-0" />
                     <span class="font-medium text-slate-600 dark:text-slate-300">{{ tunnel.owner_label || "—" }}</span>
                   </span>
                   <span class="flex items-center">
                     <BaseIcon :path="mdiEthernet" size="16" class="mr-1 shrink-0" />
-                    Port: {{ tunnel.port }}
+                    {{ t('tps.portLabel') }}: {{ tunnel.port }}
                   </span>
                   <span
                     v-if="protoHas(tunnel, 'tcp')"
@@ -658,13 +660,13 @@ onMounted(() => {
                   {{ tunnel.status_summary }}
                 </p>
                 <div class="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-500 dark:text-slate-400">
-                  <span>Created: {{ formatDate(tunnel.UpdatedAt || tunnel.created_at) }}</span>
-                  <span v-if="tunnel.last_used_at">Last used: {{ formatDate(tunnel.last_used_at) }}</span>
+                  <span>{{ t('tps.created') }}: {{ formatDate(tunnel.UpdatedAt || tunnel.created_at) }}</span>
+                  <span v-if="tunnel.last_used_at">{{ t('tps.lastUsed') }}: {{ formatDate(tunnel.last_used_at) }}</span>
                 </div>
-                <!-- How to connect from outside -->
+                <!-- {{ t('tps.howToConnect') }} -->
                 <div class="mt-4 pt-4 border-t border-slate-200 dark:border-slate-600">
                   <p class="text-xs font-medium text-slate-500 dark:text-slate-400 mb-2">
-                    How to connect from outside
+                    {{ t('tps.howToConnect') }}
                   </p>
                   <div class="space-y-2">
                     <div
@@ -681,7 +683,7 @@ onMounted(() => {
                           :icon="mdiContentCopy"
                           color="lightDark"
                           small
-                          title="Copy"
+                          :title="t('common.copy')"
                           @click="copyConnection(line.value)"
                         />
                       </div>
@@ -700,7 +702,7 @@ onMounted(() => {
                 :icon="mdiDelete"
                 color="danger"
                 small
-                title="Delete"
+                :title="t('common.delete')"
                 @click="deleteModal(tunnel)"
               />
             </div>
@@ -747,12 +749,12 @@ onMounted(() => {
 
     <!-- Remote Agents (control plane) -->
     <CardBox>
-      <SectionTitleLineWithButton :icon="mdiServerNetwork" title="Remote Agents" main>
-        <BaseButton :icon="mdiRefresh" color="info" small label="Refresh" @click="loadAgents" />
+      <SectionTitleLineWithButton :icon="mdiServerNetwork" :title="t('tps.remoteAgents')" main>
+        <BaseButton :icon="mdiRefresh" color="info" small :label="t('common.refresh')" @click="loadAgents" />
       </SectionTitleLineWithButton>
 
       <div v-if="agents.length === 0" class="text-center py-10 text-slate-500">
-        No agents registered yet. A client appears here once it registers with this server.
+        {{ t('tps.noAgents') }}
       </div>
 
       <div v-else class="space-y-3">
@@ -771,15 +773,15 @@ onMounted(() => {
               <div class="min-w-0">
                 <div class="font-semibold truncate">
                   {{ agent.label || agent.client_id }}
-                  <span class="text-xs text-slate-400 font-normal">({{ agent.online ? "online" : "offline" }})</span>
+                  <span class="text-xs text-slate-400 font-normal">({{ agent.online ? t("tps.online") : t("tps.offline") }})</span>
                 </div>
                 <div class="text-xs text-slate-500 truncate">
-                  {{ agent.client_id }} · last seen: {{ formatSeen(agent.last_seen_at) }}
+                  {{ agent.client_id }} · {{ t('tps.lastSeen') }} {{ formatSeen(agent.last_seen_at) }}
                 </div>
               </div>
             </div>
             <div class="flex items-center gap-2 shrink-0">
-              <BaseButton :icon="mdiConnection" color="success" small label="Assign tunnel" @click="openCreateAssignment(agent)" />
+              <BaseButton :icon="mdiConnection" color="success" small :label="t('tps.assignTunnel')" @click="openCreateAssignment(agent)" />
               <BaseButton
                 :icon="expandedAgentId === agent.id ? mdiChevronLeft : mdiChevronRight"
                 color="lightDark"
@@ -792,15 +794,15 @@ onMounted(() => {
 
           <div v-if="expandedAgentId === agent.id" class="border-t border-slate-200 dark:border-slate-700 p-4 bg-slate-50 dark:bg-slate-800/40">
             <div v-if="!(agentAssignments[agent.id] || []).length" class="text-sm text-slate-500 py-2">
-              No tunnels assigned. Use "Assign tunnel" to add one.
+              {{ t('tps.noTunnelsAssigned') }}
             </div>
             <table v-else class="min-w-full text-sm">
               <thead>
                 <tr class="text-left text-slate-500">
-                  <th class="py-1 pr-3">Domain</th>
-                  <th class="py-1 pr-3">Target (HTTP/TCP/UDP)</th>
-                  <th class="py-1 pr-3">Auto</th>
-                  <th class="py-1 pr-3 text-right">Actions</th>
+                  <th class="py-1 pr-3">{{ t('tps.thDomain') }}</th>
+                  <th class="py-1 pr-3">{{ t('tps.thTarget') }}</th>
+                  <th class="py-1 pr-3">{{ t('tps.thAuto') }}</th>
+                  <th class="py-1 pr-3 text-right">{{ t('common.actions') }}</th>
                 </tr>
               </thead>
               <tbody>
@@ -823,8 +825,8 @@ onMounted(() => {
                   </td>
                   <td class="py-2 pr-3 text-right">
                     <div class="inline-flex gap-2">
-                      <BaseButton :icon="mdiRefresh" color="info" small title="Edit" @click="openEditAssignment(agent.id, a)" />
-                      <BaseButton :icon="mdiDelete" color="danger" small title="Delete" @click="deleteAssignment(agent.id, a)" />
+                      <BaseButton :icon="mdiRefresh" color="info" small :title="t('common.edit')" @click="openEditAssignment(agent.id, a)" />
+                      <BaseButton :icon="mdiDelete" color="danger" small :title="t('common.delete')" @click="deleteAssignment(agent.id, a)" />
                     </div>
                   </td>
                 </tr>
@@ -839,60 +841,60 @@ onMounted(() => {
   <!-- Assignment Create/Edit Modal -->
   <CardBoxModal
     v-model="isAssignmentModalActive"
-    :title="assignmentMode === 'edit' ? 'Edit Tunnel Assignment' : 'Assign Tunnel'"
-    :button-label="assignmentSaving ? 'Saving...' : 'Save'"
+    :title="assignmentMode === 'edit' ? t('tps.editAssignment') : t('tps.assignTunnelTitle')"
+    :button-label="assignmentSaving ? t('common.saving') : t('common.save')"
     has-cancel
     @confirm="saveAssignment"
   >
     <div class="space-y-3">
       <p v-if="assignmentMode === 'edit'" class="text-xs text-slate-500">
-        Domain: <span class="font-mono">{{ assignmentForm.domain }}</span>
+        {{ t('tps.domainPrefix') }} <span class="font-mono">{{ assignmentForm.domain }}</span>
       </p>
       <p v-else class="text-xs text-slate-500">
-        The domain is auto-generated (random subdomain). Just enter the local target the client will forward to.
+        {{ t('tps.autoDomainHint') }}
       </p>
       <div class="grid grid-cols-2 gap-3">
-        <FormField label="HTTP IP">
+        <FormField :label="t('tps.httpIp')">
           <FormControl v-model="assignmentForm.local_http_ip" placeholder="127.0.0.1" />
         </FormField>
-        <FormField label="HTTP Port">
+        <FormField :label="t('tps.httpPort')">
           <FormControl v-model="assignmentForm.local_http_port" type="number" placeholder="80" />
         </FormField>
-        <FormField label="TCP IP">
-          <FormControl v-model="assignmentForm.local_tcp_ip" placeholder="(optional)" />
+        <FormField :label="t('tps.tcpIp')">
+          <FormControl v-model="assignmentForm.local_tcp_ip" :placeholder="t('tps.optional')" />
         </FormField>
-        <FormField label="TCP Port">
+        <FormField :label="t('tps.tcpPort')">
           <FormControl v-model="assignmentForm.local_tcp_port" type="number" placeholder="" />
         </FormField>
-        <FormField label="UDP IP">
-          <FormControl v-model="assignmentForm.local_udp_ip" placeholder="(optional)" />
+        <FormField :label="t('tps.udpIp')">
+          <FormControl v-model="assignmentForm.local_udp_ip" :placeholder="t('tps.optional')" />
         </FormField>
-        <FormField label="UDP Port">
+        <FormField :label="t('tps.udpPort')">
           <FormControl v-model="assignmentForm.local_udp_port" type="number" placeholder="" />
         </FormField>
       </div>
       <p class="text-xs text-slate-500">
-        This ip:port is the target the client forwards to on its own network. At least one (HTTP/TCP/UDP) must be set.
+        {{ t('tps.targetHint') }}
       </p>
       <div class="grid grid-cols-2 gap-3">
-        <FormField label="Source Bind IP">
-          <FormControl v-model="assignmentForm.source_bind_ip" placeholder="(optional)" />
+        <FormField :label="t('tps.sourceBindIp')">
+          <FormControl v-model="assignmentForm.source_bind_ip" :placeholder="t('tps.optional')" />
         </FormField>
-        <FormField label="Keepalive (s)">
+        <FormField :label="t('tps.keepalive')">
           <FormControl v-model="assignmentForm.keepalive_interval_seconds" type="number" placeholder="30" />
         </FormField>
       </div>
-      <FormField label="Host Rewrite">
-        <FormControl v-model="assignmentForm.host_rewrite" placeholder="(optional, HTTP Host override)" />
+      <FormField :label="t('tps.hostRewrite')">
+        <FormControl v-model="assignmentForm.host_rewrite" :placeholder="t('tps.hostRewritePlaceholder')" />
       </FormField>
       <label class="inline-flex items-center gap-2 cursor-pointer">
         <input v-model="assignmentForm.auto_connect" type="checkbox" class="form-checkbox" />
-        <span class="text-sm">Auto-connect (client opens it automatically)</span>
+        <span class="text-sm">{{ t('tps.autoConnect') }}</span>
       </label>
       <br />
       <label class="inline-flex items-center gap-2 cursor-pointer">
         <input v-model="assignmentForm.enabled" type="checkbox" class="form-checkbox" />
-        <span class="text-sm">Enabled</span>
+        <span class="text-sm">{{ t('common.enabled') }}</span>
       </label>
     </div>
   </CardBoxModal>
@@ -900,9 +902,9 @@ onMounted(() => {
   <!-- Delete Confirmation Modal -->
   <CardBoxModal
     v-model="isDeleteModalActive"
-    title="Delete Domain"
+    :title="t('tps.deleteDomain')"
     button="danger"
-    button-label="Delete"
+    :button-label="t('common.delete')"
     has-cancel
     @confirm="deleteSubmit"
   >
@@ -916,11 +918,11 @@ onMounted(() => {
           {{ selectedTunnel.domain }}
         </h4>
         <p class="text-sm text-red-600 dark:text-red-300 mt-1">
-          Port: {{ selectedTunnel.port }}
+          {{ t('tps.portLabel') }}: {{ selectedTunnel.port }}
         </p>
       </div>
       <p class="text-slate-600 dark:text-slate-400">
-        This domain will be permanently deleted.
+        {{ t('tps.deleteDomainText') }}
       </p>
     </div>
   </CardBoxModal>

@@ -8,8 +8,10 @@ import ApiService from "@/services/ApiService";
 import { mdiContentCopy, mdiEthernet, mdiRefresh, mdiPlus, mdiMinus } from "@mdi/js";
 import { onMounted, ref, computed } from "vue";
 import { useToast } from "vue-toastification";
+import { useI18n } from "vue-i18n";
 
 const toast = useToast();
+const { t } = useI18n();
 const interfaces = ref([]);
 const addresses = ref([]);
 const selectedInterface = ref("");
@@ -37,7 +39,7 @@ const fetchInterfaces = async () => {
       await fetchAddresses();
     }
   } catch (e) {
-    toast.error("Failed to load interfaces: " + (e.response?.data?.msg || e.message));
+    toast.error(t("ipa.loadFailed") + (e.response?.data?.msg || e.message));
   } finally {
     loading.value = false;
   }
@@ -73,11 +75,11 @@ const addAlias = async () => {
       interface: selectedInterface.value,
       cidr_or_range: cidrOrRange.value.trim()
     });
-    toast.success("IP addresses added.");
+    toast.success(t("ipa.ipAdded"));
     cidrOrRange.value = "";
     await fetchAddresses();
   } catch (e) {
-    toast.error(e.response?.data?.msg || e.message || "Failed to add.");
+    toast.error(e.response?.data?.msg || e.message || t("ipa.addFailed"));
   } finally {
     addRemoveLoading.value = false;
   }
@@ -91,11 +93,11 @@ const removeAlias = async () => {
       interface: selectedInterface.value,
       cidr_or_range: cidrOrRange.value.trim()
     });
-    toast.success("IP addresses removed.");
+    toast.success(t("ipa.ipRemoved"));
     cidrOrRange.value = "";
     await fetchAddresses();
   } catch (e) {
-    toast.error(e.response?.data?.msg || e.message || "Failed to remove.");
+    toast.error(e.response?.data?.msg || e.message || t("ipa.removeFailed"));
   } finally {
     addRemoveLoading.value = false;
   }
@@ -118,7 +120,7 @@ function routeCommandForAddress(addr) {
 
 const copyCommand = (cmd) => {
   if (!cmd) return;
-  navigator.clipboard.writeText(cmd).then(() => toast.success("Command copied.")).catch(() => toast.error("Copy failed."));
+  navigator.clipboard.writeText(cmd).then(() => toast.success(t("ipa.commandCopied"))).catch(() => toast.error(t("ipa.copyFailed")));
 };
 
 onMounted(() => {
@@ -137,14 +139,14 @@ onMounted(() => {
             <BaseIcon :path="mdiEthernet" size="24" class="text-white" />
           </div>
           <div>
-            <h1 class="text-2xl lg:text-3xl font-bold mb-2">IP Alias</h1>
-            <p class="text-cyan-100">Add and manage IP addresses on network interfaces</p>
+            <h1 class="text-2xl lg:text-3xl font-bold mb-2">{{ t('ipa.title') }}</h1>
+            <p class="text-cyan-100">{{ t('ipa.subtitle') }}</p>
           </div>
         </div>
         <div class="flex space-x-3 mt-4 lg:mt-0">
           <BaseButton
             :icon="mdiRefresh"
-            label="Refresh"
+            :label="t('common.refresh')"
             color="lightDark"
             :loading="loading"
             @click="fetchInterfaces"
@@ -154,28 +156,23 @@ onMounted(() => {
     </div>
 
   <CardBox>
-    <p class="text-slate-600 dark:text-slate-400 text-sm mb-4">
-      Add an IP address or range to the interface. The kernel will accept traffic to these addresses.
-      The <strong>route</strong> command to run on the client for each IP is listed below.
-    </p>
-    <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">
-      IP alias is only supported on Linux.
-    </p>
+    <p class="text-slate-600 dark:text-slate-400 text-sm mb-4" v-html="t('ipa.intro')"></p>
+    <p class="text-sm text-slate-500 dark:text-slate-400 mb-6">{{ t('ipa.linuxOnly') }}</p>
 
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-      <FormField label="Interface">
+      <FormField :label="t('ipa.interface')">
         <select
           v-model="selectedInterface"
           class="w-full rounded-lg border border-slate-200 dark:border-slate-600 bg-white dark:bg-slate-800 px-3 py-2 text-sm"
           @change="fetchAddresses"
         >
-          <option value="">Select</option>
+          <option value="">{{ t('ipa.select') }}</option>
           <option v-for="iface in interfaces" :key="iface.name" :value="iface.name">
-            {{ iface.name }}{{ iface.up ? " (up)" : "" }}{{ iface.ips?.length ? " — " + iface.ips.join(", ") : "" }}
+            {{ iface.name }}{{ iface.up ? t('ipa.upSuffix') : "" }}{{ iface.ips?.length ? " — " + iface.ips.join(", ") : "" }}
           </option>
         </select>
       </FormField>
-      <FormField label="IP or range (CIDR or start-end)">
+      <FormField :label="t('ipa.ipOrRange')">
         <FormControl
           v-model="cidrOrRange"
           placeholder="88.255.136.0/24 or 88.255.136.1-88.255.136.254"
@@ -187,17 +184,17 @@ onMounted(() => {
       v-if="selectedInterfaceInfo"
       class="mb-6 p-4 rounded-lg bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-600"
     >
-      <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">Interface: {{ selectedInterfaceInfo.name }}</p>
+      <p class="text-sm font-medium text-slate-700 dark:text-slate-300 mb-3">{{ t('ipa.interfacePrefix') }} {{ selectedInterfaceInfo.name }}</p>
       <dl class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-x-4 gap-y-2 text-sm">
-        <dt class="text-slate-500 dark:text-slate-400">Status</dt>
-        <dd class="text-slate-800 dark:text-slate-200">{{ selectedInterfaceInfo.up ? "Up" : "Down" }}</dd>
-        <dt class="text-slate-500 dark:text-slate-400">MAC</dt>
+        <dt class="text-slate-500 dark:text-slate-400">{{ t('common.status') }}</dt>
+        <dd class="text-slate-800 dark:text-slate-200">{{ selectedInterfaceInfo.up ? t('ipa.up') : t('ipa.down') }}</dd>
+        <dt class="text-slate-500 dark:text-slate-400">{{ t('ipa.mac') }}</dt>
         <dd class="text-slate-800 dark:text-slate-200 font-mono">{{ selectedInterfaceInfo.mac || "—" }}</dd>
-        <dt class="text-slate-500 dark:text-slate-400">MTU</dt>
+        <dt class="text-slate-500 dark:text-slate-400">{{ t('ipa.mtu') }}</dt>
         <dd class="text-slate-800 dark:text-slate-200">{{ selectedInterfaceInfo.mtu ?? "—" }}</dd>
-        <dt class="text-slate-500 dark:text-slate-400">Gateway</dt>
+        <dt class="text-slate-500 dark:text-slate-400">{{ t('ipa.gateway') }}</dt>
         <dd class="text-slate-800 dark:text-slate-200 font-mono">{{ selectedInterfaceInfo.gateway || "—" }}</dd>
-        <dt class="text-slate-500 dark:text-slate-400 sm:col-span-2 lg:col-span-4">IP addresses</dt>
+        <dt class="text-slate-500 dark:text-slate-400 sm:col-span-2 lg:col-span-4">{{ t('ipa.ipAddresses') }}</dt>
         <dd class="text-slate-800 dark:text-slate-200 font-mono sm:col-span-2 lg:col-span-4">
           {{ (selectedInterfaceInfo.ips && selectedInterfaceInfo.ips.length) ? selectedInterfaceInfo.ips.join(", ") : "—" }}
         </dd>
@@ -207,7 +204,7 @@ onMounted(() => {
     <div class="flex flex-wrap gap-3 mb-6">
       <BaseButton
         :icon="mdiPlus"
-        label="Add"
+        :label="t('common.add')"
         color="info"
         :disabled="!canSubmit || addRemoveLoading"
         :loading="addRemoveLoading"
@@ -215,7 +212,7 @@ onMounted(() => {
       />
       <BaseButton
         :icon="mdiMinus"
-        label="Remove"
+        :label="t('ipa.remove')"
         color="danger"
         :disabled="!canSubmit || addRemoveLoading"
         :loading="addRemoveLoading"
@@ -224,23 +221,23 @@ onMounted(() => {
       <BaseButton
         v-if="selectedInterface"
         :icon="mdiRefresh"
-        label="Refresh addresses"
+        :label="t('ipa.refreshAddresses')"
         outline
         :loading="loadingAddresses"
         @click="fetchAddresses"
       />
     </div>
 
-    <FormField v-if="selectedInterface" label="Addresses on this interface and client commands">
+    <FormField v-if="selectedInterface" :label="t('ipa.addressesLabel')">
       <div v-if="loadingAddresses" class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-4 text-sm text-slate-500 dark:text-slate-400">
-        Loading...
+        {{ t('common.loading') }}
       </div>
       <div v-else-if="addresses.length === 0" class="rounded-lg bg-slate-100 dark:bg-slate-700/50 p-4 text-sm text-slate-500 dark:text-slate-400">
-        No addresses yet or list not loaded. Click "Refresh addresses" to load.
+        {{ t('ipa.noAddresses') }}
       </div>
       <div v-else class="rounded-lg border border-slate-200 dark:border-slate-600 overflow-hidden">
         <div v-if="!gatewayIp" class="p-3 bg-amber-50 dark:bg-amber-900/20 border-b border-slate-200 dark:border-slate-600 text-sm text-amber-800 dark:text-amber-200">
-          Gateway not available; commands cannot be generated.
+          {{ t('ipa.gatewayNotAvail') }}
         </div>
         <ul class="divide-y divide-slate-200 dark:divide-slate-600 max-h-96 overflow-y-auto">
           <li
@@ -254,7 +251,7 @@ onMounted(() => {
             </code>
             <BaseButton
               :icon="mdiContentCopy"
-              label="Copy"
+              :label="t('common.copy')"
               small
               outline
               :disabled="!routeCommandForAddress(addr)"
@@ -263,7 +260,7 @@ onMounted(() => {
           </li>
         </ul>
         <p v-if="gatewayIp && addresses.length" class="text-xs text-slate-500 dark:text-slate-400 px-3 py-2 border-t border-slate-200 dark:border-slate-600">
-          Gateway: {{ gatewayIp }} (client route forwards to this address)
+          {{ t('ipa.gatewayForwards', { ip: gatewayIp }) }}
         </p>
       </div>
     </FormField>
