@@ -1,13 +1,14 @@
 package docker_manager
 
 import (
-	"fmt"
+	"context"
 	"io/fs"
 	"io/ioutil"
 	"log"
 	"net"
 	"os"
 	"path/filepath"
+	"redock/docker-manager/stacks"
 	"regexp"
 	"runtime"
 	"sort"
@@ -15,8 +16,6 @@ import (
 	"time"
 
 	"github.com/onuragtas/command"
-	"gopkg.in/src-d/go-git.v4"
-	"gopkg.in/src-d/go-git.v4/plumbing"
 	"gopkg.in/yaml.v2"
 )
 
@@ -57,10 +56,6 @@ type Process struct {
 	Name string
 	Func func()
 }
-
-var answers []string
-
-var dockerRepo = "https://github.com/onuragtas/docker"
 
 var dockerEnvironmentManager DockerEnvironmentManager
 
@@ -213,10 +208,6 @@ func (t *DockerEnvironmentManager) findImage(value interface{}) string {
 	return image
 }
 
-func (t *DockerEnvironmentManager) CheckDepends(label string) (*Service, bool) {
-	return t.GetService(label)
-}
-
 func (t *DockerEnvironmentManager) GetService(name string) (*Service, bool) {
 	for _, value := range t.Services {
 		if value.ContainerName == name {
@@ -227,128 +218,20 @@ func (t *DockerEnvironmentManager) GetService(name string) (*Service, bool) {
 }
 
 func (t *DockerEnvironmentManager) Up(services []string) {
-	t.createComposeFile(services)
-	//t.startCommand("cp", t.EnvDistPath, t.EnvPath)
-	t.runInstall()
-
-}
-
-func (t *DockerEnvironmentManager) getDepends(answer string) []string {
-	if depends, ok := dockerEnvironmentManager.CheckDepends(answer); ok {
-		for _, dependsValue := range depends.Links {
-			if !strings.Contains(dependsValue, answer) && !t.inService(dependsValue, answers) {
-				answers = append(answers, dependsValue)
-				t.getDepends(dependsValue)
-			}
-		}
-
-		for _, dependsValue := range depends.DependsOn {
-			if !strings.Contains(dependsValue, answer) && !t.inService(dependsValue, answers) {
-				answers = append(answers, dependsValue)
-				t.getDepends(dependsValue)
-			}
-		}
+	if m, err := stacks.GetManager(t.GetWorkDir()); err == nil {
+		_ = m.Up(context.Background(), services...)
 	}
-
-	return answers
-}
-
-func (t *DockerEnvironmentManager) inService(service string, answers []string) bool {
-	for _, answer := range answers {
-		if service == answer {
-			return true
-		}
-	}
-
-	return false
 }
 
 func (t *DockerEnvironmentManager) AddService(item string) {
-
-	t.CopyStruct = t.Struct
-	t.CopyStruct["services"] = make(map[interface{}]interface{})
-	services := t.ActiveServices
-	services = append(services, item)
-
-	depends := t.getDepends(item)
-	for _, depend := range depends {
-		if !t.inService(depend, services) {
-			services = append(services, depend)
-		}
+	if m, err := stacks.GetManager(t.GetWorkDir()); err == nil {
+		_ = m.Up(context.Background(), item)
 	}
-
-	for _, item := range services {
-		if definition := t.serviceDefinitionWithOverrides(item); definition != nil {
-			t.CopyStruct["services"].(map[interface{}]interface{})[item] = definition
-		}
-	}
-
-	yamlData, _ := yaml.Marshal(t.CopyStruct)
-	err := ioutil.WriteFile(t.ComposeFilePath, yamlData, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-
-	t.ActiveServices = services
-
-	t.command.RunCommand(t.GetWorkDir(), "sysctl", "-w", "vm.max_map_count=2048000")
-	t.command.RunCommand(t.GetWorkDir(), "sysctl", "-w", "fs.file-max=65536")
-	t.command.RunCommand(t.GetWorkDir(), "docker-compose", "up", "-d", item)
-	t.Init()
 }
 
 func (t *DockerEnvironmentManager) RemoveService(item string) {
-	t.CopyStruct = t.copyStruct
-	if service, ok := t.GetService(item); ok {
-		delete(t.CopyStruct["services"].(map[interface{}]interface{}), service.ContainerName)
-	}
-
-	yamlData, _ := yaml.Marshal(t.CopyStruct)
-	err := ioutil.WriteFile(t.ComposeFilePath, yamlData, 0644)
-	if err != nil {
-		log.Println(err)
-	}
-
-	containerName := t.containerNameForService(item)
-	if containerName == "" {
-		containerName = item
-	}
-	t.command.RunCommand(t.GetWorkDir(), "docker", "rm", containerName, "-f")
-	newList := []string{}
-	for _, v := range t.ActiveServices {
-		if v != item {
-			newList = append(newList, v)
-		}
-	}
-
-	t.ActiveServices = newList
-	t.Init()
-}
-
-func (t *DockerEnvironmentManager) runInstall() {
-	osName := runtime.GOOS
-	switch osName {
-	case "linux":
-		t.command.RunCommand(t.GetWorkDir(), t.InstallPath)
-		break
-	default:
-		t.command.RunCommand(t.GetWorkDir(), "sh", t.InstallPath)
-	}
-}
-
-func (t *DockerEnvironmentManager) createComposeFile(services []string) {
-	t.CopyStruct = t.Struct
-	t.CopyStruct["services"] = make(map[interface{}]interface{})
-	for _, item := range services {
-		if definition := t.serviceDefinitionWithOverrides(item); definition != nil {
-			t.CopyStruct["services"].(map[interface{}]interface{})[item] = definition
-		}
-	}
-
-	yamlData, _ := yaml.Marshal(t.CopyStruct)
-	err := ioutil.WriteFile(t.ComposeFilePath, yamlData, 0644)
-	if err != nil {
-		log.Println(err)
+	if m, err := stacks.GetManager(t.GetWorkDir()); err == nil {
+		_ = m.Down(context.Background(), item)
 	}
 }
 
@@ -384,21 +267,16 @@ func (t *DockerEnvironmentManager) getHomeDir() string {
 }
 
 func (t *DockerEnvironmentManager) Restart(service string) {
-	if service == "nginx" {
-		if t.DevEnv {
-			t.command.RunCommand(t.GetWorkDir(), "docker", "-H", "192.168.36.240:4243", "exec", "-t", "nginx", "sh", "-c", "nginx -s reload")
-		} else {
-			t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
-		}
-	} else {
-		if t.DevEnv {
-			t.command.RunCommand(t.GetWorkDir(), "docker", "-H", "192.168.36.240:4243", "exec", "-t", "nginx", "sh", "-c", "nginx -s reload")
-			t.command.RunCommand(t.GetWorkDir(), "docker", "-H", "192.168.36.240:4243", "exec", "-t", "httpd", "sh", "-c", "apache2ctl restart")
-		} else {
-			t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "nginx")
-			t.command.RunCommand(t.GetWorkDir(), "docker-compose", "restart", "httpd")
-		}
+	m, err := stacks.GetManager(t.GetWorkDir())
+	if err != nil {
+		return
 	}
+	if service == "nginx" {
+		_ = m.Restart(context.Background(), "nginx")
+		return
+	}
+	_ = m.Restart(context.Background(), "nginx")
+	_ = m.Restart(context.Background(), "httpd")
 }
 
 func (t *DockerEnvironmentManager) GetDomains(path string) []string {
@@ -450,66 +328,29 @@ func (t *DockerEnvironmentManager) GetLocalIP() string {
 	return ""
 }
 func (t *DockerEnvironmentManager) RegenerateXDebugConf() {
-	c := command.Command{}
-	conf := fmt.Sprintf(xdebugConf, t.GetLocalIP(), 10000) // todo hardcoded read .env
+	// Update XDEBUG_HOST in .env to the current local IP.
 	if ip, err := t.Virtualhost.getXDebugIp(); err == nil {
 		t.Env = strings.ReplaceAll(t.Env, "XDEBUG_HOST="+ip, "XDEBUG_HOST="+t.GetLocalIP())
 		os.WriteFile(t.EnvPath, []byte(t.Env), 0644)
 	}
-
-	var phpServices []string
-
-	for _, service := range t.ActiveServices {
-		if strings.Contains(service, "_xdebug") {
-			phpServices = append(phpServices, service)
-		}
+	if m, err := stacks.GetManager(t.GetWorkDir()); err == nil {
+		m.ReloadEnv()
+		_ = m.RegenerateXDebugINI(context.Background())
 	}
-
-	for _, service := range phpServices {
-		if strings.Contains(service, "81") || strings.Contains(service, "84") {
-			conf = fmt.Sprintf(xdebugConf8, t.GetLocalIP(), 10000)
-		} else {
-			conf = fmt.Sprintf(xdebugConf, t.GetLocalIP(), 10000)
-		}
-		os.WriteFile(service+".ini", []byte(conf), 0644)
-		c.RunWithPipe("docker", "cp", service+".ini", service+":/usr/local/etc/php/conf.d/xdebug.ini")
-		os.RemoveAll(service + ".ini")
-	}
-
-	t.RestartAll()
 }
 
 func (t *DockerEnvironmentManager) RestartAll() {
-	//var wg sync.WaitGroup
-	c := command.Command{}
-
-	var phpServices []string
-
-	for _, service := range t.ActiveServices {
-		if strings.Contains(service, "php") {
-			phpServices = append(phpServices, service)
+	m, err := stacks.GetManager(t.GetWorkDir())
+	if err != nil {
+		return
+	}
+	for _, name := range m.Active() {
+		if strings.Contains(name, "php") {
+			_ = m.Restart(context.Background(), name)
 		}
 	}
-	//wg.Add(len(phpServices) + 2)
-
-	for _, service := range phpServices {
-		//	go func(w *sync.WaitGroup, serviceName string) {
-		c.RunWithPipe("/usr/local/bin/docker", "restart", service)
-		//w.Done()
-		//}(&wg, service)
-	}
-
-	//go func(w *sync.WaitGroup) {
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "httpd")
-	//w.Done()
-	//}(&wg)
-
-	//go func(w *sync.WaitGroup) {
-	c.RunWithPipe("/usr/local/bin/docker", "restart", "nginx")
-	//w.Done()
-	//}(&wg)
-
-	//wg.Wait()
+	_ = m.Restart(context.Background(), "httpd")
+	_ = m.Restart(context.Background(), "nginx")
 }
 
 func (t *DockerEnvironmentManager) CheckLocalIpAndRegenerate() {
@@ -601,43 +442,4 @@ func (t *DockerEnvironmentManager) RemoveXDebug() {
 	})
 
 	dockerEnvironmentManager.RestartAll()
-}
-
-func (t *DockerEnvironmentManager) UpdateDocker() {
-	_, err := git.PlainClone(t.GetWorkDir(), false, &git.CloneOptions{
-		URL:      dockerRepo,
-		Progress: os.Stdout,
-	})
-	if err != nil && err.Error() != git.ErrRepositoryAlreadyExists.Error() {
-		panic(err)
-	}
-
-	r, err := git.PlainOpen(t.GetWorkDir())
-	if err != nil {
-		log.Print(err)
-	}
-
-	w, err := r.Worktree()
-	if err != nil {
-		log.Print(err)
-	}
-	head, err := r.Head()
-	if err != nil {
-		log.Print(err)
-	}
-
-	commit := plumbing.NewHash(head.Hash().String())
-
-	err = w.Reset(&git.ResetOptions{
-		Mode:   git.HardReset,
-		Commit: commit,
-	})
-	if err != nil {
-		log.Print(err)
-	}
-
-	err = w.Pull(&git.PullOptions{RemoteName: "origin", Progress: os.Stdout})
-	if err != nil {
-		log.Print(err)
-	}
 }

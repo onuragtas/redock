@@ -1,10 +1,12 @@
 package devenv
 
 import (
+	"context"
 	"log"
 	"strconv"
 
 	docker_manager "redock/docker-manager"
+	"redock/docker-manager/stacks"
 	"redock/platform/database"
 	"redock/platform/memory"
 
@@ -72,14 +74,13 @@ func (t *DevEnvManager) DeleteDevEnv(username string) {
 		}
 	}
 	go func() {
-		c := command.Command{}
-		c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "docker", "rm", username, "-f")
+		if m, err := stacks.GetManager(t.dockerEnvironmentManager.GetWorkDir()); err == nil {
+			_ = m.RemoveDevEnv(context.Background(), username)
+		}
 	}()
 }
 
 func (t *DevEnvManager) AddDevEnv(model *DevEnvModel) bool {
-	port, _ := strconv.Atoi(model.Port)
-	redockPort, _ := strconv.Atoi(model.RedockPort)
 	db := t.db()
 	if db == nil {
 		return false
@@ -87,26 +88,29 @@ func (t *DevEnvManager) AddDevEnv(model *DevEnvModel) bool {
 	manager := t.dockerEnvironmentManager
 
 	all := memory.FindAll[*DevEnvEntity](db, "dev_envs")
-
 	for _, e := range all {
 		if e.Username == model.Username {
 			log.Println("User already exists:", model.Username)
 			return false
 		}
 	}
+
+	// SSH host port is auto-assigned from a configurable base (skipping ports
+	// already taken or bound on the host); the redock port is user-provided
+	// (default 6001) and not auto-incremented.
+	usedSSH := map[int]bool{}
 	for _, e := range all {
-		if e.Port == port {
-			log.Println("Port already in use:", port)
-			return false
-		}
+		usedSSH[e.Port] = true
 	}
-	if redockPort > 0 {
-		for _, e := range all {
-			if e.RedockPort == redockPort {
-				log.Println("RedockPort already in use:", redockPort)
-				return false
-			}
-		}
+	sshBase := 100
+	if m, err := stacks.GetManager(manager.GetWorkDir()); err == nil {
+		sshBase = m.GetDevEnvSettings().SSHPortBase
+	}
+	port := stacks.NextFreePort(sshBase, usedSSH)
+
+	redockPort := 6001
+	if v, err := strconv.Atoi(model.RedockPort); err == nil && v > 0 {
+		redockPort = v
 	}
 
 	entity := &DevEnvEntity{
@@ -121,16 +125,17 @@ func (t *DevEnvManager) AddDevEnv(model *DevEnvModel) bool {
 	}
 
 	go func() {
-		cmd := command.Command{}
-		cmd.RunCommand(manager.GetWorkDir(), "bash", "serviceip.sh", model.Port, model.Username, model.Password, model.RedockPort)
+		if m, err := stacks.GetManager(manager.GetWorkDir()); err == nil {
+			if err := m.CreateDevEnv(context.Background(), model.Username, model.Password, port, redockPort); err != nil {
+				log.Println("CreateDevEnv:", err)
+			}
+		}
 	}()
 
 	return true
 }
 
 func (t *DevEnvManager) EditDevEnv(model *DevEnvModel) bool {
-	port, _ := strconv.Atoi(model.Port)
-	redockPort, _ := strconv.Atoi(model.RedockPort)
 	db := t.db()
 	if db == nil {
 		return false
@@ -143,39 +148,23 @@ func (t *DevEnvManager) EditDevEnv(model *DevEnvModel) bool {
 		return false
 	}
 	entity := list[0]
-	all := memory.FindAll[*DevEnvEntity](db, "dev_envs")
 
-	for i, e := range all {
-		if e.GetID() != entity.GetID() && e.Port == port {
-			log.Println("Port already in use by another user:", port)
-			return false
-		}
-		_ = i
-	}
-	if redockPort > 0 {
-		for _, e := range all {
-			if e.GetID() != entity.GetID() && e.RedockPort == redockPort {
-				log.Println("RedockPort already in use by another user:", redockPort)
-				return false
-			}
-		}
-	}
-
-	go func() {
-		c := command.Command{}
-		c.RunCommand(manager.GetWorkDir(), "docker", "rm", model.Username, "-f")
-	}()
-
+	// SSH port stays auto-assigned/stable; password and redock port are editable.
 	entity.Password = model.Password
-	entity.Port = port
-	entity.RedockPort = redockPort
+	if v, err := strconv.Atoi(model.RedockPort); err == nil && v > 0 {
+		entity.RedockPort = v
+	}
 	if err := memory.Update(db, "dev_envs", entity); err != nil {
 		return false
 	}
 
 	go func() {
-		cmd := command.Command{}
-		cmd.RunCommand(manager.GetWorkDir(), "bash", "serviceip.sh", model.Port, model.Username, model.Password, model.RedockPort)
+		if m, err := stacks.GetManager(manager.GetWorkDir()); err == nil {
+			_ = m.RemoveDevEnv(context.Background(), model.Username)
+			if err := m.CreateDevEnv(context.Background(), model.Username, model.Password, entity.Port, entity.RedockPort); err != nil {
+				log.Println("CreateDevEnv:", err)
+			}
+		}
 	}()
 
 	return true
@@ -188,12 +177,15 @@ func (t *DevEnvManager) Regenerate() {
 	}
 	devEnvList := memory.FindAll[*DevEnvEntity](db, "dev_envs")
 
-	c := command.Command{}
-	c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "docker", "pull", "hakanbaysal/devenv:latest")
-
+	m, err := stacks.GetManager(t.dockerEnvironmentManager.GetWorkDir())
+	if err != nil {
+		return
+	}
 	for _, env := range devEnvList {
-		c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "docker", "rm", env.Username, "-f")
-		c.RunCommand(t.dockerEnvironmentManager.GetWorkDir(), "bash", "serviceip.sh", strconv.Itoa(env.Port), env.Username, env.Password, strconv.Itoa(env.RedockPort))
+		_ = m.RemoveDevEnv(context.Background(), env.Username)
+		if err := m.CreateDevEnv(context.Background(), env.Username, env.Password, env.Port, env.RedockPort); err != nil {
+			log.Println("CreateDevEnv:", err)
+		}
 	}
 }
 

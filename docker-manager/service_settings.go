@@ -1,10 +1,12 @@
 package docker_manager
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
+	"redock/docker-manager/stacks"
 	"redock/platform/database"
 	"redock/platform/memory"
 )
@@ -341,9 +343,9 @@ func stringifyPort(port interface{}) string {
 }
 
 func (t *DockerEnvironmentManager) ReapplyServiceSettings() {
-	t.createComposeFile(t.ActiveServices)
-	for _, service := range t.ActiveServices {
-		t.command.RunCommand(t.GetWorkDir(), "docker-compose", "up", "-d", "--force-recreate", service)
+	// Recreate active services via the stacks engine (CreateAndStart removes the
+	// existing container first, so this is an effective force-recreate).
+	if m, err := stacks.GetManager(t.GetWorkDir()); err == nil {
+		_ = m.Up(context.Background(), m.Active()...)
 	}
-	t.Init()
 }

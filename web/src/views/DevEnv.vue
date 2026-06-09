@@ -23,6 +23,7 @@ import {
   mdiKey,
   mdiMagnify,
   mdiPencil,
+  mdiCog,
   mdiPlus,
   mdiRefresh,
   mdiServer,
@@ -44,11 +45,67 @@ const isEditModalActive = ref(false);
 const isDeleteModalActive = ref(false);
 const selectedContainer = ref(null);
 
+const isSettingsModalActive = ref(false);
+const settings = ref({
+  sites_path: '/sites',
+  memory_gb: 8,
+  cpus: 1.5,
+  ssh_port_base: 100,
+  host_suffix: '',
+  host_services: '',
+  install_nvm: false,
+  privileged: true
+});
+
+const GiB = 1024 * 1024 * 1024;
+
+const openSettings = async () => {
+  try {
+    const res = await ApiService.getDevEnvSettings();
+    const s = res.data?.data?.settings || {};
+    settings.value = {
+      sites_path: s.sites_path || '/sites',
+      memory_gb: Math.round((s.memory_bytes || 0) / GiB) || 0,
+      cpus: (s.nano_cpus || 0) / 1e9,
+      ssh_port_base: s.ssh_port_base || 100,
+      host_suffix: s.host_suffix || '',
+      host_services: (s.host_services || []).join(', '),
+      install_nvm: !!s.install_nvm,
+      privileged: s.privileged !== false
+    };
+    isSettingsModalActive.value = true;
+  } catch (error) {
+    console.error('Failed to load devenv settings:', error);
+  }
+};
+
+const saveSettings = async () => {
+  const memBytes = Math.round(Number(settings.value.memory_gb) * GiB);
+  const payload = {
+    sites_path: settings.value.sites_path,
+    memory_bytes: memBytes,
+    memory_swap_bytes: Math.round(memBytes * 1.25),
+    nano_cpus: Math.round(Number(settings.value.cpus) * 1e9),
+    privileged: settings.value.privileged,
+    ssh_port_base: Number(settings.value.ssh_port_base),
+    host_suffix: settings.value.host_suffix,
+    host_services: (settings.value.host_services || '').split(',').map((x) => x.trim()).filter(Boolean),
+    install_nvm: settings.value.install_nvm
+  };
+  try {
+    const res = await ApiService.saveDevEnvSettings(payload);
+    if (res.data?.error) return;
+    isSettingsModalActive.value = false;
+  } catch (error) {
+    console.error('Failed to save devenv settings:', error);
+  }
+};
+
 const create = ref({
   username: '',
   password: '',
   port: 0,
-  redockPort: 0,
+  redockPort: 6001,
 })
 
 const modalPath = ref({
@@ -161,7 +218,7 @@ const editSubmit = async () => {
       port: String(modalPath.value.port),
       redockPort: String(modalPath.value.redockPort)
     }
-    await ApiService.updatePersonalContainer(containerData)
+    await ApiService.editPersonalContainer(containerData)
     isEditModalActive.value = false
     await getPersonalContainers()
   } catch (error) {
@@ -192,7 +249,7 @@ const resetCreateForm = () => {
     username: '',
     password: '',
     port: 0,
-    redockPort: 0,
+    redockPort: 6001,
   }
 }
 
@@ -237,6 +294,14 @@ onMounted(() => {
               :disabled="loading"
               class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
               @click="getPersonalContainers"
+            />
+            <BaseButton
+              :label="t('de.settings')"
+              :icon="mdiCog"
+              color="white"
+              outline
+              class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="openSettings"
             />
             <BaseButton
               :label="t('de.addContainer')"
@@ -472,21 +537,6 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField :label="t('de.sshPort')" :help="t('de.sshPortHelp')">
-            <div class="relative">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
-                <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
-              </div>
-              <FormControl
-                v-model="create.port"
-                type="text"
-                placeholder="2222"
-                required
-                class="pl-10"
-              />
-            </div>
-          </FormField>
-
           <FormField :label="t('de.redockPortOptional')" :help="t('de.redockPortHelp')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
@@ -495,11 +545,13 @@ onMounted(() => {
               <FormControl
                 v-model="create.redockPort"
                 type="text"
-                placeholder="8080"
+                placeholder="6001"
                 class="pl-10"
               />
             </div>
           </FormField>
+
+          <p class="text-xs text-slate-500 dark:text-slate-400">{{ t('de.sshAutoNote') }}</p>
         </form>
       </CardBoxModal>
 
@@ -531,15 +583,6 @@ onMounted(() => {
             </div>
           </FormField>
 
-          <FormField :label="t('de.sshPort')">
-            <div class="relative">
-              <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
-                <BaseIcon :path="mdiEthernet" size="20" class="text-slate-400" />
-              </div>
-              <FormControl v-model="modalPath.port" type="text" required class="pl-10" />
-            </div>
-          </FormField>
-
           <FormField :label="t('de.redockPort')">
             <div class="relative">
               <div class="absolute inset-y-0 left-0 pl-3 flex items-center">
@@ -548,6 +591,7 @@ onMounted(() => {
               <FormControl v-model="modalPath.redockPort" type="text" class="pl-10" />
             </div>
           </FormField>
+
         </form>
       </CardBoxModal>
 
@@ -575,6 +619,47 @@ onMounted(() => {
             </div>
           </div>
         </div>
+      </CardBoxModal>
+
+      <!-- DevEnv Settings Modal -->
+      <CardBoxModal
+        v-model="isSettingsModalActive"
+        :title="t('de.settingsTitle')"
+        button="success"
+        :button-label="t('common.save')"
+        has-cancel
+        @confirm="saveSettings"
+      >
+        <form class="space-y-4">
+          <FormField :label="t('de.sitesPath')" :help="t('de.sitesPathHelp')">
+            <FormControl v-model="settings.sites_path" placeholder="/sites" />
+          </FormField>
+          <div class="grid grid-cols-2 gap-4">
+            <FormField :label="t('de.memoryGb')">
+              <FormControl v-model="settings.memory_gb" type="number" />
+            </FormField>
+            <FormField :label="t('de.cpus')">
+              <FormControl v-model="settings.cpus" type="number" />
+            </FormField>
+          </div>
+          <FormField :label="t('de.sshPortBase')" :help="t('de.sshPortBaseHelp')">
+            <FormControl v-model="settings.ssh_port_base" type="number" />
+          </FormField>
+          <FormField :label="t('de.hostSuffix')" :help="t('de.hostSuffixHelp')">
+            <FormControl v-model="settings.host_suffix" placeholder="ept-dev.net" />
+          </FormField>
+          <FormField :label="t('de.hostServices')" :help="t('de.hostServicesHelp')">
+            <FormControl v-model="settings.host_services" placeholder="admin, fe, order" />
+          </FormField>
+          <label class="flex items-center gap-2 cursor-pointer text-sm">
+            <input v-model="settings.privileged" type="checkbox" />
+            <span>{{ t('de.privileged') }}</span>
+          </label>
+          <label class="flex items-center gap-2 cursor-pointer text-sm">
+            <input v-model="settings.install_nvm" type="checkbox" />
+            <span>{{ t('de.installNvm') }}</span>
+          </label>
+        </form>
       </CardBoxModal>
     </div>
 </template>

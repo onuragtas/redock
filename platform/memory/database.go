@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -236,6 +237,10 @@ func FindAll[T Entity](db *Database, tableName string) []T {
 	for _, entity := range table.data {
 		result = append(result, entity.(T))
 	}
+
+	// table.data is a map (random iteration order); sort by ID for a stable,
+	// insertion-ordered result so list pages don't shuffle on every refresh.
+	sort.Slice(result, func(i, j int) bool { return result[i].GetID() < result[j].GetID() })
 
 	return result
 }

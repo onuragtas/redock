@@ -10,7 +10,6 @@ type MenuItem struct {
 // AllMenuItems tüm menü tanımları. Tek kaynak: backend.
 var AllMenuItems = []MenuItem{
 	{Path: "/", Name: "Dashboard", Icon: "mdiHome"},
-	{Path: "/setup_environment", Name: "Setup Environment", Icon: "mdiWrench"},
 	{Path: "/deployment", Name: "Deployment", Icon: "mdiRocket"},
 	{Path: "/exec", Name: "Terminal", Icon: "mdiConsole"},
 	{Path: "/virtual-hosts", Name: "Virtual Hosts", Icon: "mdiWeb"},
@@ -19,6 +18,7 @@ var AllMenuItems = []MenuItem{
 	{Path: "/saved-commands", Name: "Saved Commands", Icon: "mdiScriptText"},
 	{Path: "/devenv", Name: "Dev Environment", Icon: "mdiLaptop"},
 	{Path: "/container_settings", Name: "Container Settings", Icon: "mdiDocker"},
+	{Path: "/stacks", Name: "Stacks", Icon: "mdiCubeOutline"},
 	{Path: "/php-xdebug-adapter", Name: "PHP XDebug", Icon: "mdiBugCheck"},
 	{Path: "/ip_alias", Name: "IP Alias", Icon: "mdiNetworkOutline"},
 	{Path: "/api-gateway", Name: "API Gateway", Icon: "mdiNetworkOutline"},
@@ -35,7 +35,7 @@ var AllMenuItems = []MenuItem{
 
 // AllMenuPaths path listesi (mevcut kullanım için).
 var AllMenuPaths = []string{
-	"/", "/deployment", "/setup_environment", "/devenv", "/container_settings",
+	"/", "/deployment", "/devenv", "/container_settings", "/stacks",
 	"/api-gateway", "/onion-services", "/dns-server", "/vpn-server", "/email-server", "/cloudflare",
 	"/local-proxy", "/exec", "/tunnel-proxy-server", "/tunnel-proxy-client",
 	"/virtual-hosts", "/saved-commands", "/php-xdebug-adapter", "/updates",

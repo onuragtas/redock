@@ -27,6 +27,7 @@ import (
 	"time"
 
 	dockermanager "redock/docker-manager"
+	"redock/docker-manager/stacks"
 )
 
 type Process struct {
@@ -81,7 +82,8 @@ func initialize() {
 		log.Fatalf("Failed to run memory migrations: %v", err)
 	}
 
-	go dockerEnvironmentManager.UpdateDocker()
+	// The stack comes entirely from the stacks repository system (fetched/cached
+	// on demand); the legacy clone of github.com/onuragtas/docker is gone.
 
 	dockerEnvironmentManager.Init()
 	if !devEnv {
@@ -173,8 +175,17 @@ func registerEntities(db *memory.Database) error {
 		{"deployment_projects", func() error { return memory.Register[*deployment.DeploymentProjectEntity](db, "deployment_projects") }},
 		{"service_settings", func() error { return memory.Register[*dockermanager.ServiceSettingsEntity](db, "service_settings") }},
 		{"starred_vhosts", func() error { return memory.Register[*dockermanager.StarredVHostEntity](db, "starred_vhosts") }},
-		{"php_xdebug_settings", func() error { return memory.Register[*php_debug_adapter.PhpXDebugSettingsEntity](db, "php_xdebug_settings") }},
-		{"php_xdebug_mappings", func() error { return memory.Register[*php_debug_adapter.PhpXDebugMappingEntity](db, "php_xdebug_mappings") }},
+		{"php_xdebug_settings", func() error {
+			return memory.Register[*php_debug_adapter.PhpXDebugSettingsEntity](db, "php_xdebug_settings")
+		}},
+		{"php_xdebug_mappings", func() error {
+			return memory.Register[*php_debug_adapter.PhpXDebugMappingEntity](db, "php_xdebug_mappings")
+		}},
+		{"stacks_repositories", func() error { return memory.Register[*stacks.RepositoryEntity](db, stacks.TableRepositories) }},
+		{"stacks_custom_services", func() error { return memory.Register[*stacks.CustomServiceEntity](db, stacks.TableCustomServices) }},
+		{"stacks_active_services", func() error { return memory.Register[*stacks.ActiveServiceEntity](db, stacks.TableActiveServices) }},
+		{"stacks_devenv_settings", func() error { return memory.Register[*stacks.DevEnvSettingsEntity](db, stacks.TableDevEnvSettings) }},
+		{"stacks_meta", func() error { return memory.Register[*stacks.MetaEntity](db, stacks.TableMeta) }},
 		{"api_gateway_config", func() error { return memory.Register[*api_gateway.ApiGatewayConfigEntity](db, "api_gateway_config") }},
 		{"api_gateway_blocks", func() error { return memory.Register[*api_gateway.ApiGatewayBlockEntity](db, "api_gateway_blocks") }},
 		{"onion_services", func() error {
@@ -189,9 +200,13 @@ func registerEntities(db *memory.Database) error {
 			return memory.Register[*tunnel_server.TunnelServerCredential](db, "tunnel_server_credentials")
 		}},
 		{"tunnel_servers", func() error { return memory.Register[*tunnel_server.TunnelServer](db, "tunnel_servers") }},
-		{"tunnel_client_configs", func() error { return memory.Register[*tunnel_server.TunnelClientConfig](db, tunnel_server.TableTunnelClientConfigs) }},
+		{"tunnel_client_configs", func() error {
+			return memory.Register[*tunnel_server.TunnelClientConfig](db, tunnel_server.TableTunnelClientConfigs)
+		}},
 		{"tunnel_agents", func() error { return memory.Register[*tunnel_server.TunnelAgent](db, tunnel_server.TableTunnelAgents) }},
-		{"tunnel_agent_assignments", func() error { return memory.Register[*tunnel_server.TunnelAgentAssignment](db, tunnel_server.TableTunnelAgentAssignments) }},
+		{"tunnel_agent_assignments", func() error {
+			return memory.Register[*tunnel_server.TunnelAgentAssignment](db, tunnel_server.TableTunnelAgentAssignments)
+		}},
 		{"network_ip_aliases", func() error { return memory.Register[*network.PersistedIPAlias](db, network.TableIPAliases) }},
 	}
 

@@ -2,7 +2,18 @@
   "permissions": {
     "allow": [
       "Bash(npm run *)",
-      "Bash(ps -o user,pid,comm -p 83956)"
+      "Bash(ps -o user,pid,comm -p 83956)",
+      "Bash(sudo ls -la ~/.docker-environment)",
+      "Bash(awk '{print $NF}')",
+      "Bash(grep -vE '^\\\\.$|^\\\\.\\\\.$|^-p$|^$')",
+      "Bash(sudo ls -d ~/.docker-environment/*/)",
+      "Bash(xargs -n1 basename)",
+      "Bash(sudo sh -c 'cd /Users/onuragtas/.docker-environment && ls -1')",
+      "Bash(node -e \"JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/en.json'\\)\\);JSON.parse\\(require\\('fs'\\).readFileSync\\('src/i18n/locales/tr.json'\\)\\);console.log\\('JSON ok'\\)\")",
+      "Bash(npx eslint *)",
+      "Bash(gofmt -l app/controllers/native_controller.go docker-manager/native/*.go pkg/repository/menu_paths.go)",
+      "Bash(timeout 180 go run golang.org/x/tools/cmd/deadcode@latest ./...)",
+      "Bash(grep -rn \"nav\\\\.\\\\|t\\(\\\\`nav\\\\|menuKey\\\\|toCamel\\\\|\\\\.path\\\\|translateMenu\\\\|label\" web/src/components/AsideMenuItem.vue web/src/components/AsideMenuList.vue web/src/components/NavBar.vue)"
     ]
   }
 }

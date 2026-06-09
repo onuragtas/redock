@@ -301,16 +301,6 @@ class ApiService {
     // Tunnel token'ı Redock logout'ta silmiyoruz; kullanıcı tekrar giriş yapsa tunnel tarafı değişmez.
   }
 
-  static async getEnv() {
-    return await this.get('/api/v1/docker/env');
-  }
-
-  static async setEnv(env) {
-    return await this.post('/api/v1/docker/env', {
-      env: env
-    });
-  }
-
   static async regenerateXDebugConfiguration() {
     return await this.post('/api/v1/docker/regenerate', {});
   }
@@ -357,6 +347,87 @@ class ApiService {
 
   static async updateDockerServiceSettings(data) {
     return await this.post('/api/v1/docker/service_settings', data);
+  }
+
+  // --- Stacks orchestration (repository-based, docker-compose-free) ---
+  static async getStacksCatalog() {
+    return await this.get('/api/v1/stacks/catalog');
+  }
+
+  static async getStacksStatus() {
+    return await this.get('/api/v1/stacks/status');
+  }
+
+  static async stacksUp(services) {
+    return await this.post('/api/v1/stacks/up', { services });
+  }
+
+  static async stacksDown(service) {
+    return await this.post('/api/v1/stacks/down', { service });
+  }
+
+  static async stacksRestart(service) {
+    return await this.post('/api/v1/stacks/restart', { service });
+  }
+
+  static async getStacksRepositories() {
+    return await this.get('/api/v1/stacks/repositories');
+  }
+
+  static async addStacksRepository(data) {
+    return await this.post('/api/v1/stacks/repositories', data);
+  }
+
+  static async updateStacksRepository(name, data) {
+    return await this.post('/api/v1/stacks/repositories/update', { name, ...data });
+  }
+
+  static async toggleStacksRepository(name, enabled) {
+    return await this.post('/api/v1/stacks/repositories/toggle', { name, enabled });
+  }
+
+  static async removeStacksRepository(name) {
+    return await this.post('/api/v1/stacks/repositories/remove', { name });
+  }
+
+  static async syncStacksRepositories() {
+    return await this.post('/api/v1/stacks/repositories/sync', {});
+  }
+
+  static async uploadStacksRepository(name, compose, file) {
+    const fd = new FormData();
+    fd.append('name', name);
+    fd.append('compose', compose || '');
+    fd.append('file', file);
+    return await ApiService.vueInstance.axios.post('/api/v1/stacks/repositories/upload', fd);
+  }
+
+  static async addStacksService(spec) {
+    return await this.post('/api/v1/stacks/services', spec);
+  }
+
+  static async updateStacksService(name, spec) {
+    return await this.post('/api/v1/stacks/services/update', { name, ...spec });
+  }
+
+  static async removeStacksService(name) {
+    return await this.post('/api/v1/stacks/services/remove', { name });
+  }
+
+  static async getStacksEnv() {
+    return await this.get('/api/v1/stacks/env');
+  }
+
+  static async saveStacksEnv(vars) {
+    return await this.post('/api/v1/stacks/env', { vars });
+  }
+
+  static async getDevEnvSettings() {
+    return await this.get('/api/v1/stacks/devenv/settings');
+  }
+
+  static async saveDevEnvSettings(settings) {
+    return await this.post('/api/v1/stacks/devenv/settings', settings);
   }
 
   static async getAllVHosts() {

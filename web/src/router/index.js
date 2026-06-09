@@ -45,19 +45,19 @@ const routes = [
       },
       {
         meta: {
-          title: 'Setup Environment',
-        },
-        path: 'setup_environment',
-        name: 'setup_environment',
-        component: () => import('@/views/SetupEnvironment.vue')
-      },
-      {
-        meta: {
           title: 'Container Settings',
         },
         path: 'container_settings',
         name: 'container_settings',
         component: () => import('@/views/ContainerSettings.vue')
+      },
+      {
+        meta: {
+          title: 'Stacks',
+        },
+        path: 'stacks',
+        name: 'stacks',
+        component: () => import('@/views/Stacks.vue')
       },
       {
         meta: {

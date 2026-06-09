@@ -1,9 +1,9 @@
 package controllers
 
 import (
+	"context"
 	"log"
 	"os"
-	"redock/app/models"
 	"redock/devenv"
 	docker_manager "redock/docker-manager"
 	"redock/selfupdate"
@@ -13,76 +13,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/kardianos/osext"
-	"github.com/onuragtas/command"
 )
-
-// GetEnv method to create a new user.
-// @Description Create a new user.
-// @Summary create a new user
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param email body string true "Email"
-// @Param password body string true "Password"
-// @Param user_role body string true "User role"
-// @Success 200 {object} models.User
-// @Router /v1/docker/env [get]
-func GetEnv(c *fiber.Ctx) error {
-	env := docker_manager.GetDockerManager().Env
-
-	if env == "" {
-		env = docker_manager.GetDockerManager().EnvDist
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"msg":   nil,
-		"data": fiber.Map{
-			"env": env,
-		},
-	})
-}
-
-// SetEnv method to create a new user.
-// @Description Create a new user.
-// @Summary create a new user
-// @Tags User
-// @Accept json
-// @Produce json
-// @Param email body string true "Email"
-// @Param password body string true "Password"
-// @Param user_role body string true "User role"
-// @Success 200 {object} models.User
-// @Router /v1/docker/env [get]
-func SetEnv(c *fiber.Ctx) error {
-	envModel := &models.Env{}
-	// Checking received data from JSON body.
-	if err := c.BodyParser(envModel); err != nil {
-		// Return status 400 and error message.
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": true,
-			"msg":   err.Error(),
-		})
-	}
-
-	manager := docker_manager.GetDockerManager()
-	env := envModel.Env
-	workdir := manager.GetWorkDir()
-	err := os.WriteFile(workdir+"/.env", []byte(envModel.Env), 0777)
-	if err != nil {
-		return c.Status(500).JSON(fiber.Map{})
-	}
-
-	manager.Env = env
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"msg":   nil,
-		"data": fiber.Map{
-			"env": env,
-		},
-	})
-}
 
 // Regenerate method to create a new user.
 // @Description Create a new user.
@@ -150,23 +81,16 @@ func GetAllServices(c *fiber.Ctx) error {
 
 	var services []Service
 
-	manager := docker_manager.GetDockerManager()
-
-	for _, service := range manager.Services {
-		serv := Service{
-			ContainerName: service.ContainerName.(string),
-			Links:         service.Links,
-			DependsOn:     service.DependsOn,
-			Image:         service.Image,
+	// Native engine is the single source of truth: list the catalog and reflect
+	// real container running state.
+	if m, err := stacksManager(); err == nil {
+		status, _ := m.Status(context.Background())
+		for _, s := range status {
+			services = append(services, Service{
+				ContainerName: s.Name,
+				Active:        s.Running,
+			})
 		}
-
-		for _, activeService := range manager.ActiveServices {
-			if activeService == service.ContainerName {
-				serv.Active = true
-			}
-		}
-
-		services = append(services, serv)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -1134,10 +1058,10 @@ func SelfUpdate(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func UpdateDocker(c *fiber.Ctx) error {
-
-	docker_manager.GetDockerManager().UpdateDocker()
-	docker_manager.GetDockerManager().Init()
-
+	// Re-sync the repository system (replaces the old git clone/pull).
+	if m, err := stacksManager(); err == nil {
+		m.Sync()
+	}
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
@@ -1157,12 +1081,18 @@ func UpdateDocker(c *fiber.Ctx) error {
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
 func UpdateDockerImages(c *fiber.Ctx) error {
-
-	command := command.Command{}
-	for _, service := range docker_manager.GetDockerManager().ActiveServicesList {
-		if service.Image != "" {
-			log.Println("docker pull", service.Image)
-			command.RunWithPipe("docker", "pull", service.Image)
+	// Pull only the active (user-started) image-based services via the SDK.
+	if m, err := stacksManager(); err == nil {
+		active := map[string]bool{}
+		for _, name := range m.Active() {
+			active[name] = true
+		}
+		specs, _ := m.Catalog()
+		for _, s := range specs {
+			if s.Image != "" && active[s.Name] {
+				log.Println("docker pull", s.Image)
+				_ = m.Engine.PullImage(context.Background(), s.Image, s.Platform, os.Stdout)
+			}
 		}
 	}
 
