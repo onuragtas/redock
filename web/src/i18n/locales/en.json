@@ -779,7 +779,7 @@
     "proxied": "Proxied",
     "editRecord": "Edit DNS Record",
     "addRecordTitle": "Add DNS Record",
-    "nameTip": "Tip: use the apex domain (e.g. <code>{zone}</code>) or a subdomain (e.g. <code>www.{zone}</code>). Cloudflare accepts <code>@</code> as a shortcut for the root.",
+    "nameTip": "Tip: use the apex domain (e.g. <code>{zone}</code>) or a subdomain (e.g. <code>www.{zone}</code>). Cloudflare accepts <code>{'@'}</code> as a shortcut for the root.",
     "priority": "Priority",
     "proxyThrough": "Proxy through Cloudflare",
     "proxiedHint": "Proxied (orange cloud — provides CDN, WAF, hides origin IP)",

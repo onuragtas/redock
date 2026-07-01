@@ -779,7 +779,7 @@
     "proxied": "Proxy'li",
     "editRecord": "DNS Kaydını Düzenle",
     "addRecordTitle": "DNS Kaydı Ekle",
-    "nameTip": "İpucu: kök alan adını (ör. <code>{zone}</code>) veya bir alt alan adını (ör. <code>www.{zone}</code>) kullanın. Cloudflare kök için kısayol olarak <code>@</code> kabul eder.",
+    "nameTip": "İpucu: kök alan adını (ör. <code>{zone}</code>) veya bir alt alan adını (ör. <code>www.{zone}</code>) kullanın. Cloudflare kök için kısayol olarak <code>{'@'}</code> kabul eder.",
     "priority": "Öncelik",
     "proxyThrough": "Cloudflare üzerinden proxy",
     "proxiedHint": "Proxy'li (turuncu bulut — CDN, WAF sağlar, origin IP'yi gizler)",
