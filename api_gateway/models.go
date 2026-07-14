@@ -21,6 +21,9 @@ type Service struct {
 	HealthCheck *HealthCheck      `json:"health_check,omitempty"`
 	Headers     map[string]string `json:"headers,omitempty"` // headers to add to requests
 	Enabled     bool              `json:"enabled"`
+	// IgnoreHealthCheck forces the load balancer to keep routing traffic to this
+	// service even when its health check reports it as unhealthy.
+	IgnoreHealthCheck bool `json:"ignore_health_check,omitempty"`
 }
 
 // AuthHeader defines a required request header for auth type "header" (key must match value).

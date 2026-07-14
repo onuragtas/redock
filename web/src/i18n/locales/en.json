@@ -485,6 +485,7 @@
     "basePath": "Base Path (optional)",
     "healthCheckPath": "Health Check Path",
     "healthCheckInterval": "Health Check Interval (seconds)",
+    "ignoreHealthCheck": "Send traffic even if unhealthy (ignore health check)",
     "editService": "Edit Service",
     "updateService": "Update Service",
     "editUpstream": "Edit Upstream",

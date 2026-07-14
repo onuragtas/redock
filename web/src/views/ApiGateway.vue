@@ -136,6 +136,7 @@ const newService = ref({
   path: '',
   timeout: 30,
   enabled: true,
+  ignore_health_check: false,
   health_check: {
     path: '/health',
     interval: 5,
@@ -481,6 +482,7 @@ const openAddServiceModal = () => {
     path: '',
     timeout: 30,
     enabled: true,
+    ignore_health_check: false,
     health_check: {
       path: '/health',
       interval: 5,
@@ -506,6 +508,7 @@ const addService = async () => {
 
 const openEditServiceModal = (service) => {
   editingService.value = { ...service }
+  editingService.value.ignore_health_check = !!editingService.value.ignore_health_check
   if (!editingService.value.health_check) {
     editingService.value.health_check = {
       path: '/health',
@@ -2037,6 +2040,13 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
             />
           </FormField>
         </div>
+        <FormField>
+          <FormCheckRadio
+            v-model="newService.ignore_health_check"
+            :label="t('gw.ignoreHealthCheck')"
+            name="new_service_ignore_health_check"
+          />
+        </FormField>
       </div>
     </CardBoxModal>
 
@@ -2474,6 +2484,13 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
             />
           </FormField>
         </div>
+        <FormField>
+          <FormCheckRadio
+            v-model="editingService.ignore_health_check"
+            :label="t('gw.ignoreHealthCheck')"
+            name="edit_service_ignore_health_check"
+          />
+        </FormField>
       </div>
     </CardBoxModal>
 

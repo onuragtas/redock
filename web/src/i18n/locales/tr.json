@@ -485,6 +485,7 @@
     "basePath": "Temel Yol (isteğe bağlı)",
     "healthCheckPath": "Sağlık Kontrolü Yolu",
     "healthCheckInterval": "Sağlık Kontrolü Aralığı (saniye)",
+    "ignoreHealthCheck": "Sağlıksız olsa bile trafiği gönder (sağlık kontrolünü yok say)",
     "editService": "Servisi Düzenle",
     "updateService": "Servisi Güncelle",
     "editUpstream": "Upstream Düzenle",

@@ -67,6 +67,20 @@ func TestPickBackendSkipsUnhealthy(t *testing.T) {
 	}
 }
 
+func TestPickBackendForcesTrafficWhenIgnoreHealthCheck(t *testing.T) {
+	g := newGatewayWithUpstream(t, Upstream{
+		ID: "up", Enabled: true, Strategy: StrategyRoundRobin,
+		Targets: []UpstreamTarget{{ServiceID: "a"}},
+	}, map[string]*Service{"a": {ID: "a", Enabled: true, IgnoreHealthCheck: true}})
+	g.serviceHealth["a"] = &ServiceHealth{Healthy: false}
+
+	req := httptest.NewRequest("GET", "/", nil)
+	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+	assert.NoError(t, err)
+	assert.Equal(t, "a", svc.ID)
+	release()
+}
+
 func TestPickBackendAllUnhealthy(t *testing.T) {
 	g := newGatewayWithUpstream(t, Upstream{
 		ID: "up", Enabled: true, Strategy: StrategyRoundRobin,

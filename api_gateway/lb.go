@@ -128,7 +128,7 @@ func (g *Gateway) healthyTargets(upstream *Upstream) ([]*Service, []int) {
 		if !ok || svc == nil || !svc.Enabled {
 			continue
 		}
-		if h, ok := g.serviceHealth[t.ServiceID]; ok && h != nil && !h.Healthy {
+		if h, ok := g.serviceHealth[t.ServiceID]; ok && h != nil && !h.Healthy && !svc.IgnoreHealthCheck {
 			continue
 		}
 		w := t.Weight
