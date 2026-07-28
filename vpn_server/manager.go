@@ -31,13 +31,14 @@ var (
 
 // WireGuardServerInstance represents a running WireGuard server
 type WireGuardServerInstance struct {
-	Server   *VPNServer
-	Device   *device.Device
-	TUN      tun.Device
-	Bind     conn.Bind
-	WGClient *wgctrl.Client
-	StopChan chan struct{}
-	Running  bool
+	Server          *VPNServer
+	Device          *device.Device
+	TUN             tun.Device
+	Bind            conn.Bind
+	WGClient        *wgctrl.Client
+	StopChan        chan struct{}
+	Running         bool
+	UplinkInterface string // physical interface used for NAT/MASQUERADE, e.g. en0/eth0
 }
 
 // WireGuardManager manages WireGuard VPN servers and users
@@ -295,37 +296,48 @@ func (m *WireGuardManager) startServerInstance(server *VPNServer) error {
 		return fmt.Errorf("failed to start device: %w", err)
 	}
 
-	if err := m.configureNetwork(actualName, serverIP, serverNet); err != nil {
+	uplinkIface, err := m.configureNetwork(actualName, serverIP, serverNet)
+	if err != nil {
 		log.Printf("⚠️  Network configuration warning: %v", err)
 	}
 
 	wgClient, _ := wgctrl.New()
 
 	instance := &WireGuardServerInstance{
-		Server:   server,
-		Device:   wgDevice,
-		TUN:      tunDevice,
-		Bind:     udpBind,
-		WGClient: wgClient,
-		StopChan: make(chan struct{}),
-		Running:  true,
+		Server:          server,
+		Device:          wgDevice,
+		TUN:             tunDevice,
+		Bind:            udpBind,
+		WGClient:        wgClient,
+		StopChan:        make(chan struct{}),
+		Running:         true,
+		UplinkInterface: uplinkIface,
 	}
 
 	m.mutex.Lock()
 	m.instances[server.ID] = instance
 	m.mutex.Unlock()
 
+	if uplinkIface != "" && OnNATConfigured != nil {
+		OnNATConfigured(NATEvent{
+			ServerID:        server.ID,
+			TunInterface:    actualName,
+			UplinkInterface: uplinkIface,
+			ServerNet:       serverNet,
+		})
+	}
+
 	log.Printf("VPN Server Started: %s:%d", actualName, server.ListenPort)
 	return nil
 }
 
-func (m *WireGuardManager) configureNetwork(ifName string, serverIP net.IP, serverNet *net.IPNet) error {
+func (m *WireGuardManager) configureNetwork(ifName string, serverIP net.IP, serverNet *net.IPNet) (string, error) {
 	if err := m.assignIP(ifName, serverIP, serverNet); err != nil {
-		return fmt.Errorf("IP assignment failed: %w", err)
+		return "", fmt.Errorf("IP assignment failed: %w", err)
 	}
 
 	if err := m.addRoute(ifName, serverNet); err != nil {
-		return fmt.Errorf("route addition failed: %w", err)
+		return "", fmt.Errorf("route addition failed: %w", err)
 	}
 
 	if err := m.enableForwarding(); err != nil {
@@ -334,14 +346,14 @@ func (m *WireGuardManager) configureNetwork(ifName string, serverIP net.IP, serv
 
 	uplinkIface, err := m.getUplinkInterface()
 	if err != nil {
-		return fmt.Errorf("uplink detection failed: %w", err)
+		return "", fmt.Errorf("uplink detection failed: %w", err)
 	}
 
 	if err := m.setupNAT(ifName, serverNet, uplinkIface); err != nil {
-		return fmt.Errorf("NAT setup failed: %w", err)
+		return "", fmt.Errorf("NAT setup failed: %w", err)
 	}
 
-	return nil
+	return uplinkIface, nil
 }
 
 func (m *WireGuardManager) assignIP(ifName string, ip net.IP, ipNet *net.IPNet) error {
@@ -573,6 +585,10 @@ func (m *WireGuardManager) StopServer(serverID uint) error {
 
 	// Cleanup NAT
 	m.cleanupNAT(instance.Server.Interface, instance.Server.Address)
+
+	if OnNATCleanup != nil {
+		OnNATCleanup(serverID, instance.Server.Interface)
+	}
 
 	// Stop device
 	instance.Device.Down()

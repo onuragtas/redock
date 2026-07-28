@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"redock/platform/memory"
+	"redock/traffic_inspector"
 	"redock/vpn_server"
 	"strconv"
 	"time"
@@ -450,6 +451,10 @@ func UpdateVPNUser(c *fiber.Ctx) error {
 			"error": true,
 			"msg":   "Failed to update user: " + err.Error(),
 		})
+	}
+
+	if ti := traffic_inspector.GetManager(); ti != nil {
+		ti.SyncUserRedirect(user)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{

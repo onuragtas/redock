@@ -22,6 +22,7 @@ import (
 	"redock/platform/memory"
 	"redock/platform/migrations"
 	"redock/saved_commands"
+	"redock/traffic_inspector"
 	"redock/tunnel_server"
 	"redock/vpn_server"
 	"time"
@@ -99,6 +100,7 @@ func initialize() {
 	onion_proxy.Init(dockerEnvironmentManager)
 	dns_server.Init(dockerEnvironmentManager)
 	vpn_server.Init()
+	traffic_inspector.Init(db)
 	cloudflare.Init()
 	email_server.Init(dockerEnvironmentManager)
 	go deployment.GetDeployment().Run()
@@ -192,6 +194,7 @@ func registerEntities(db *memory.Database) error {
 			return memory.Register[*onion_proxy.OnionServiceEntity](db, onion_proxy.TableOnionServices)
 		}},
 		{"jwt_secrets", func() error { return memory.Register[*jwtsecrets.JWTSecretsEntity](db, jwtsecrets.TableName) }},
+		{"vpn_ca", func() error { return memory.Register[*traffic_inspector.CAEntity](db, traffic_inspector.CATableName) }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},
 		{"tunnel_domains", func() error { return memory.Register[*tunnel_server.TunnelDomain](db, "tunnel_domains") }},

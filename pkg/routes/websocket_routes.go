@@ -10,5 +10,9 @@ import (
 
 // WebSocketRoutes sets up WebSocket routes (access token required for /ws).
 func WebSocketRoutes(app *fiber.App) {
+	// Registered before the /ws/:containerID? wildcard below, since Fiber
+	// matches routes in registration order and "traffic" would otherwise be
+	// captured as a containerID.
+	app.Get("/ws/traffic", middleware.WebSocketAccessToken(), websocket.New(controllers.AttachTrafficStream))
 	app.Get("/ws/:containerID?", middleware.WebSocketAccessToken(), websocket.New(controllers.Attach))
 }

@@ -46,6 +46,7 @@ type VPNUser struct {
 	TotalBytesReceived int64      `json:"total_bytes_received"`
 	TotalBytesSent     int64      `json:"total_bytes_sent"`
 	Notes              string     `json:"notes,omitempty"`
+	InspectionEnabled  bool       `json:"inspection_enabled"` // route this peer's traffic through the traffic inspector (TLS/QUIC MITM)
 }
 
 // VPNConnection represents an active or historical connection

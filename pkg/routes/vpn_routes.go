@@ -37,4 +37,10 @@ func SetupVPNRoutes(app *fiber.App) {
 	// Real-time
 	vpn.Get("/connections", controllers.GetActiveConnections)
 	vpn.Get("/connections/:id", controllers.GetConnectionDetails)
+
+	// Traffic inspector (TLS/QUIC MITM visibility)
+	vpn.Get("/ca.pem", controllers.GetVPNCACert)
+	vpn.Get("/flows", controllers.GetVPNFlows)
+	vpn.Post("/flows/replay", controllers.ReplayFlowRequest)
+	vpn.Get("/traffic-logs", controllers.GetVPNTrafficLogs)
 }
