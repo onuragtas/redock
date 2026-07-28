@@ -1,49 +1,51 @@
 package controllers
 
 import (
-	"bytes"
+	"crypto/tls"
 	"encoding/base64"
 	"io"
-	"net/http"
+	"net"
 	"redock/traffic_inspector"
-	"strings"
+	"strconv"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/websocket/v2"
 )
 
-// maxReplayResponseBody caps how much of a replayed response body we read
-// back, so a runaway/huge response can't exhaust memory.
+// maxReplayResponseBody caps how much of a replayed response we read back,
+// so a runaway/huge response can't exhaust memory.
 const maxReplayResponseBody = 10 * 1024 * 1024
 
-// replayHopByHopHeaders are framing/connection-management headers that must
-// never be copied verbatim from a captured request/response — either
-// net/http recomputes them itself (Content-Length, Transfer-Encoding), or
-// they're meaningless/harmful to forward as-is on a fresh connection.
-var replayHopByHopHeaders = map[string]bool{
-	"content-length":    true,
-	"transfer-encoding": true,
-	"connection":        true,
-	"keep-alive":        true,
-	"accept-encoding":   true, // let net/http negotiate + auto-decompress gzip itself
-	"host":              true, // derived from the URL instead
-	"proxy-connection":  true,
-	"upgrade":           true,
-}
+// replayIdleTimeout: once no further bytes arrive for this long, the
+// response is considered complete. Raw-socket replay has no framing
+// knowledge of its own (unlike net/http, which knows when a
+// Content-Length/chunked body ends) and keep-alive connections don't close
+// on their own — an idle gap is the simplest reliable stopping point for a
+// manual "replay and inspect" tool.
+const replayIdleTimeout = 2 * time.Second
 
-// ReplayFlowRequest replays a single captured HTTP request against its real
-// destination — a plain outbound net/http request, entirely independent of
-// the MITM interception path (this is not re-sent through our fake CA; it's
-// an ordinary client request to the real server, same as curl/Postman would
-// make). Used by the Live Traffic "Resend" action.
+// replayTotalTimeout bounds the whole replay attempt (dial + handshake +
+// write + read), regardless of how many idle-timeout read cycles occur.
+const replayTotalTimeout = 20 * time.Second
+
+// ReplayFlowRequest replays a single captured HTTP request **byte-for-byte**
+// against its real destination: the exact raw request bytes as captured
+// (original header casing, order, and whitespace preserved) are written
+// verbatim to a fresh TCP (+ TLS, if the original flow was encrypted)
+// connection — not reconstructed through net/http, which would silently
+// normalize header casing/order and inject its own default headers. This is
+// intentionally independent of the MITM interception path (not re-sent
+// through our fake CA); it's an ordinary raw client connection to the real
+// server, same as `nc`/`openssl s_client` would produce. Used by the Live
+// Traffic "Resend" action.
 func ReplayFlowRequest(c *fiber.Ctx) error {
 	var req struct {
-		Method     string            `json:"method"`
-		URL        string            `json:"url"`
-		Headers    map[string]string `json:"headers"`
-		Body       string            `json:"body"`
-		BodyBase64 bool              `json:"body_base64"`
+		Host      string `json:"host"`
+		Port      int    `json:"port"`
+		TLS       bool   `json:"tls"`
+		SNI       string `json:"sni"`
+		RawBase64 string `json:"raw_base64"` // exact captured request bytes, verbatim
 	}
 	if err := c.BodyParser(&req); err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
@@ -51,81 +53,117 @@ func ReplayFlowRequest(c *fiber.Ctx) error {
 			"msg":   "Invalid request body: " + err.Error(),
 		})
 	}
-	if req.Method == "" || req.URL == "" {
+	if req.Host == "" || req.Port == 0 || req.RawBase64 == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "method and url are required",
+			"msg":   "host, port, and raw_base64 are required",
 		})
 	}
 
-	var bodyBytes []byte
-	if req.Body != "" {
-		if req.BodyBase64 {
-			decoded, err := base64.StdEncoding.DecodeString(req.Body)
-			if err != nil {
-				return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-					"error": true,
-					"msg":   "invalid base64 body: " + err.Error(),
-				})
-			}
-			bodyBytes = decoded
-		} else {
-			bodyBytes = []byte(req.Body)
-		}
-	}
-
-	httpReq, err := http.NewRequest(req.Method, req.URL, bytes.NewReader(bodyBytes))
+	rawBytes, err := base64.StdEncoding.DecodeString(req.RawBase64)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": true,
-			"msg":   "invalid request: " + err.Error(),
+			"msg":   "invalid base64 in raw_base64: " + err.Error(),
 		})
 	}
-	for name, value := range req.Headers {
-		if replayHopByHopHeaders[strings.ToLower(name)] {
-			continue
-		}
-		httpReq.Header.Set(name, value)
-	}
-
-	client := &http.Client{Timeout: 20 * time.Second}
 
 	start := time.Now()
-	resp, err := client.Do(httpReq)
+	respBytes, replayErr := replayRawRequest(req.Host, req.Port, req.TLS, req.SNI, rawBytes)
 	durationMs := time.Since(start).Milliseconds()
-	if err != nil {
+
+	if replayErr != nil {
 		return c.Status(fiber.StatusOK).JSON(fiber.Map{
 			"error": false,
 			"msg":   nil,
 			"data": fiber.Map{
-				"error":       err.Error(),
+				"error":       replayErr.Error(),
 				"duration_ms": durationMs,
 			},
 		})
-	}
-	defer resp.Body.Close()
-
-	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxReplayResponseBody))
-
-	respHeaders := make(map[string]string, len(resp.Header))
-	for name := range resp.Header {
-		if replayHopByHopHeaders[strings.ToLower(name)] {
-			continue
-		}
-		respHeaders[name] = resp.Header.Get(name)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   nil,
 		"data": fiber.Map{
-			"status":      resp.StatusCode,
-			"status_text": http.StatusText(resp.StatusCode),
-			"headers":     respHeaders,
-			"body_base64": base64.StdEncoding.EncodeToString(respBody),
-			"duration_ms": durationMs,
+			"raw_response_base64": base64.StdEncoding.EncodeToString(respBytes),
+			"duration_ms":         durationMs,
 		},
 	})
+}
+
+// replayRawRequest dials host:port (TLS-wrapped if useTLS), writes rawBytes
+// verbatim, and reads back whatever the server sends until an idle gap or
+// the total timeout — returning the raw response bytes unmodified.
+func replayRawRequest(host string, port int, useTLS bool, sni string, rawBytes []byte) ([]byte, error) {
+	addr := net.JoinHostPort(host, strconv.Itoa(port))
+
+	dialer := net.Dialer{Timeout: replayTotalTimeout}
+	rawConn, err := dialer.Dial("tcp", addr)
+	if err != nil {
+		return nil, err
+	}
+	defer rawConn.Close()
+
+	var conn net.Conn = rawConn
+	if useTLS {
+		serverName := sni
+		if serverName == "" {
+			serverName = host
+		}
+		tlsConn := tls.Client(rawConn, &tls.Config{ServerName: serverName})
+		if err := tlsConn.Handshake(); err != nil {
+			return nil, err
+		}
+		conn = tlsConn
+	}
+
+	deadline := time.Now().Add(replayTotalTimeout)
+	conn.SetWriteDeadline(deadline)
+	if _, err := conn.Write(rawBytes); err != nil {
+		return nil, err
+	}
+
+	var response []byte
+	buf := make([]byte, 32*1024)
+	for {
+		idleDeadline := time.Now().Add(replayIdleTimeout)
+		if idleDeadline.After(deadline) {
+			idleDeadline = deadline
+		}
+		conn.SetReadDeadline(idleDeadline)
+
+		n, err := conn.Read(buf)
+		if n > 0 {
+			response = append(response, buf[:n]...)
+			if len(response) >= maxReplayResponseBody {
+				response = response[:maxReplayResponseBody]
+				break
+			}
+		}
+		if err != nil {
+			// Idle timeout (response considered complete), EOF (server
+			// closed), or the hard total-timeout deadline — all just mean
+			// "stop reading," not a hard failure, as long as we got
+			// something; an error with zero bytes read at all is reported
+			// as a genuine failure.
+			if len(response) == 0 {
+				if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+					return nil, err
+				}
+				if err != io.EOF {
+					return nil, err
+				}
+			}
+			break
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+	}
+
+	return response, nil
 }
 
 // GetVPNCACert returns the traffic inspector's root CA certificate in PEM

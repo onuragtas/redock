@@ -90,12 +90,15 @@ const MAX_TRAFFIC_LOGS = 200
 // populate/consume it.
 const isResendModalActive = ref(false)
 const resendRow = ref(null)
-const resendRequest = ref({ method: 'GET', url: '', headersText: '', body: '' })
-// True when the captured request body is non-text (image/video/audio/pdf/binary) — in that case
-// the body textarea just shows an informational note and the ORIGINAL captured bytes are resent
-// unmodified (as base64), regardless of whatever ends up in the textarea.
-const resendBodyBinary = ref(false)
-const resendBinaryBodyBase64 = ref('')
+// Editable raw HTTP message (request line + headers + body), pre-filled verbatim from the
+// captured request's raw wire bytes — see openResendModal. Sent byte-for-byte (UTF-8-encoded)
+// as `raw_base64`; there is no client-side method/URL/headers/body parsing or reconstruction
+// anymore, matching the backend's new raw-bytes replay contract.
+const resendRawText = ref('')
+// Connection-level fields that aren't literally part of the HTTP message bytes (they come from
+// the flow's connection metadata, not the captured request text) — pre-filled from the flow but
+// left editable, e.g. to replay against a different host/port.
+const resendMeta = ref({ host: '', port: 443, tls: true, sni: '' })
 const resendLoading = ref(false)
 const resendResult = ref(null) // { status, statusText, durationMs, decoded } | { error } | null
 let trafficSocket = null
@@ -1584,49 +1587,30 @@ const exportFlowAsHar = async (row) => {
 // Noise-protocol/WhatsApp traffic) has no coherent request to replay.
 const canResendRow = (row) => !row.isFallback && !!(row.request && requestLineFromHeaderText(row.request.headerText))
 
-// Builds the full absolute URL the replay endpoint needs from the row's flow (host/port/protocol)
-// and the captured request's path. Scheme is 'http' only for tcp-plain flows; both tcp-tls and
-// quic (HTTP/3) replay over https. The port is omitted when it's the scheme's default, purely for
-// a cleaner pre-filled URL — it's still fully editable before sending.
-const buildResendUrl = (row) => {
-  const flow = row.flow
-  const scheme = flow.protocol === 'tcp-plain' ? 'http' : 'https'
-  const host = flow.host || flow.sni || ''
-  const port = Number(flow.port)
-  const defaultPort = scheme === 'http' ? 80 : 443
-  const hostPort = port && port !== defaultPort ? `${host}:${port}` : host
-  const reqLineMatch = requestLineFromHeaderText(row.request.headerText)
-  const path = reqLineMatch && reqLineMatch[2] && reqLineMatch[2] !== '*' ? reqLineMatch[2] : '/'
-  return `${scheme}://${hostPort}${path}`
-}
-
-// Opens the Resend modal pre-filled from `row`'s captured request: method/URL derived from the
-// flow + request-line, headers parsed from the header block (minus the request-line itself, via
-// parseHeaderLines — already used by the HAR export), and body pre-filled from
-// decodeHttpMessage's own bodyText so JSON gets the exact same pretty-print the Decoded view
-// already shows. A binary request body (rare) is kept verbatim rather than shoved into a
-// textarea — see resendBodyBinary above.
-const openResendModal = async (row) => {
-  const reqLineMatch = requestLineFromHeaderText(row.request.headerText)
+// Opens the Resend modal pre-filled from `row`'s captured request. The raw textarea gets the
+// exact captured wire bytes for this transaction — via bytesForRow(row, 'client->server'), the
+// same helper that feeds decodeHttpMessage for the Decoded view and splitHttpMessages's
+// startOffset/endOffset byte range — decoded as UTF-8 text verbatim (no dechunk/decompress
+// "cleanup", so a chunked/compressed body shows on the wire exactly as it was captured; this is
+// what makes the resend byte-for-byte). Host/port/tls/sni aren't literally part of the HTTP
+// message bytes, so they're derived from the flow's connection metadata as separate editable
+// fields instead.
+const openResendModal = (row) => {
   resendRow.value = row
   resendResult.value = null
   const reqBytes = bytesForRow(row, 'client->server')
-  const decoded = await decodeHttpMessage(reqBytes)
-  const headersText = parseHeaderLines(row.request.headerText)
-    .map((h) => `${h.name}: ${h.value}`)
-    .join('\n')
+  resendRawText.value = new TextDecoder('utf-8', { fatal: false }).decode(reqBytes)
 
-  resendBodyBinary.value = !!decoded && ['image', 'video', 'audio', 'pdf', 'binary'].includes(decoded.kind)
-  resendBinaryBodyBase64.value = resendBodyBinary.value && decoded.dataUrl ? decoded.dataUrl.split(',')[1] : ''
-
-  resendRequest.value = {
-    method: reqLineMatch ? reqLineMatch[1] : 'GET',
-    url: buildResendUrl(row),
-    headersText,
-    body: resendBodyBinary.value
-      ? t('vpn.resendBinaryBodyNote', { bytes: formatBytes(decoded ? decoded.byteLength : 0) })
-      : ((decoded && decoded.bodyText) || '')
+  const flow = row.flow
+  resendMeta.value = {
+    host: flow.host || flow.sni || '',
+    port: Number(flow.port) || 443,
+    // TLS unless this is a plaintext TCP flow — tcp-tls and quic (HTTP/3, which can't be
+    // trivially replayed raw since it's UDP-framed) both replay as a TLS-wrapped TCP connection.
+    tls: flow.protocol !== 'tcp-plain',
+    sni: flow.sni || flow.host || ''
   }
+
   isResendModalActive.value = true
 }
 
@@ -1634,45 +1618,24 @@ const closeResendModal = () => {
   isResendModalActive.value = false
 }
 
-// Parses the edited headers textarea (one "Name: value" per line) back into the flat object the
-// replay endpoint expects. Blank lines and lines without a ':' are silently skipped.
-const parseResendHeadersText = (text) => {
-  const headers = {}
-  for (const rawLine of (text || '').split(/\r?\n/)) {
-    const line = rawLine.trim()
-    if (!line) continue
-    const idx = line.indexOf(':')
-    if (idx === -1) continue
-    const name = line.slice(0, idx).trim()
-    if (!name) continue
-    headers[name] = line.slice(idx + 1).trim()
-  }
-  return headers
-}
-
-// Sends the (possibly user-edited) request through POST /v1/vpn/flows/replay, then reconstructs a
-// synthetic raw HTTP response from the JSON result and feeds it straight through
-// decodeHttpMessage — reusing 100% of the existing JSON-pretty-print/image/video/pdf/binary
-// rendering already used by the Decoded view, with zero new decode logic. Renders the result (or
-// an error) inline in the modal rather than closing it, per how a resend/replay tool should work.
+// Sends the (possibly user-edited) raw request text through POST /v1/vpn/flows/replay as
+// byte-for-byte UTF-8-encoded bytes — no method/URL/header/body parsing or reconstruction on
+// the client side, matching the backend's new raw-bytes contract. The raw response bytes come
+// back verbatim too, so they're base64-decoded straight into decodeHttpMessage — reusing 100%
+// of the existing JSON-pretty-print/image/video/pdf/binary rendering already used by the
+// Decoded view, with zero new decode logic. Renders the result (or an error) inline in the
+// modal rather than closing it.
 const sendResendRequest = async () => {
   if (!resendRow.value) return
   resendLoading.value = true
   resendResult.value = null
   try {
     const payload = {
-      method: (resendRequest.value.method || 'GET').trim().toUpperCase() || 'GET',
-      url: resendRequest.value.url,
-      headers: parseResendHeadersText(resendRequest.value.headersText)
-    }
-    if (resendBodyBinary.value) {
-      if (resendBinaryBodyBase64.value) {
-        payload.body = resendBinaryBodyBase64.value
-        payload.body_base64 = true
-      }
-    } else if (resendRequest.value.body) {
-      payload.body = resendRequest.value.body
-      payload.body_base64 = false
+      host: resendMeta.value.host,
+      port: Number(resendMeta.value.port) || 443,
+      tls: !!resendMeta.value.tls,
+      sni: resendMeta.value.sni || resendMeta.value.host,
+      raw_base64: bytesToBase64(new TextEncoder().encode(resendRawText.value))
     }
 
     const response = await ApiService.post('/v1/vpn/flows/replay', payload)
@@ -1691,15 +1654,13 @@ const sendResendRequest = async () => {
       return
     }
 
-    const bodyBytes = data.body_base64 ? base64ToBytes(data.body_base64) : new Uint8Array(0)
-    const headerLines = Object.entries(data.headers || {}).map(([name, value]) => `${name}: ${value}\r\n`).join('')
-    const responseText = `HTTP/1.1 ${data.status} ${data.status_text || ''}\r\n${headerLines}Content-Length: ${bodyBytes.length}\r\n\r\n`
-    const syntheticBytes = concatBytes([new TextEncoder().encode(responseText), bodyBytes])
-    const decoded = await decodeHttpMessage(syntheticBytes)
+    const responseBytes = data.raw_response_base64 ? base64ToBytes(data.raw_response_base64) : new Uint8Array(0)
+    const decoded = await decodeHttpMessage(responseBytes)
+    const statusMatch = decoded ? statusLineFromHeaderText(decoded.headerText) : null
 
     resendResult.value = {
-      status: data.status,
-      statusText: data.status_text || '',
+      status: statusMatch ? statusMatch[1] : null,
+      statusText: statusMatch ? (statusMatch[2] || '') : '',
       durationMs: data.duration_ms,
       decoded
     }
@@ -2855,23 +2816,23 @@ watch(activeTab, (tab) => {
       @confirm="sendResendRequest"
       @cancel="closeResendModal"
     >
-      <FormField :label="t('vpn.resendMethod')">
-        <FormControl
-          v-model="resendRequest.method"
-          :options="['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS']"
-        />
-      </FormField>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <FormField :label="t('vpn.resendHost')">
+          <FormControl v-model="resendMeta.host" placeholder="example.com" />
+        </FormField>
+        <FormField :label="t('vpn.resendPort')">
+          <FormControl v-model="resendMeta.port" type="number" />
+        </FormField>
+        <FormField :label="t('vpn.resendTls')">
+          <FormControl v-model="resendMeta.tls" :options="[true, false]" />
+        </FormField>
+        <FormField :label="t('vpn.resendSni')">
+          <FormControl v-model="resendMeta.sni" placeholder="example.com" />
+        </FormField>
+      </div>
 
-      <FormField :label="t('vpn.resendUrl')">
-        <FormControl v-model="resendRequest.url" placeholder="https://example.com/api/path" />
-      </FormField>
-
-      <FormField :label="t('vpn.resendHeaders')" :help="t('vpn.resendHeadersHelp')">
-        <FormControl v-model="resendRequest.headersText" type="textarea" height="8rem" />
-      </FormField>
-
-      <FormField :label="t('vpn.resendBody')">
-        <FormControl v-model="resendRequest.body" type="textarea" height="8rem" />
+      <FormField :label="t('vpn.resendRaw')" :help="t('vpn.resendRawHelp')">
+        <FormControl v-model="resendRawText" type="textarea" height="16rem" />
       </FormField>
 
       <div v-if="resendLoading" class="text-xs text-slate-500 dark:text-slate-400 italic">

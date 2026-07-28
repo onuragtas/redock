@@ -35,8 +35,11 @@ func (m *Manager) startQUICInterceptor(serverID uint, tunIface string) (*quicInt
 
 	tlsConf := &tls.Config{
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
+			log.Printf("traffic_inspector: QUIC ClientHello received from %s (sni=%q, supportedProtos=%v)", hello.Conn.RemoteAddr(), hello.ServerName, hello.SupportedProtos)
+
 			cert, err := m.CA.LeafCertificate(hello.ServerName)
 			if err != nil {
+				logWarn("traffic_inspector: QUIC leaf cert issuance failed for sni=%q: %v", hello.ServerName, err)
 				return nil, err
 			}
 			return &tls.Config{

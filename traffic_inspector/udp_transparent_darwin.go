@@ -36,6 +36,30 @@ func newTransparentUDPConn(port int) (*transparentUDPConn, error) {
 	return &transparentUDPConn{UDPConn: conn, port: port, origDst: make(map[string]cachedDst)}, nil
 }
 
+// canonicalUDPAddrKey normalizes a net.Addr to a stable "ip:port" cache key.
+// The address cached here (from this type's own raw ReadFrom, backed by
+// net.UDPConn) and the address later looked up with (quic-go's own
+// Conn.RemoteAddr(), which wraps/reconstructs its own net.Addr internally)
+// are not guaranteed to produce byte-identical .String() output even for
+// the same peer — e.g. an IPv4 address round-tripped through a
+// netip.AddrPort-based representation can come back "as-4-in-6" or
+// otherwise differently formatted. Re-deriving the key from the parsed
+// IP/port rather than trusting the raw string avoids that mismatch.
+func canonicalUDPAddrKey(addr net.Addr) string {
+	host, port, err := net.SplitHostPort(addr.String())
+	if err != nil {
+		return addr.String()
+	}
+	ip := net.ParseIP(host)
+	if ip == nil {
+		return addr.String()
+	}
+	if ip4 := ip.To4(); ip4 != nil {
+		ip = ip4
+	}
+	return net.JoinHostPort(ip.String(), port)
+}
+
 func (t *transparentUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	n, addr, err := t.UDPConn.ReadFrom(p)
 	if err != nil {
@@ -47,7 +71,7 @@ func (t *transparentUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		return n, addr, nil
 	}
 
-	key := udpAddr.String()
+	key := canonicalUDPAddrKey(udpAddr)
 	t.mu.RLock()
 	_, known := t.origDst[key]
 	t.mu.RUnlock()
@@ -60,6 +84,8 @@ func (t *transparentUDPConn) ReadFrom(p []byte) (int, net.Addr, error) {
 		t.mu.Lock()
 		t.origDst[key] = cachedDst{host: host, port: port}
 		t.mu.Unlock()
+	} else {
+		logWarn("traffic_inspector: QUIC natlookup failed for %s: %v", key, lookupErr)
 	}
 
 	return n, addr, nil
@@ -71,7 +97,7 @@ func (t *transparentUDPConn) OriginalDestinationFor(addr net.Addr) (string, int,
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 
-	d, ok := t.origDst[addr.String()]
+	d, ok := t.origDst[canonicalUDPAddrKey(addr)]
 	if !ok {
 		return "", 0, false
 	}
