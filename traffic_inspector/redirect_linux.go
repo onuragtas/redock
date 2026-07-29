@@ -9,11 +9,25 @@ import (
 	"sync"
 )
 
+// ensureLocalnetRouting enables net.ipv4.conf.<iface>.route_localnet on the
+// VPN tun interface (and `all`). Without this, the kernel treats forwarded
+// packets whose destination the REDIRECT rule rewrites to 127.0.0.1 as
+// martians and silently drops them *after* the NAT rewrite — so the iptables
+// counters increment but nothing ever reaches the loopback MITM listener.
+// This is the Linux-specific reason transparent REDIRECT-to-loopback works
+// on macOS (pf) but captures nothing here. Idempotent; safe to call per rule.
+func ensureLocalnetRouting(tunIface string) {
+	exec.Command("sysctl", "-w", "net.ipv4.conf.all.route_localnet=1").Run()
+	exec.Command("sysctl", "-w", fmt.Sprintf("net.ipv4.conf.%s.route_localnet=1", tunIface)).Run()
+}
+
 // AddUserRedirect adds an iptables NAT PREROUTING rule that redirects a
 // single inspected user's TCP traffic (matched by source IP, on the VPN's
 // tun interface) to our local TCP MITM listener. The real destination is
 // recovered later via SO_ORIGINAL_DST (see natlookup_linux.go).
 func AddUserRedirect(tunIface, userIP string, proxyPort int) error {
+	ensureLocalnetRouting(tunIface)
+
 	args := redirectRuleArgs(tunIface, userIP, proxyPort)
 
 	checkArgs := append([]string{"-t", "nat", "-C"}, args...)
@@ -62,6 +76,11 @@ func ensureTPROXYRouting() {
 	tproxyRoutingOnce.Do(func() {
 		exec.Command("ip", "rule", "add", "fwmark", "1", "lookup", "100").Run()
 		exec.Command("ip", "route", "add", "local", "0.0.0.0/0", "dev", "lo", "table", "100").Run()
+		// Strict reverse-path filtering drops TPROXY-diverted packets (the
+		// client's source IP does not route back out the tun interface).
+		// Relax to loose mode (2); the kernel uses max(all, iface), so `all`
+		// must be lowered too — the per-tun value is set in AddUserRedirectQUIC.
+		exec.Command("sysctl", "-w", "net.ipv4.conf.all.rp_filter=2").Run()
 	})
 }
 
@@ -72,6 +91,9 @@ func ensureTPROXYRouting() {
 // natlookup_linux.go's UDP counterpart in udp_transparent_linux.go).
 func AddUserRedirectQUIC(tunIface, userIP string, proxyPort int) error {
 	ensureTPROXYRouting()
+	// Loose reverse-path filtering on the tun iface so TPROXY-diverted UDP
+	// (QUIC) from the client is not dropped before local delivery.
+	exec.Command("sysctl", "-w", fmt.Sprintf("net.ipv4.conf.%s.rp_filter=2", tunIface)).Run()
 
 	args := tproxyRuleArgs(tunIface, userIP, proxyPort)
 
