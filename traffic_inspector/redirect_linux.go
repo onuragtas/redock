@@ -56,13 +56,19 @@ func RemoveUserRedirect(tunIface, userIP string, proxyPort int) error {
 }
 
 func redirectRuleArgs(tunIface, userIP string, proxyPort int) []string {
+	// DNAT (not REDIRECT) to an explicit 127.0.0.1 destination. For forwarded
+	// traffic (PREROUTING) `-j REDIRECT` rewrites the destination to the
+	// *incoming interface's* primary IP (the tun's IP, e.g. 10.0.0.1) — never
+	// 127.0.0.1 — so a loopback-bound listener never sees the packet. DNAT
+	// lets us target 127.0.0.1 directly (matching the macOS pf `rdr -> 127.0.0.1`
+	// semantics), which reaches the listener once route_localnet is enabled.
 	return []string{
 		"PREROUTING",
 		"-i", tunIface,
 		"-s", userIP,
 		"-p", "tcp",
-		"-j", "REDIRECT",
-		"--to-port", strconv.Itoa(proxyPort),
+		"-j", "DNAT",
+		"--to-destination", fmt.Sprintf("127.0.0.1:%d", proxyPort),
 	}
 }
 
