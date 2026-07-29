@@ -532,6 +532,8 @@ const getOrCreateFlow = (evt) => {
       bytesReceived: 0, // server->client (response-side / download)
       closed: false,
       error: '',
+      status: '', // '' = normal data flow | 'attempt' (QUIC) | 'blocked' (pinning) | 'failed'
+      attempts: 0, // how many times a coalesced status event (same stable flow_id) was seen
       chunks: []
     }
     flowIndex.set(evt.flow_id, flow)
@@ -567,6 +569,12 @@ const ingestFlowEvent = (evt) => {
   }
   if (evt.closed) flow.closed = true
   if (evt.error) flow.error = evt.error
+  if (evt.status) {
+    flow.status = evt.status
+    // Coalesced status events (blocked/attempt/failed) share a stable flow_id;
+    // count repeats so a pinned client's retry storm reads as "×N" on one row.
+    flow.attempts += 1
+  }
 }
 
 const fetchFlows = async () => {
@@ -739,6 +747,9 @@ const filteredFlows = computed(() => {
     if (userId !== null && flow.user_id !== userId) return false
     if (status === 'active' && flow.closed) return false
     if (status === 'closed' && !flow.closed) return false
+    // 'blocked' = connections that produced no decrypted content: pinned/refused
+    // handshakes ('blocked'), QUIC attempts ('attempt'), our-side errors ('failed').
+    if (status === 'blocked' && !flow.status) return false
     if (q) {
       const haystack = `${flow.host || ''} ${flow.sni || ''}`.toLowerCase()
       if (!haystack.includes(q)) return false
@@ -2281,9 +2292,10 @@ watch(activeTab, (tab) => {
           <div class="inline-flex rounded-lg overflow-hidden border border-slate-200 dark:border-slate-700 text-sm">
             <button
               v-for="opt in [
-                { value: 'all',    label: t('vpn.all') },
-                { value: 'active', label: t('vpn.flowActive') },
-                { value: 'closed', label: t('vpn.flowClosed') }
+                { value: 'all',     label: t('vpn.all') },
+                { value: 'active',  label: t('vpn.flowActive') },
+                { value: 'closed',  label: t('vpn.flowClosed') },
+                { value: 'blocked', label: t('vpn.flowBlocked') }
               ]"
               :key="opt.value"
               type="button"
@@ -2378,9 +2390,21 @@ watch(activeTab, (tab) => {
                 >
                   <td class="px-4 py-3 text-sm">{{ formatTrafficTime(rowTimestamp(row)) }}</td>
                   <td class="px-4 py-3 text-sm">{{ usernameForFlow(row.flow.user_id) }}</td>
-                  <td class="px-4 py-3 text-sm">
+                  <td class="px-4 py-3 text-sm whitespace-nowrap">
                     <span class="px-2 py-1 text-xs rounded bg-slate-100 text-slate-700 dark:bg-slate-700 dark:text-slate-300 font-mono">
                       {{ row.flow.protocol }}
+                    </span>
+                    <span
+                      v-if="row.flow.status"
+                      class="ml-1 px-2 py-1 text-xs rounded font-medium"
+                      :class="{
+                        'bg-red-100 text-red-700 dark:bg-red-900/40 dark:text-red-300': row.flow.status === 'blocked',
+                        'bg-amber-100 text-amber-700 dark:bg-amber-900/40 dark:text-amber-300': row.flow.status === 'attempt',
+                        'bg-orange-100 text-orange-700 dark:bg-orange-900/40 dark:text-orange-300': row.flow.status === 'failed'
+                      }"
+                      :title="row.flow.error || ''"
+                    >
+                      {{ t('vpn.flowStatus.' + row.flow.status) }}{{ row.flow.attempts > 1 ? ' ×' + row.flow.attempts : '' }}
                     </span>
                   </td>
                   <td class="px-4 py-3 text-sm font-mono max-w-xs truncate" :title="transactionInfoForRow(row).info">

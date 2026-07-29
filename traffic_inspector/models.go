@@ -29,4 +29,10 @@ type FlowEvent struct {
 	Data      []byte `json:"data"`      // base64-encoded automatically by encoding/json
 	Closed    bool   `json:"closed,omitempty"`
 	Error     string `json:"error,omitempty"`
+	// Status classifies a connection that produced no decrypted content so it
+	// can still be surfaced in the dashboard: "" for normal data-carrying
+	// flows, "attempt" for a QUIC handshake we saw but cannot confirm
+	// succeeded, "blocked" for a handshake the client refused (e.g. cert
+	// pinning), "failed" for an upstream/lookup error on our side.
+	Status string `json:"status,omitempty"`
 }

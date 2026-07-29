@@ -64,7 +64,14 @@ func handleInterceptedConn(m *Manager, rawConn net.Conn) {
 	isTLS := err == nil && len(peeked) == 3 && peeked[0] == 0x16 && peeked[1] == 0x03
 
 	if isTLS {
-		handleTLSConn(m, pc, userID, host, port)
+		// Peek enough of the ClientHello to recover the SNI *before* we try to
+		// terminate the handshake, so a connection the client refuses (cert
+		// pinning) can still be reported to the dashboard with its target host.
+		sni := ""
+		if hello, perr := pc.r.Peek(2048); perr == nil || len(hello) > 0 {
+			sni = parseTLSClientHelloSNI(hello)
+		}
+		handleTLSConn(m, pc, userID, sni, host, port)
 		return
 	}
 
@@ -76,7 +83,7 @@ func handleInterceptedConn(m *Manager, rawConn net.Conn) {
 // CA), opens an independent TLS connection to the real destination, and
 // relays decrypted application data between the two, tapping every chunk
 // into the capture hub.
-func handleTLSConn(m *Manager, pc *peekConn, userID uint, host string, port int) {
+func handleTLSConn(m *Manager, pc *peekConn, userID uint, sni, host string, port int) {
 	tlsConn := tls.Server(pc, &tls.Config{
 		GetCertificate: m.CA.GetCertificateFunc(),
 		MinVersion:     tls.VersionTLS12,
@@ -85,9 +92,14 @@ func handleTLSConn(m *Manager, pc *peekConn, userID uint, host string, port int)
 
 	if err := tlsConn.Handshake(); err != nil {
 		logWarn("traffic_inspector: client TLS handshake failed for %s:%d: %v", host, port, err)
+		// The client refused our injected certificate — almost always cert
+		// pinning. Surface it in the dashboard with the SNI we peeked upfront.
+		m.publishConnEvent("tcp-tls", sni, host, port, userID, "blocked", err.Error())
 		return
 	}
-	sni := tlsConn.ConnectionState().ServerName
+	if cs := tlsConn.ConnectionState().ServerName; cs != "" {
+		sni = cs
+	}
 
 	upstreamName := sni
 	if upstreamName == "" {
@@ -97,6 +109,7 @@ func handleTLSConn(m *Manager, pc *peekConn, userID uint, host string, port int)
 	upstreamRaw, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 10*time.Second)
 	if err != nil {
 		logWarn("traffic_inspector: dial upstream %s:%d failed: %v", host, port, err)
+		m.publishConnEvent("tcp-tls", sni, host, port, userID, "failed", err.Error())
 		return
 	}
 	upstreamConn := tls.Client(upstreamRaw, &tls.Config{ServerName: upstreamName})
@@ -104,6 +117,7 @@ func handleTLSConn(m *Manager, pc *peekConn, userID uint, host string, port int)
 
 	if err := upstreamConn.Handshake(); err != nil {
 		logWarn("traffic_inspector: upstream TLS handshake failed for %s:%d (sni=%s): %v", host, port, sni, err)
+		m.publishConnEvent("tcp-tls", sni, host, port, userID, "failed", err.Error())
 		return
 	}
 	relay(m, "tcp-tls", sni, host, port, userID, tlsConn, upstreamConn)
@@ -115,6 +129,7 @@ func handlePlainConn(m *Manager, pc *peekConn, userID uint, host string, port in
 	upstream, err := net.DialTimeout("tcp", net.JoinHostPort(host, strconv.Itoa(port)), 10*time.Second)
 	if err != nil {
 		logWarn("traffic_inspector: dial upstream %s:%d failed: %v", host, port, err)
+		m.publishConnEvent("tcp-plain", "", host, port, userID, "failed", err.Error())
 		return
 	}
 	defer upstream.Close()

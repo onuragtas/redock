@@ -37,6 +37,20 @@ func (m *Manager) startQUICInterceptor(serverID uint, tunIface string) (*quicInt
 		GetConfigForClient: func(hello *tls.ClientHelloInfo) (*tls.Config, error) {
 			log.Printf("traffic_inspector: QUIC ClientHello received from %s (sni=%q, supportedProtos=%v)", hello.Conn.RemoteAddr(), hello.ServerName, hello.SupportedProtos)
 
+			// Surface the attempt to the dashboard. quic-go gives us no callback
+			// for a handshake the client later refuses (pinned QUIC endpoints
+			// abort silently), so "attempt" is the strongest status we can
+			// assert here — a successful handshake additionally produces real
+			// data flows via handleQUICConn. Coalesced by stable FlowID.
+			var uid uint
+			if ua, ok := hello.Conn.RemoteAddr().(*net.UDPAddr); ok {
+				if u := m.lookupUserByIP(ua.IP.String()); u != nil {
+					uid = u.ID
+				}
+			}
+			qHost, qPort, _ := pc.OriginalDestinationFor(hello.Conn.RemoteAddr())
+			m.publishConnEvent("quic", hello.ServerName, qHost, qPort, uid, "attempt", "")
+
 			cert, err := m.CA.LeafCertificate(hello.ServerName)
 			if err != nil {
 				logWarn("traffic_inspector: QUIC leaf cert issuance failed for sni=%q: %v", hello.ServerName, err)

@@ -934,6 +934,12 @@
     "bytes": "Bayt",
     "flowActive": "Aktif",
     "flowClosed": "Kapalı",
+    "flowBlocked": "Engellenen",
+    "flowStatus": {
+      "attempt": "QUIC denemesi",
+      "blocked": "Engellendi (pinning?)",
+      "failed": "Başarısız"
+    },
     "flowPending": "Bekliyor",
     "rowPendingHint": "İstek yakalandı — yanıtın tamamlanması bekleniyor",
     "viewText": "Metin",

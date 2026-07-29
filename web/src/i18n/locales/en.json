@@ -934,6 +934,12 @@
     "bytes": "Bytes",
     "flowActive": "Active",
     "flowClosed": "Closed",
+    "flowBlocked": "Blocked",
+    "flowStatus": {
+      "attempt": "QUIC attempt",
+      "blocked": "Blocked (pinning?)",
+      "failed": "Failed"
+    },
     "flowPending": "Pending",
     "rowPendingHint": "Request captured — waiting on the response to complete",
     "viewText": "Text",
