@@ -333,6 +333,14 @@ const routes = [
       },
       {
         meta: {
+          title: 'Memory'
+        },
+        path: 'memory',
+        name: 'memory',
+        component: () => import('@/views/MemoryGuard.vue')
+      },
+      {
+        meta: {
           title: 'Users',
           requiresAdmin: true
         },

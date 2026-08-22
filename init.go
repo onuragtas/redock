@@ -19,6 +19,7 @@ import (
 	"redock/pkg/network"
 	"redock/platform/database"
 	"redock/platform/jwtsecrets"
+	"redock/platform/memguard"
 	"redock/platform/memory"
 	"redock/platform/migrations"
 	"redock/saved_commands"
@@ -74,6 +75,12 @@ func initialize() {
 	if err := registerEntities(db); err != nil {
 		log.Fatalf("Failed to register entities: %v", err)
 	}
+
+	// Cap append-only log tables and start the memory guard before any service
+	// allocates: GOMEMLIMIT and OOM protection must be in place from boot.
+	applyLogTableLimits(db)
+	memguard.Init(db)
+	registerMemoryDBReliever(db)
 
 	// Load or create JWT secret and refresh salt in memory DB (persisted across restarts)
 	jwtsecrets.Ensure(db)
@@ -132,7 +139,9 @@ func registerEntities(db *memory.Database) error {
 		{"dns_client_settings", func() error { return memory.Register[*dns_server.DNSClientSettings](db, "dns_client_settings") }},
 		{"dns_client_rules", func() error { return memory.Register[*dns_server.DNSClientDomainRule](db, "dns_client_rules") }},
 		{"dns_rewrites", func() error { return memory.Register[*dns_server.DNSRewrite](db, "dns_rewrites") }},
-		{"dns_query_logs", func() error { return memory.Register[*dns_server.DNSQueryLog](db, "dns_query_logs") }},
+		{"dns_query_logs", func() error {
+			return memory.RegisterWithLimit[*dns_server.DNSQueryLog](db, "dns_query_logs", logTableCap("dns_query_logs"))
+		}},
 
 		// VPN entities
 		{"vpn_servers", func() error { return memory.Register[*vpn_server.VPNServer](db, "vpn_servers") }},
@@ -140,8 +149,12 @@ func registerEntities(db *memory.Database) error {
 		{"vpn_groups", func() error { return memory.Register[*vpn_server.VPNUserGroup](db, "vpn_groups") }},
 		{"vpn_security_rules", func() error { return memory.Register[*vpn_server.VPNSecurityRule](db, "vpn_security_rules") }},
 		{"vpn_connections", func() error { return memory.Register[*vpn_server.VPNConnection](db, "vpn_connections") }},
-		{"vpn_connection_logs", func() error { return memory.Register[*vpn_server.VPNConnectionLog](db, "vpn_connection_logs") }},
-		{"vpn_bandwidth_stats", func() error { return memory.Register[*vpn_server.VPNBandwidthStat](db, "vpn_bandwidth_stats") }},
+		{"vpn_connection_logs", func() error {
+			return memory.RegisterWithLimit[*vpn_server.VPNConnectionLog](db, "vpn_connection_logs", logTableCap("vpn_connection_logs"))
+		}},
+		{"vpn_bandwidth_stats", func() error {
+			return memory.RegisterWithLimit[*vpn_server.VPNBandwidthStat](db, "vpn_bandwidth_stats", logTableCap("vpn_bandwidth_stats"))
+		}},
 
 		// Cloudflare entities
 		{"cloudflare_accounts", func() error { return memory.Register[*cloudflare.CloudflareAccount](db, "cloudflare_accounts") }},
@@ -154,7 +167,9 @@ func registerEntities(db *memory.Database) error {
 		{"cloudflare_zone_settings", func() error {
 			return memory.Register[*cloudflare.CloudflareZoneSettings](db, "cloudflare_zone_settings")
 		}},
-		{"cloudflare_events", func() error { return memory.Register[*cloudflare.CloudflareEvent](db, "cloudflare_events") }},
+		{"cloudflare_events", func() error {
+			return memory.RegisterWithLimit[*cloudflare.CloudflareEvent](db, "cloudflare_events", logTableCap("cloudflare_events"))
+		}},
 
 		// Email entities
 		{"email_domains", func() error { return memory.Register[*email_server.EmailDomain](db, "email_domains") }},
@@ -164,7 +179,9 @@ func registerEntities(db *memory.Database) error {
 		{"email_messages", func() error { return memory.Register[*email_server.Email](db, "email_messages") }},
 		{"email_attachments", func() error { return memory.Register[*email_server.EmailAttachment](db, "email_attachments") }},
 		{"email_filters", func() error { return memory.Register[*email_server.EmailFilter](db, "email_filters") }},
-		{"email_logs", func() error { return memory.Register[*email_server.EmailLog](db, "email_logs") }},
+		{"email_logs", func() error {
+			return memory.RegisterWithLimit[*email_server.EmailLog](db, "email_logs", logTableCap("email_logs"))
+		}},
 		{"email_server_configs", func() error { return memory.Register[*email_server.EmailServerConfig](db, "email_server_configs") }},
 
 		// Other entities
@@ -194,6 +211,7 @@ func registerEntities(db *memory.Database) error {
 			return memory.Register[*onion_proxy.OnionServiceEntity](db, onion_proxy.TableOnionServices)
 		}},
 		{"jwt_secrets", func() error { return memory.Register[*jwtsecrets.JWTSecretsEntity](db, jwtsecrets.TableName) }},
+		{"memguard_config", func() error { return memory.Register[*memguard.ConfigEntity](db, memguard.TableName) }},
 		{"vpn_ca", func() error { return memory.Register[*traffic_inspector.CAEntity](db, traffic_inspector.CATableName) }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},

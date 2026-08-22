@@ -44,6 +44,8 @@ func Init(db *memory.Database) {
 	vpn_server.OnNATConfigured = manager.onServerNATConfigured
 	vpn_server.OnNATCleanup = manager.onServerNATCleanup
 
+	registerMemoryRelievers(manager)
+
 	log.Println("Traffic Inspector initialized")
 }
 

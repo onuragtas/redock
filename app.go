@@ -102,6 +102,7 @@ func app() {
 	routes.NetworkRoutes(app)
 	routes.UpdateRoutes(app)
 	routes.BackupRoutes(app)
+	routes.SystemRoutes(app)
 	// Static SPA after routes.
 	app.Use("/", filesystem.New(filesystem.Config{
 		Root:       http.FS(embedDirStatic),

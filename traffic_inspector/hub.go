@@ -70,6 +70,10 @@ func (h *Hub) Unregister(conn *websocket.Conn) {
 // connected dashboard client. Safe to call concurrently from many proxy
 // connection goroutines at once.
 func (h *Hub) Publish(event FlowEvent) {
+	// Under memory pressure the payload is trimmed (or dropped) before it is
+	// retained; the event itself is still broadcast to live viewers.
+	event.Data = capturePayload(event.Data)
+
 	h.mu.Lock()
 	h.ring[h.ringPos] = event
 	h.ringPos = (h.ringPos + 1) % ringBufferSize

@@ -81,11 +81,20 @@ func (s *DNSServer) Init(db *memory.Database, dockerManager *dockermanager.Docke
 		log.Printf("Warning: Failed to load filters: %v", err)
 	}
 
+	// Cap the query log table and register memory-pressure relievers before the
+	// first query is served, so a huge restored log cannot sit in RAM untouched.
+	ApplyMemoryLimits(db)
+
 	// Preload stats from last 24 hours (async, non-blocking)
 	go s.preloadStats()
 
-	// Retention: delete logs older than 24h so memory stays bounded
-	go s.cleanupLogsRetention()
+	// Retention: delete logs older than 24h so memory stays bounded. Sweep once
+	// immediately — waiting 15 minutes means carrying a restored backlog for
+	// that whole window.
+	go func() {
+		s.purgeExpiredLogs()
+		s.cleanupLogsRetention()
+	}()
 
 	return nil
 }
@@ -256,19 +265,24 @@ func (s *DNSServer) cleanupLogsRetention() {
 	ticker := time.NewTicker(dnsLogRetentionInterval)
 	defer ticker.Stop()
 	for range ticker.C {
-		cutoff := time.Now().Add(-dnsLogRetention)
-		all := memory.FindAll[*DNSQueryLog](s.db, dnsQueryLogsTable)
-		deleted := 0
-		for _, l := range all {
-			if l.CreatedAt.Before(cutoff) {
-				if err := memory.Delete[*DNSQueryLog](s.db, dnsQueryLogsTable, l.GetID()); err == nil {
-					deleted++
-				}
+		s.purgeExpiredLogs()
+	}
+}
+
+// purgeExpiredLogs drops query log rows older than the retention window.
+func (s *DNSServer) purgeExpiredLogs() {
+	cutoff := time.Now().Add(-dnsLogRetention)
+	all := memory.FindAll[*DNSQueryLog](s.db, dnsQueryLogsTable)
+	deleted := 0
+	for _, l := range all {
+		if l.CreatedAt.Before(cutoff) {
+			if err := memory.Delete[*DNSQueryLog](s.db, dnsQueryLogsTable, l.GetID()); err == nil {
+				deleted++
 			}
 		}
-		if deleted > 0 {
-			log.Printf("DNS logs retention: deleted %d entries older than %v", deleted, dnsLogRetention)
-		}
+	}
+	if deleted > 0 {
+		log.Printf("DNS logs retention: deleted %d entries older than %v", deleted, dnsLogRetention)
 	}
 }
 

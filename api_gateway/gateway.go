@@ -22,6 +22,7 @@ import (
 	dockermanager "redock/docker-manager"
 	"redock/pkg/pathutil"
 	"redock/platform/database"
+	"redock/platform/memguard"
 	"redock/platform/memory"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -379,6 +380,7 @@ type cachedRoute struct {
 // Init initializes the API Gateway
 func Init(dm *dockermanager.DockerEnvironmentManager) {
 	gateway = NewGateway(dm.GetWorkDir())
+	registerMemoryRelievers()
 }
 
 // GetGateway returns the singleton gateway instance
@@ -939,8 +941,15 @@ func (g *Gateway) IsRunning() bool {
 func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
 
-	lw := newLoggingResponseWriter(w, maxLoggedBodyBytes)
-	reqInfo, err := captureRequestBody(r, maxLoggedBodyBytes)
+	// Under memory pressure, stop buffering request/response bodies for the log:
+	// they are the largest per-request allocation and the least essential.
+	bodyLimit := maxLoggedBodyBytes
+	if memguard.Degraded() {
+		bodyLimit = 0
+	}
+
+	lw := newLoggingResponseWriter(w, bodyLimit)
+	reqInfo, err := captureRequestBody(r, bodyLimit)
 	if err != nil {
 		g.recordError()
 		status := http.StatusBadRequest
@@ -2763,9 +2772,16 @@ func captureRequestBody(r *http.Request, limit int) (bodyLogInfo, error) {
 	return bodyLogInfoFromBytes(bodyBytes, limit), nil
 }
 
+// bodyLogInfoFromBytes builds the logged snippet of a body. limit > 0 caps the
+// snippet, limit < 0 keeps everything, and limit == 0 disables body capture
+// entirely — that is what the memory guard uses to stop buffering under
+// pressure. The size is still reported so logs stay useful.
 func bodyLogInfoFromBytes(data []byte, limit int) bodyLogInfo {
 	if len(data) == 0 {
 		return bodyLogInfo{}
+	}
+	if limit == 0 {
+		return bodyLogInfo{truncated: true, size: int64(len(data))}
 	}
 	truncated := limit > 0 && len(data) > limit
 	snippet := data
@@ -2800,7 +2816,9 @@ func (lrw *loggingResponseWriter) Write(b []byte) (int, error) {
 	if lrw.statusCode == 0 {
 		lrw.statusCode = http.StatusOK
 	}
-	if lrw.limit <= 0 {
+	if lrw.limit == 0 {
+		// Body capture disabled (memory pressure): count the bytes, buffer none.
+	} else if lrw.limit < 0 {
 		lrw.body.Write(b)
 	} else {
 		remaining := lrw.limit - lrw.body.Len()
@@ -2826,7 +2844,10 @@ func (lrw *loggingResponseWriter) StatusCode() int {
 }
 
 func (lrw *loggingResponseWriter) LogInfo() bodyLogInfo {
-	truncated := lrw.limit > 0 && lrw.body.Len() >= lrw.limit && lrw.bytesWritten > int64(lrw.limit)
+	truncated := lrw.limit == 0 && lrw.bytesWritten > 0
+	if lrw.limit > 0 {
+		truncated = lrw.body.Len() >= lrw.limit && lrw.bytesWritten > int64(lrw.limit)
+	}
 	return bodyLogInfo{
 		body:      lrw.body.String(),
 		truncated: truncated,

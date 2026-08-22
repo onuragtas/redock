@@ -18,6 +18,7 @@ import {
   mdiLan,
   mdiLanConnect,
   mdiLaptop,
+  mdiMemory,
   mdiNetworkOutline,
   mdiRocket,
   mdiScriptText,
@@ -47,7 +48,8 @@ export const menuIconMap = {
   mdiBugCheck,
   mdiDownload,
   mdiAccountGroup,
-  mdiArchive
+  mdiArchive,
+  mdiMemory
 }
 
 export default menuIconMap

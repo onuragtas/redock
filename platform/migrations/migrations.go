@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"time"
 
 	"redock/app/models"
 	"redock/deployment"
@@ -92,6 +93,10 @@ func MemoryMigrations() []database.MemoryMigration {
 				if err != nil {
 					return err
 				}
+				// DNS query logs are kept for 24h at runtime, so importing older
+				// lines would only inflate the heap with rows retention deletes
+				// on the next sweep. These files can be hundreds of MB.
+				cutoff := time.Now().Add(-24 * time.Hour)
 				for _, path := range files {
 					f, err := os.Open(path)
 					if err != nil {
@@ -105,7 +110,7 @@ func MemoryMigrations() []database.MemoryMigration {
 						if err := json.Unmarshal(scanner.Bytes(), &entity); err != nil {
 							continue
 						}
-						if entity.CreatedAt.IsZero() {
+						if entity.CreatedAt.IsZero() || entity.CreatedAt.Before(cutoff) {
 							continue
 						}
 						if entity.UpdatedAt.IsZero() {

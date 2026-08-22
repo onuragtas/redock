@@ -969,6 +969,27 @@ class ApiService {
     return await this.put('/api/v1/backups/config', data);
   }
 
+  // Memory guard
+  static async getMemoryStatus() {
+    return await this.get('/api/v1/system/memory');
+  }
+
+  static async getMemoryHistory() {
+    return await this.get('/api/v1/system/memory/history');
+  }
+
+  static async getMemoryEvents() {
+    return await this.get('/api/v1/system/memory/events');
+  }
+
+  static async updateMemoryConfig(data) {
+    return await this.put('/api/v1/system/memory/config', data);
+  }
+
+  static async releaseMemory(level) {
+    return await this.post('/api/v1/system/memory/release', { level: level || 'critical' });
+  }
+
 }
 
 export default ApiService;
