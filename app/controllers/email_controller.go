@@ -2,8 +2,6 @@ package controllers
 
 import (
 	"fmt"
-	"log"
-	"redock/cloudflare"
 	"redock/email_server"
 	"redock/platform/memory"
 	"strconv"
@@ -58,37 +56,9 @@ func AddEmailDomain(c *fiber.Ctx) error {
 		})
 	}
 
-	go func() {
-		cfManager := cloudflare.GetManager()
-		if cfManager == nil {
-			return
-		}
-		
-		db := manager.GetDB()
-		zones := memory.Filter[*cloudflare.CloudflareZone](db, "cloudflare_zones", func(z *cloudflare.CloudflareZone) bool {
-			return z.Name == req.Domain
-		})
-		
-		if len(zones) == 0 {
-			return
-		}
-		
-		zone := zones[0]
-		serverConfig := manager.GetConfig()
-		
-		params := cloudflare.EmailDNSParams{
-			MXRecord:       "mail." + req.Domain,
-			SPFRecord:      domain.SPFRecord,
-			DKIMSelector:   domain.DKIMSelector,
-			DKIMRecord:     domain.DKIMPublicKey,
-			DMARCRecord:    domain.DMARCRecord,
-			MailServerIP:   serverConfig.IPAddress,
-		}
-		
-		if err := cfManager.CreateEmailDNSRecords(zone.ZoneID, params); err != nil {
-			log.Printf("⚠️  Failed to create Cloudflare DNS records: %v", err)
-		}
-	}()
+	// Publish MX/SPF/DKIM/DMARC to Cloudflare when the domain is a zone on a
+	// connected account. Runs in the background: DNS must never block the response.
+	manager.SyncDomainDNSAsync(domain)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -151,35 +121,7 @@ func UpdateEmailDomain(c *fiber.Ctx) error {
 		})
 	}
 
-	go func() {
-		cfManager := cloudflare.GetManager()
-		if cfManager == nil {
-			return
-		}
-
-		zones := memory.Filter[*cloudflare.CloudflareZone](db, "cloudflare_zones", func(z *cloudflare.CloudflareZone) bool {
-			return z.Name == domain.Domain
-		})
-
-		if len(zones) == 0 {
-			return
-		}
-
-		zone := zones[0]
-
-		params := cloudflare.EmailDNSParams{
-			MXRecord:       "mail." + domain.Domain,
-			SPFRecord:      domain.SPFRecord,
-			DKIMSelector:   domain.DKIMSelector,
-			DKIMRecord:     domain.DKIMPublicKey,
-			DMARCRecord:    domain.DMARCRecord,
-			MailServerIP:   serverIP,
-		}
-
-		if err := cfManager.UpdateEmailDNSRecords(zone.ZoneID, params); err != nil {
-			log.Printf("⚠️  Failed to update Cloudflare DNS records: %v", err)
-		}
-	}()
+	manager.SyncDomainDNSAsync(domain)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -229,7 +171,7 @@ func GetMailboxes(c *fiber.Ctx) error {
 
 	domainIDStr := c.Query("domain_id")
 	db := manager.GetDB()
-	
+
 	var mailboxes []*email_server.EmailMailbox
 	if domainIDStr == "" {
 		mailboxes = memory.FindAll[*email_server.EmailMailbox](db, "email_mailboxes")
@@ -368,45 +310,10 @@ func UpdateMailbox(c *fiber.Ctx) error {
 		})
 	}
 
-	// Update DNS records in background
-	go func() {
-		domain, err := memory.FindByID[*email_server.EmailDomain](db, "email_domains", mailbox.DomainID)
-		if err != nil {
-			return
-		}
-
-		cfManager := cloudflare.GetManager()
-		if cfManager == nil {
-			return
-		}
-
-		zones := memory.Filter[*cloudflare.CloudflareZone](db, "cloudflare_zones", func(z *cloudflare.CloudflareZone) bool {
-			return z.Name == domain.Domain
-		})
-
-		if len(zones) == 0 {
-			return
-		}
-
-		zone := zones[0]
-		serverIP := manager.GetConfig().IPAddress
-		if serverIP == "" {
-			serverIP = "127.0.0.1"
-		}
-
-		params := cloudflare.EmailDNSParams{
-			MXRecord:       "mail." + domain.Domain,
-			SPFRecord:      domain.SPFRecord,
-			DKIMSelector:   domain.DKIMSelector,
-			DKIMRecord:     domain.DKIMPublicKey,
-			DMARCRecord:    domain.DMARCRecord,
-			MailServerIP:   serverIP,
-		}
-
-		if err := cfManager.UpdateEmailDNSRecords(zone.ZoneID, params); err != nil {
-			log.Printf("⚠️  Failed to update Cloudflare DNS records: %v", err)
-		}
-	}()
+	// Keep the domain's DNS in step with the change.
+	if domain, err := memory.FindByID[*email_server.EmailDomain](db, "email_domains", mailbox.DomainID); err == nil && domain != nil {
+		manager.SyncDomainDNSAsync(domain)
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
@@ -515,8 +422,7 @@ func GetEmails(c *fiber.Ctx) error {
 	limitStr := c.Query("limit", "50")
 	limit, _ := strconv.Atoi(limitStr)
 
-	imapClient := email_server.NewIMAPClient(manager)
-	emails, err := imapClient.GetMessages(uint(mailboxID), folder, limit)
+	emails, err := manager.WebmailMessages(uint(mailboxID), folder, limit)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -573,8 +479,7 @@ func GetThread(c *fiber.Ctx) error {
 		})
 	}
 
-	imapClient := email_server.NewIMAPClient(manager)
-	thread, err := imapClient.GetThread(uint(mailboxID), folder, uint32(uid), 200)
+	thread, err := manager.WebmailThread(uint(mailboxID), folder, uint32(uid), 200)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -606,8 +511,7 @@ func GetFolders(c *fiber.Ctx) error {
 		})
 	}
 
-	imapClient := email_server.NewIMAPClient(manager)
-	folders, err := imapClient.GetFolders(uint(mailboxID))
+	folders, err := manager.WebmailFolders(uint(mailboxID))
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,
@@ -640,12 +544,12 @@ func SendEmail(c *fiber.Ctx) error {
 	}
 
 	var req struct {
-		To      []string `json:"to" validate:"required"`
-		CC      []string `json:"cc"`
-		BCC     []string `json:"bcc"`
-		Subject string   `json:"subject" validate:"required"`
-		Body    string   `json:"body"`
-		BodyHTML string  `json:"body_html"`
+		To       []string `json:"to" validate:"required"`
+		CC       []string `json:"cc"`
+		BCC      []string `json:"bcc"`
+		Subject  string   `json:"subject" validate:"required"`
+		Body     string   `json:"body"`
+		BodyHTML string   `json:"body_html"`
 	}
 
 	if err := c.BodyParser(&req); err != nil {
@@ -766,7 +670,7 @@ func CheckMailboxPasswords(c *fiber.Ctx) error {
 
 	db := manager.GetDB()
 	mailboxes := memory.FindAll[*email_server.EmailMailbox](db, "email_mailboxes")
-	
+
 	var missingPasswords []fiber.Map
 	for _, mb := range mailboxes {
 		if mb.PlainPassword == "" {
@@ -780,9 +684,9 @@ func CheckMailboxPasswords(c *fiber.Ctx) error {
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"total": len(mailboxes),
+		"error":             false,
+		"total":             len(mailboxes),
 		"missing_passwords": len(missingPasswords),
-		"mailboxes": missingPasswords,
+		"mailboxes":         missingPasswords,
 	})
 }

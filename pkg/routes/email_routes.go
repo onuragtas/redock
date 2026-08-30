@@ -23,6 +23,18 @@ func EmailRoutes(app *fiber.App) {
 	email.Get("/logs", controllers.GetEmailLogs)
 	email.Get("/logs/raw", controllers.GetEmailRawLogs)
 
+	// Native engine: mode switch, listener settings, outbound queue, DNS help
+	email.Get("/engine", controllers.GetEmailEngine)
+	email.Post("/control", controllers.ControlEmailServer)
+	email.Put("/native/settings", controllers.UpdateEmailNativeSettings)
+	email.Get("/queue", controllers.GetEmailQueue)
+	email.Post("/queue/flush", controllers.FlushEmailQueue)
+	email.Delete("/queue/:id", controllers.DeleteEmailQueueItem)
+	email.Get("/dns-records", controllers.GetEmailDNSRecords)
+	email.Post("/dns-records/sync", controllers.SyncEmailDNS)
+	email.Get("/legacy", controllers.GetEmailLegacyArtifacts)
+	email.Delete("/legacy", controllers.CleanupEmailLegacyArtifacts)
+
 	// Domain management
 	email.Get("/domains", controllers.GetEmailDomains)
 	email.Post("/domains", controllers.AddEmailDomain)

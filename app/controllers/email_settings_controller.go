@@ -3,7 +3,6 @@ package controllers
 import (
 	"fmt"
 	"log"
-	"redock/cloudflare"
 	"redock/email_server"
 	"redock/platform/memory"
 
@@ -65,35 +64,8 @@ func UpdateServerIP(c *fiber.Ctx) error {
 			continue
 		}
 
-		// Update DNS in background
-		go func(d *email_server.EmailDomain) {
-			cfManager := cloudflare.GetManager()
-			if cfManager == nil {
-				return
-			}
-
-			zones := memory.Filter[*cloudflare.CloudflareZone](db, "cloudflare_zones", func(z *cloudflare.CloudflareZone) bool {
-				return z.Name == d.Domain
-			})
-
-			if len(zones) == 0 {
-				return
-			}
-
-			zone := zones[0]
-			params := cloudflare.EmailDNSParams{
-				MXRecord:       "mail." + d.Domain,
-				SPFRecord:      d.SPFRecord,
-				DKIMSelector:   d.DKIMSelector,
-				DKIMRecord:     d.DKIMPublicKey,
-				DMARCRecord:    d.DMARCRecord,
-				MailServerIP:   req.IPAddress,
-			}
-
-			if err := cfManager.UpdateEmailDNSRecords(zone.ZoneID, params); err != nil {
-				log.Printf("⚠️  Failed to update Cloudflare DNS for %s: %v", d.Domain, err)
-			}
-		}(domain)
+		// Re-publish the domain's records with the new server address.
+		manager.SyncDomainDNSAsync(domain)
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
@@ -120,4 +92,3 @@ func GetServerConfig(c *fiber.Ctx) error {
 		"data":  config,
 	})
 }
-

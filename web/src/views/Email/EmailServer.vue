@@ -5,7 +5,6 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
-import SectionTitleLineWithButton from "@/components/SectionTitleLineWithButton.vue";
 import DomainManagement from "@/components/Email/DomainManagement.vue";
 import MailboxManagement from "@/components/Email/MailboxManagement.vue";
 
@@ -42,7 +41,8 @@ import {
   mdiCloud,
   mdiKey,
   mdiChevronDown,
-  mdiChevronUp
+  mdiChevronUp,
+  mdiContentCopy
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useToast } from 'vue-toastification';
@@ -56,7 +56,6 @@ const loading = ref(false);
 const activeTab = ref('overview');
 const serverStatus = ref({
   is_running: false,
-  container_name: '',
   hostname: '',
   ip_address: '',
   smtp_port: 25,
@@ -158,7 +157,14 @@ const editMailboxForm = ref({
 });
 
 // Computed
-const serverRunning = computed(() => serverStatus.value.is_running);
+// The listener status is the live truth; the stored config flag is the fallback
+// for the moment before the engine status has been fetched.
+// Live status of the mail listeners, filled by loadEngine().
+// running starts as null so the badge falls back to the stored flag until the
+// live listener status has been fetched.
+const nativeStatus = ref({ running: null, listeners: [], cert_source: '', queue_length: 0, mail_root: '' });
+
+const serverRunning = computed(() => nativeStatus.value?.running ?? serverStatus.value.is_running);
 
 /** Gövde metnini "On ... wrote:" / "şunu yazdı:" bloklarına böler; her blok ayrı kart (CardBox) için kullanılır */
 const parseBodyIntoQuoteCards = (body) => {
@@ -380,40 +386,6 @@ const loadFolders = async (mailboxId) => {
     folders.value = [
       { name: 'Inbox', value: 'INBOX', icon: mdiInbox, color: 'text-blue-600', message_count: 0 }
     ];
-  }
-};
-
-const startServer = async () => {
-  loading.value = true;
-  try {
-    const response = await ApiService.post('/api/email/server/start');
-    if (!response.data.error) {
-      toast.success(t('em.serverStarted'));
-      await loadServerStatus();
-    } else {
-      toast.error('❌ ' + response.data.msg);
-    }
-  } catch (error) {
-    toast.error(t('em.errorPrefix') + error.message);
-  } finally {
-    loading.value = false;
-  }
-};
-
-const stopServer = async () => {
-  loading.value = true;
-  try {
-    const response = await ApiService.post('/api/email/server/stop');
-    if (!response.data.error) {
-      toast.success(t('em.serverStopped'));
-      await loadServerStatus();
-    } else {
-      toast.error('❌ ' + response.data.msg);
-    }
-  } catch (error) {
-    toast.error(t('em.errorPrefix') + error.message);
-  } finally {
-    loading.value = false;
   }
 };
 
@@ -925,90 +897,321 @@ onUnmounted(() => {
   if (logTimer) clearInterval(logTimer);
 });
 
+// ---- Mail server administration ----
+const engineLoading = ref(false);
+const engineSaving = ref(false);
+const controlBusy = ref(false);
+const nativeConfig = ref(null);
+const selfTest = ref([]);
+const queueItems = ref([]);
+const dnsRecords = ref([]);
+const dnsSyncing = ref(false);
+const legacyArtifacts = ref([]);
+const cleaningUp = ref(false);
+
+// Tabs, in the order an operator works through them.
+const mailTabs = ['overview', 'domains', 'mailboxes', 'webmail', 'logs', 'listeners', 'queue', 'dns', 'cleanup'];
+
+const loadEngine = async () => {
+  engineLoading.value = true;
+  try {
+    const [engineRes, queueRes, dnsRes, legacyRes] = await Promise.all([
+      ApiService.get('/api/email/engine'),
+      ApiService.get('/api/email/queue'),
+      ApiService.get('/api/email/dns-records'),
+      ApiService.get('/api/email/legacy')
+    ]);
+
+    if (!engineRes.data.error) {
+      const data = engineRes.data.data || {};
+      nativeStatus.value = data.native || nativeStatus.value;
+      nativeConfig.value = data.config || null;
+      selfTest.value = data.self_test || [];
+    }
+    queueItems.value = queueRes.data?.data || [];
+    dnsRecords.value = dnsRes.data?.data || [];
+    legacyArtifacts.value = legacyRes.data?.data || [];
+  } catch (error) {
+    console.error('Failed to load mail server status:', error);
+  } finally {
+    engineLoading.value = false;
+  }
+};
+
+// controlServer starts, stops or restarts the listeners.
+const controlServer = async (action) => {
+  controlBusy.value = true;
+  try {
+    const response = await ApiService.post('/api/email/control', { action });
+    if (!response.data.error) {
+      toast.success(t('em.control_' + action));
+      nativeStatus.value = response.data.data?.native || nativeStatus.value;
+      await Promise.all([loadServerStatus(), loadEngine()]);
+    } else {
+      toast.error(response.data.msg || t('em.controlFailed'));
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.controlFailed'));
+  } finally {
+    controlBusy.value = false;
+  }
+};
+
+// syncDns publishes MX/SPF/DKIM/DMARC to Cloudflare for one domain or all.
+const syncDns = async (domainId) => {
+  dnsSyncing.value = true;
+  try {
+    const response = await ApiService.post('/api/email/dns-records/sync', { domain_id: domainId || 0 });
+    if (!response.data.error) {
+      const data = response.data.data;
+      const results = Array.isArray(data) ? data : [data];
+      const ok = results.filter((r) => r.synced).length;
+      if (ok > 0) {
+        toast.success(t('em.dnsSynced', { count: ok }));
+      } else {
+        toast.info(results[0]?.message || t('em.dnsSyncSkipped'));
+      }
+      await Promise.all([loadEngine(), loadDomains()]);
+    } else {
+      toast.error(response.data.msg || t('em.dnsSyncFailed'));
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.dnsSyncFailed'));
+  } finally {
+    dnsSyncing.value = false;
+  }
+};
+
+const cleanupLegacy = async () => {
+  cleaningUp.value = true;
+  try {
+    const response = await ApiService.delete('/api/email/legacy');
+    if (!response.data.error) {
+      const removed = response.data.data || [];
+      toast.success(t('em.cleanupDone', { count: removed.length }));
+      await loadEngine();
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.cleanupFailed'));
+  } finally {
+    cleaningUp.value = false;
+  }
+};
+
+const saveNativeSettings = async () => {
+  if (!nativeConfig.value) return;
+  engineSaving.value = true;
+  try {
+    const response = await ApiService.put('/api/email/native/settings', nativeConfig.value);
+    if (!response.data.error) {
+      nativeConfig.value = response.data.data;
+      toast.success(t('em.engineSettingsSaved'));
+      await loadEngine();
+    } else {
+      toast.error(response.data.msg || t('em.engineSettingsFailed'));
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.engineSettingsFailed'));
+  } finally {
+    engineSaving.value = false;
+  }
+};
+
+const flushQueue = async () => {
+  try {
+    const response = await ApiService.post('/api/email/queue/flush');
+    if (!response.data.error) {
+      toast.success(t('em.queueFlushed', { count: response.data.data?.flushed ?? 0 }));
+      await loadEngine();
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.queueFlushFailed'));
+  }
+};
+
+const deleteQueueItem = async (id) => {
+  try {
+    const response = await ApiService.delete(`/api/email/queue/${id}`);
+    if (!response.data.error) {
+      toast.success(t('em.queueItemDeleted'));
+      await loadEngine();
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.queueDeleteFailed'));
+  }
+};
+
+const copyText = async (value) => {
+  try {
+    await navigator.clipboard.writeText(value);
+    toast.success(t('em.copied'));
+  } catch {
+    toast.error(t('em.copyFailed'));
+  }
+};
+
+const tlsBadge = (mode) => {
+  switch (mode) {
+    case 'implicit':
+      return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400';
+    case 'starttls':
+      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+    default:
+      return 'bg-gray-200 dark:bg-gray-700 text-gray-600 dark:text-gray-300';
+  }
+};
+
+const formatQueueTime = (value) => {
+  if (!value) return '-';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+};
+
+// immediate: the page opens on "overview", which needs this data straight away —
+// without it the section stays empty until the tab is switched or refreshed by hand.
+watch(
+  activeTab,
+  (tab) => {
+    if (['overview', 'listeners', 'queue', 'dns', 'cleanup'].includes(tab)) loadEngine();
+  },
+  { immediate: true }
+);
+
+// Opening Webmail should show mail, not an account picker, when there is an
+// obvious account to open.
+watch(activeTab, (tab) => {
+  if (tab !== 'webmail' || selectedMailbox.value || mailboxes.value.length === 0) return;
+  selectedMailbox.value = mailboxes.value[0].id;
+  loadFolders(selectedMailbox.value);
+  loadEmails(selectedMailbox.value, selectedFolder.value);
+});
+
 onMounted(() => {
   loadData();
+  // The header's traffic counters read the log stats, so they are loaded once
+  // regardless of which tab is open.
+  loadLogs();
 });
 </script>
 
 <template>
-  <div>
-    <SectionTitleLineWithButton :icon="mdiEmail" :title="t('em.title')" main>
-      <BaseButton
-        v-if="!serverRunning"
-        :icon="mdiPlay"
-        color="success"
-        :disabled="loading"
-        :label="t('em.startServer')"
-        @click="startServer"
-      />
-      <BaseButton
-        v-else
-        :icon="mdiStop"
-        color="danger"
-        :disabled="loading"
-        :label="t('em.stopServer')"
-        @click="stopServer"
-      />
-    </SectionTitleLineWithButton>
+  <div class="space-y-8">
+    <!-- Hero header -->
+    <div class="bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 rounded-2xl p-8 text-white shadow-lg">
+      <div class="flex flex-col lg:flex-row lg:items-center lg:justify-between">
+        <div>
+          <h1 class="text-3xl lg:text-4xl font-bold mb-2 flex items-center">
+            <BaseIcon :path="mdiEmail" size="40" class="mr-4" />
+            {{ t('em.title') }}
+          </h1>
+          <p class="text-blue-100 text-lg">{{ t('em.shellSubtitle') }}</p>
+        </div>
 
-    <!-- Server Status Overview -->
-    <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 mb-6">
-      <CardBox>
+        <div class="mt-6 lg:mt-0 flex flex-wrap gap-3">
+          <BaseButton
+            v-if="!serverRunning"
+            :icon="mdiPlay"
+            color="success"
+            :label="t('em.startServer')"
+            :disabled="controlBusy"
+            class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+            @click="controlServer('start')"
+          />
+          <template v-else>
+            <BaseButton
+              :icon="mdiRefresh"
+              color="info"
+              :label="t('em.restartServer')"
+              :disabled="controlBusy"
+              class="shadow-lg hover:shadow-xl transform hover:scale-105 transition-all duration-200"
+              @click="controlServer('restart')"
+            />
+            <BaseButton
+              :icon="mdiStop"
+              color="danger"
+              :label="t('em.stopServer')"
+              :disabled="controlBusy"
+              class="shadow-lg hover:shadow-xl"
+              @click="controlServer('stop')"
+            />
+          </template>
+        </div>
+      </div>
+
+      <div class="mt-4 flex flex-wrap items-center gap-4">
+        <span
+          :class="[
+            'inline-flex items-center px-3 py-1 rounded-full text-sm font-medium',
+            serverRunning ? 'bg-white/20' : 'bg-black/20'
+          ]"
+        >
+          <span :class="['w-2 h-2 rounded-full mr-2', serverRunning ? 'bg-green-400' : 'bg-gray-400']"></span>
+          {{ serverRunning ? t('em.running') : t('em.stopped') }}
+        </span>
+        <span class="text-blue-100 text-sm">{{ serverStatus.hostname || t('em.na') }}</span>
+        <span v-if="serverStatus.ip_address" class="text-blue-100 text-sm font-mono">{{ serverStatus.ip_address }}</span>
+        <span v-if="nativeStatus.cert_source" class="text-blue-100 text-sm">
+          TLS: {{ nativeStatus.cert_source }}
+        </span>
+      </div>
+    </div>
+
+    <!-- Headline numbers -->
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <CardBox class="bg-gradient-to-br from-blue-50 to-blue-100 dark:from-blue-900/20 dark:to-blue-800/20 border-blue-200 dark:border-blue-700">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.status') }}</p>
-            <p class="text-2xl font-semibold mt-1">
-              <span :class="serverRunning ? 'text-green-500' : 'text-red-500'">
-                {{ serverRunning ? t('em.running') : t('em.stopped') }}
-              </span>
-            </p>
+            <div class="text-2xl font-bold text-blue-600 dark:text-blue-400">{{ domains.length }}</div>
+            <div class="text-sm text-blue-600/70">{{ t('em.navDomains') }}</div>
           </div>
-          <BaseIcon :path="mdiServer" :size="48" class="text-blue-500" />
+          <BaseIcon :path="mdiDomain" size="36" class="text-blue-500 opacity-20" />
         </div>
       </CardBox>
 
-      <CardBox>
+      <CardBox class="bg-gradient-to-br from-green-50 to-green-100 dark:from-green-900/20 dark:to-green-800/20 border-green-200 dark:border-green-700">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.domains') }}</p>
-            <p class="text-2xl font-semibold mt-1">{{ domains.length }}</p>
+            <div class="text-2xl font-bold text-green-600 dark:text-green-400">{{ mailboxes.length }}</div>
+            <div class="text-sm text-green-600/70">{{ t('em.navAccounts') }}</div>
           </div>
-          <BaseIcon :path="mdiDomain" :size="48" class="text-purple-500" />
+          <BaseIcon :path="mdiAccount" size="36" class="text-green-500 opacity-20" />
         </div>
       </CardBox>
 
-      <CardBox>
+      <CardBox class="bg-gradient-to-br from-purple-50 to-purple-100 dark:from-purple-900/20 dark:to-purple-800/20 border-purple-200 dark:border-purple-700">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.mailboxes') }}</p>
-            <p class="text-2xl font-semibold mt-1">{{ mailboxes.length }}</p>
+            <div class="text-2xl font-bold text-purple-600 dark:text-purple-400">
+              {{ logStats.incoming }} / {{ logStats.outgoing }}
+            </div>
+            <div class="text-sm text-purple-600/70">{{ t('em.overviewTraffic') }}</div>
           </div>
-          <BaseIcon :path="mdiAccount" :size="48" class="text-green-500" />
+          <BaseIcon :path="mdiEmailOpen" size="36" class="text-purple-500 opacity-20" />
         </div>
       </CardBox>
 
-      <CardBox>
+      <CardBox class="bg-gradient-to-br from-orange-50 to-orange-100 dark:from-orange-900/20 dark:to-orange-800/20 border-orange-200 dark:border-orange-700">
         <div class="flex items-center justify-between">
           <div>
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.emails') }}</p>
-            <p class="text-2xl font-semibold mt-1">{{ totalEmailCount }}</p>
+            <div class="text-2xl font-bold text-orange-600 dark:text-orange-400">{{ queueItems.length }}</div>
+            <div class="text-sm text-orange-600/70">{{ t('em.navQueue') }}</div>
           </div>
-          <BaseIcon :path="mdiEmailOpen" :size="48" class="text-orange-500" />
+          <BaseIcon :path="mdiSend" size="36" class="text-orange-500 opacity-20" />
         </div>
       </CardBox>
     </div>
 
-    <!-- Tabs (responsive: horizontal scroll on small screens) -->
-    <div class="mb-6 overflow-x-auto pb-px -mx-1 px-1">
-      <div class="flex flex-nowrap gap-2 border-b border-gray-200 dark:border-gray-700">
+    <!-- Tabs -->
+    <div class="overflow-x-auto pb-px -mx-1 px-1">
+      <div class="flex flex-nowrap gap-1 sm:gap-2 border-b border-gray-200 dark:border-gray-700">
         <button
-          v-for="tab in ['overview', 'domains', 'mailboxes', 'webmail', 'logs']"
+          v-for="tab in mailTabs"
           :key="tab"
           :class="[
-            'shrink-0 whitespace-nowrap px-4 py-2 font-medium transition-colors',
+            'shrink-0 whitespace-nowrap px-4 sm:px-6 py-3 font-medium text-sm border-b-2 transition-colors',
             activeTab === tab
-              ? 'border-b-2 border-blue-500 text-blue-600 dark:text-blue-400'
-              : 'text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-300'
+              ? 'border-blue-500 text-blue-600 dark:text-blue-400'
+              : 'border-transparent text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200'
           ]"
           @click="activeTab = tab"
         >
@@ -1018,30 +1221,54 @@ onMounted(() => {
     </div>
 
     <!-- Overview Tab -->
-    <div v-if="activeTab === 'overview'">
-      <CardBox class="mb-6">
-        <div class="flex items-center justify-between mb-6">
-          <h3 class="text-xl font-semibold">{{ t('em.serverInformation') }}</h3>
-          <BaseButton :icon="mdiRefresh" color="info" small @click="loadServerStatus" />
+    <div v-if="activeTab === 'overview'" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <!-- What the server is serving right now -->
+      <CardBox>
+        <div class="flex items-center justify-between mb-4">
+          <h3 class="text-lg font-semibold">{{ t('em.serverInformation') }}</h3>
+          <BaseButton :icon="mdiRefresh" color="info" small @click="loadEngine(); loadServerStatus()" />
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.container') }}</p>
-            <p class="font-semibold">{{ serverStatus.container_name || t('em.na') }}</p>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-5 text-sm">
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.hostname') }}</span>
+            <span class="font-medium">{{ serverStatus.hostname || t('em.na') }}</span>
           </div>
-          <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.hostname') }}</p>
-            <p class="font-semibold">{{ serverStatus.hostname || t('em.na') }}</p>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.publicIpAddress') }}</span>
+            <span class="font-medium font-mono">{{ serverStatus.ip_address || t('em.autoDetecting') }}</span>
           </div>
-          <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.smtpPort') }}</p>
-            <p class="font-semibold">{{ serverStatus.smtp_port }}</p>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.engineCert') }}</span>
+            <span class="font-medium">{{ nativeStatus.cert_source || '-' }}</span>
           </div>
-          <div class="p-4 bg-gray-50 dark:bg-gray-800 rounded">
-            <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.imapPort') }}</p>
-            <p class="font-semibold">{{ serverStatus.imap_port }} / {{ serverStatus.imaps_port }}</p>
-          </div>
+        </div>
+
+        <div v-if="nativeStatus.listeners?.length" class="flex flex-wrap gap-2">
+          <span
+            v-for="listener in nativeStatus.listeners"
+            :key="listener.name"
+            class="px-3 py-1 rounded-full text-xs font-mono"
+            :class="tlsBadge(listener.tls)"
+          >
+            {{ listener.name }}:{{ listener.port }}
+          </span>
+        </div>
+        <p v-else class="text-sm text-gray-500">{{ t('em.engineNoListeners') }}</p>
+      </CardBox>
+
+      <!-- Health checks -->
+      <CardBox v-if="selfTest.length">
+        <h3 class="text-lg font-semibold mb-3">{{ t('em.engineChecks') }}</h3>
+        <div
+          v-for="(finding, i) in selfTest"
+          :key="i"
+          class="text-sm px-3 py-2 rounded mb-1 last:mb-0"
+          :class="finding === 'no problems found'
+            ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+            : 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'"
+        >
+          {{ finding }}
         </div>
       </CardBox>
 
@@ -1202,6 +1429,20 @@ onMounted(() => {
                 ]">
                   {{ domain.enabled ? t('em.active') : t('em.disabled') }}
                 </span>
+                <span
+                  v-if="domain.dns_configured"
+                  class="px-2 py-1 rounded-full text-xs bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400"
+                >
+                  {{ t('em.dnsPublished') }}
+                </span>
+                <BaseButton
+                  :icon="mdiCloudUpload"
+                  color="info"
+                  small
+                  :label="t('em.dnsSync')"
+                  :disabled="dnsSyncing"
+                  @click="syncDns(domain.id)"
+                />
                 <BaseButton
                   :icon="mdiPencil"
                   color="info"
@@ -1800,6 +2041,258 @@ onMounted(() => {
           <BaseIcon :path="mdiInbox" size="48" class="mx-auto mb-3 opacity-40" />
           <p>{{ logsLoading ? t('em.logLoading') : t('em.logEmpty') }}</p>
         </div>
+      </CardBox>
+    </div>
+
+    <!-- Listeners & TLS -->
+    <div v-if="activeTab === 'listeners'">
+      <CardBox class="mb-6">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-3">
+            <BaseIcon :path="mdiServer" class="text-blue-500" w="w-6" h="h-6" />
+            <div>
+            <h3 class="text-lg font-semibold">{{ t('em.engineListeners') }}</h3>
+            <p class="text-sm text-gray-500">{{ t('em.listenersHint') }}</p>
+            </div>
+          </div>
+          <BaseButton :icon="mdiRefresh" color="info" small :disabled="engineLoading" @click="loadEngine" />
+        </div>
+
+        <div v-if="nativeStatus.listeners?.length" class="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div
+            v-for="listener in nativeStatus.listeners"
+            :key="listener.name"
+            class="p-3 rounded-lg bg-gray-50 dark:bg-slate-800"
+          >
+            <div class="font-mono text-sm font-semibold uppercase">{{ listener.name }}</div>
+            <div class="text-2xl font-semibold">{{ listener.port }}</div>
+            <span class="text-xs px-2 py-0.5 rounded-full" :class="tlsBadge(listener.tls)">{{ listener.tls }}</span>
+          </div>
+        </div>
+        <p v-else class="text-sm text-gray-500">{{ t('em.engineNoListeners') }}</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mt-5 text-sm">
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.engineCert') }}</span>
+            <span class="font-medium">{{ nativeStatus.cert_source || '-' }}</span>
+          </div>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.engineCertExpires') }}</span>
+            <span class="font-medium">{{ formatQueueTime(nativeStatus.cert_expires) }}</span>
+          </div>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.engineMailRoot') }}</span>
+            <span class="font-mono text-xs break-all">{{ nativeStatus.mail_root }}</span>
+          </div>
+        </div>
+      </CardBox>
+
+      <CardBox v-if="nativeConfig">
+        <h3 class="text-lg font-semibold mb-4">{{ t('em.engineSettings') }}</h3>
+
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
+          <label class="block">
+            <span class="text-xs text-gray-500">SMTP</span>
+            <input v-model.number="nativeConfig.smtp_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">Submission</span>
+            <input v-model.number="nativeConfig.submission_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">SMTPS</span>
+            <input v-model.number="nativeConfig.smtps_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">IMAP</span>
+            <input v-model.number="nativeConfig.imap_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">IMAPS</span>
+            <input v-model.number="nativeConfig.imaps_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">POP3</span>
+            <input v-model.number="nativeConfig.pop3_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">POP3S</span>
+            <input v-model.number="nativeConfig.pop3s_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">HELO</span>
+            <input v-model="nativeConfig.outbound_helo" type="text" :placeholder="nativeConfig.hostname" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 mb-5 text-sm">
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.starttls_required" type="checkbox" />
+            {{ t('em.optStartTLS') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.smtps_enabled" type="checkbox" />
+            {{ t('em.optSMTPS') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.imap_enabled" type="checkbox" />
+            {{ t('em.optIMAP') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.imaps_enabled" type="checkbox" />
+            {{ t('em.optIMAPS') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.pop3_enabled" type="checkbox" />
+            {{ t('em.optPOP3') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.pop3s_enabled" type="checkbox" />
+            {{ t('em.optPOP3S') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.check_spf" type="checkbox" />
+            {{ t('em.optSPF') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.check_dkim" type="checkbox" />
+            {{ t('em.optDKIM') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.check_dmarc" type="checkbox" />
+            {{ t('em.optDMARC') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.reject_on_dmarc_fail" type="checkbox" />
+            {{ t('em.optDMARCReject') }}
+          </label>
+        </div>
+
+        <BaseButton :icon="mdiCog" :label="t('em.engineSave')" color="success" :disabled="engineSaving" @click="saveNativeSettings" />
+      </CardBox>
+    </div>
+
+    <!-- Outbound queue -->
+    <div v-if="activeTab === 'queue'">
+      <CardBox>
+        <div class="flex items-center justify-between mb-4">
+          <div>
+            <h3 class="text-lg font-semibold">{{ t('em.queueTitle') }}</h3>
+            <p class="text-sm text-gray-500">{{ t('em.queueHint') }}</p>
+          </div>
+          <BaseButtons>
+            <BaseButton :icon="mdiSend" :label="t('em.queueFlush')" color="info" small :disabled="!queueItems.length" @click="flushQueue" />
+            <BaseButton :icon="mdiRefresh" color="info" small :disabled="engineLoading" @click="loadEngine" />
+          </BaseButtons>
+        </div>
+
+        <div v-if="queueItems.length" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-gray-500">
+              <tr>
+                <th class="py-2 pr-3">{{ t('em.logFrom') }}</th>
+                <th class="py-2 pr-3">{{ t('em.logTo') }}</th>
+                <th class="py-2 pr-3">{{ t('em.logDetail') }}</th>
+                <th class="py-2 pr-3">{{ t('em.queueAttempts') }}</th>
+                <th class="py-2 pr-3">{{ t('em.queueNextTry') }}</th>
+                <th class="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="item in queueItems" :key="item.id" class="border-t border-gray-200 dark:border-gray-700">
+                <td class="py-2 pr-3 truncate max-w-[180px]">{{ item.from }}</td>
+                <td class="py-2 pr-3 truncate max-w-[200px]">{{ (item.recipients || []).join(', ') }}</td>
+                <td class="py-2 pr-3 text-xs text-gray-500 truncate max-w-[260px]">{{ item.last_error || item.subject }}</td>
+                <td class="py-2 pr-3">{{ item.attempts }}</td>
+                <td class="py-2 pr-3 text-xs">{{ formatQueueTime(item.next_try) }}</td>
+                <td class="py-2 text-right">
+                  <BaseButton :icon="mdiDelete" color="danger" small @click="deleteQueueItem(item.id)" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="text-sm text-gray-500">{{ t('em.queueEmpty') }}</p>
+      </CardBox>
+    </div>
+
+    <!-- DNS -->
+    <div v-if="activeTab === 'dns'">
+      <CardBox>
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 class="text-lg font-semibold">{{ t('em.dnsTitle') }}</h3>
+            <p class="text-sm text-gray-500">{{ t('em.dnsCloudflareHint') }}</p>
+          </div>
+          <BaseButton
+            :icon="mdiCloudUpload"
+            :label="t('em.dnsSyncAll')"
+            color="info"
+            small
+            :disabled="dnsSyncing || !dnsRecords.length"
+            @click="syncDns(0)"
+          />
+        </div>
+
+        <div v-for="entry in dnsRecords" :key="entry.domain" class="mb-6 last:mb-0">
+          <p class="font-semibold mb-2">{{ entry.domain }}</p>
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead class="text-left text-gray-500">
+                <tr>
+                  <th class="py-2 pr-3">{{ t('em.dnsType') }}</th>
+                  <th class="py-2 pr-3">{{ t('em.dnsName') }}</th>
+                  <th class="py-2 pr-3">{{ t('em.dnsValue') }}</th>
+                  <th class="py-2"></th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(record, i) in entry.records" :key="i" class="border-t border-gray-200 dark:border-gray-700 align-top">
+                  <td class="py-2 pr-3 font-mono text-xs">
+                    {{ record.type }}<span v-if="record.priority" class="text-gray-500"> ({{ record.priority }})</span>
+                  </td>
+                  <td class="py-2 pr-3 font-mono text-xs break-all">{{ record.name }}</td>
+                  <td class="py-2 pr-3 font-mono text-xs break-all">
+                    {{ record.value }}
+                    <span class="block text-gray-500 font-sans">{{ record.note }}</span>
+                  </td>
+                  <td class="py-2 text-right">
+                    <BaseButton :icon="mdiContentCopy" color="info" small @click="copyText(record.value)" />
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <p v-if="!dnsRecords.length" class="text-sm text-gray-500">{{ t('em.dnsEmpty') }}</p>
+      </CardBox>
+    </div>
+
+    <!-- Cleanup of the retired container setup -->
+    <div v-if="activeTab === 'cleanup'">
+      <CardBox>
+        <h3 class="text-lg font-semibold mb-1">{{ t('em.cleanupTitle') }}</h3>
+        <p class="text-sm text-gray-500 mb-4">{{ t('em.cleanupHint') }}</p>
+
+        <div v-if="legacyArtifacts.length">
+          <ul class="mb-4 space-y-1">
+            <li
+              v-for="(artifact, i) in legacyArtifacts"
+              :key="i"
+              class="text-sm font-mono px-3 py-2 rounded bg-gray-50 dark:bg-slate-800 break-all"
+            >
+              {{ artifact }}
+            </li>
+          </ul>
+          <BaseButton
+            :icon="mdiDelete"
+            :label="t('em.cleanupRun')"
+            color="danger"
+            :disabled="cleaningUp"
+            @click="cleanupLegacy"
+          />
+        </div>
+        <p v-else class="text-sm text-emerald-600 dark:text-emerald-400">{{ t('em.cleanupNothing') }}</p>
       </CardBox>
     </div>
 

@@ -3,17 +3,19 @@ package migrations
 import (
 	"bufio"
 	"encoding/json"
+	"log"
 	"os"
 	"path/filepath"
 	"time"
 
+	"redock/api_gateway"
 	"redock/app/models"
 	"redock/deployment"
 	devenv "redock/devenv"
-	docker_manager "redock/docker-manager"
 	dns_server "redock/dns_server"
-		"redock/api_gateway"
-		localproxy "redock/local_proxy"
+	docker_manager "redock/docker-manager"
+	"redock/email_server"
+	localproxy "redock/local_proxy"
 	php_debug_adapter "redock/php_debug_adapter"
 	"redock/platform/database"
 	"redock/platform/memory"
@@ -178,9 +180,9 @@ func MemoryMigrations() []database.MemoryMigration {
 					return err
 				}
 				var cfg struct {
-					Username string                          `yaml:"username" json:"username"`
-					Token    string                          `yaml:"token" json:"token"`
-					Settings struct{ CheckTime int }         `yaml:"settings" json:"settings"`
+					Username string                               `yaml:"username" json:"username"`
+					Token    string                               `yaml:"token" json:"token"`
+					Settings struct{ CheckTime int }              `yaml:"settings" json:"settings"`
 					Projects []deployment.DeploymentProjectEntity `yaml:"projects" json:"projects"`
 				}
 				if err := yaml.Unmarshal(data, &cfg); err != nil {
@@ -222,7 +224,7 @@ func MemoryMigrations() []database.MemoryMigration {
 					return err
 				}
 				var raw struct {
-					ContainerNamePrefix string                              `json:"container_name_prefix"`
+					ContainerNamePrefix string                                     `json:"container_name_prefix"`
 					Overrides           map[string]*docker_manager.ServiceOverride `json:"overrides"`
 				}
 				if err := json.Unmarshal(data, &raw); err != nil {
@@ -283,7 +285,7 @@ func MemoryMigrations() []database.MemoryMigration {
 					return err
 				}
 				var cfg struct {
-					Listen   string                    `json:"listen"`
+					Listen   string                      `json:"listen"`
 					Mappings []php_debug_adapter.Mapping `json:"mappings"`
 				}
 				if err := json.Unmarshal(data, &cfg); err != nil {
@@ -351,6 +353,26 @@ func MemoryMigrations() []database.MemoryMigration {
 						}
 					}
 					_ = os.Rename(blocksPath, blocksPath+".bak")
+				}
+				return nil
+			},
+		},
+		{
+			Version: 11,
+			Name:    "migrate_mail_server_to_native",
+			Up: func(db *memory.Database, dataDir string) error {
+				// The docker-mailserver engine is gone: import the mail that
+				// lived in its named volume, straighten out the Maildir layout,
+				// enable every listener and retire the container.
+				report, err := email_server.MigrateFromDockerMailserver(db, dataDir)
+				if err != nil {
+					return err
+				}
+				for _, note := range report.Notes {
+					log.Printf("mail migration: %s", note)
+				}
+				if report.MailboxesFixed > 0 {
+					log.Printf("mail migration: rearranged %d mailbox directories", report.MailboxesFixed)
 				}
 				return nil
 			},

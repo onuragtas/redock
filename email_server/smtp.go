@@ -6,13 +6,9 @@ import (
 	"log"
 	"mime/multipart"
 	"net/textproto"
-	"os/exec"
 	"redock/platform/memory"
 	"strings"
 	"time"
-
-	"github.com/emersion/go-sasl"
-	"github.com/emersion/go-smtp"
 )
 
 type SMTPClient struct {
@@ -43,70 +39,98 @@ func NewSMTPClient(manager *EmailManager) *SMTPClient {
 	return &SMTPClient{manager: manager}
 }
 
+// SendEmail composes a dashboard message and hands it to the engine: local
+// recipients are written straight to their Maildir, remote ones go on the
+// outbound queue (which signs them with DKIM and retries).
 func (c *SMTPClient) SendEmail(mailboxID uint, msg *EmailMessage) error {
 	mailbox, err := memory.FindByID[*EmailMailbox](c.manager.db, "email_mailboxes", mailboxID)
 	if err != nil {
 		return fmt.Errorf("mailbox not found: %w", err)
 	}
-	
-	password, err := c.manager.GetMailboxPassword(mailbox.Email)
-	if err != nil {
-		return fmt.Errorf("password not available: %w", err)
-	}
-	
+
 	mimeMsg, err := c.buildMIMEMessage(msg)
 	if err != nil {
 		return fmt.Errorf("failed to build MIME message: %w", err)
 	}
-	
-	client, err := c.connect(mailbox.Email, password)
-	if err != nil {
-		return fmt.Errorf("failed to connect to SMTP: %w", err)
+
+	return c.sendNative(mailboxID, mailbox, msg, mimeMsg)
+}
+
+// sendNative delivers a dashboard-composed message through the built-in
+// engine: local recipients land in their Maildir immediately, remote ones go
+// on the outbound queue (which signs them with DKIM and retries).
+func (c *SMTPClient) sendNative(mailboxID uint, mailbox *EmailMailbox, msg *EmailMessage, mimeMsg []byte) error {
+	recipients := append(append(append([]string{}, msg.To...), msg.CC...), msg.BCC...)
+	if len(recipients) == 0 {
+		return fmt.Errorf("no recipients")
 	}
-	defer client.Quit()
-	
-	if err := client.Mail(msg.From, nil); err != nil {
-		return fmt.Errorf("failed to set sender: %w", err)
+
+	var remote []string
+	for _, rcpt := range recipients {
+		address := normalizeAddress(rcpt)
+		if address == "" {
+			continue
+		}
+		if account := c.manager.LookupAccount(address); account != nil {
+			if err := c.manager.deliverLocal(account, inboxName, mimeMsg, nil); err != nil {
+				return fmt.Errorf("failed to deliver to %s: %w", address, err)
+			}
+			c.manager.logMailEvent(mailEvent{
+				Direction: "out",
+				Status:    "delivered",
+				From:      msg.From,
+				To:        address,
+				Subject:   msg.Subject,
+				Size:      int64(len(mimeMsg)),
+				Service:   "dashboard",
+				MailboxID: account.Mailbox.ID,
+				Detail:    "delivered locally",
+			})
+			continue
+		}
+		remote = append(remote, address)
 	}
-	
-	allRecipients := append(msg.To, msg.CC...)
-	allRecipients = append(allRecipients, msg.BCC...)
-	
-	for _, rcpt := range allRecipients {
-		if err := client.Rcpt(rcpt, nil); err != nil {
-			return fmt.Errorf("failed to set recipient %s: %w", rcpt, err)
+
+	if len(remote) > 0 {
+		_, senderDomain := splitAddress(normalizeAddress(msg.From))
+		item := &QueueItem{
+			From:       normalizeAddress(msg.From),
+			Recipients: remote,
+			Domain:     senderDomain,
+			Subject:    msg.Subject,
+			MailboxID:  mailboxID,
+		}
+		if err := c.manager.queue().Enqueue(item, mimeMsg); err != nil {
+			return fmt.Errorf("failed to queue message: %w", err)
+		}
+		for _, rcpt := range remote {
+			c.manager.logMailEvent(mailEvent{
+				Direction: "out",
+				Status:    "queued",
+				From:      msg.From,
+				To:        rcpt,
+				Subject:   msg.Subject,
+				Size:      int64(len(mimeMsg)),
+				Service:   "dashboard",
+				QueueID:   item.ID,
+				MailboxID: mailboxID,
+				Detail:    "accepted for delivery",
+			})
 		}
 	}
-	
-	wc, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("failed to initiate data: %w", err)
-	}
-	
-	if _, err := wc.Write(mimeMsg); err != nil {
-		return fmt.Errorf("failed to write message: %w", err)
-	}
-	
-	if err := wc.Close(); err != nil {
-		return fmt.Errorf("failed to close data writer: %w", err)
-	}
-	
-	// Save to Sent folder asynchronously
-	// With named volumes, we can write directly to maildir without permission issues!
+
 	go func(mbxID uint, message *EmailMessage, mime []byte) {
 		if err := c.saveToSent(mbxID, message, mime); err != nil {
 			log.Printf("⚠️  Failed to save to Sent folder: %v", err)
 		}
 	}(mailboxID, msg, mimeMsg)
-	
-	c.logSentEmail(mailboxID, msg)
-	
+
 	return nil
 }
 
 func (c *SMTPClient) buildMIMEMessage(msg *EmailMessage) ([]byte, error) {
 	var buf bytes.Buffer
-	
+
 	headers := make(textproto.MIMEHeader)
 	headers.Set("From", msg.From)
 	headers.Set("To", strings.Join(msg.To, ", "))
@@ -116,43 +140,43 @@ func (c *SMTPClient) buildMIMEMessage(msg *EmailMessage) ([]byte, error) {
 	headers.Set("Subject", msg.Subject)
 	headers.Set("Date", time.Now().Format(time.RFC1123Z))
 	headers.Set("Message-ID", generateMessageID(msg.From))
-	
+
 	if msg.InReplyTo != "" {
 		headers.Set("In-Reply-To", msg.InReplyTo)
 	}
 	if msg.References != "" {
 		headers.Set("References", msg.References)
 	}
-	
+
 	headers.Set("MIME-Version", "1.0")
-	
+
 	hasHTML := msg.BodyHTML != ""
 	hasPlain := msg.BodyPlain != ""
-	
+
 	if hasHTML && hasPlain {
 		boundary := generateBoundary()
 		headers.Set("Content-Type", fmt.Sprintf("multipart/alternative; boundary=%s", boundary))
-		
+
 		for key, values := range headers {
 			for _, value := range values {
 				fmt.Fprintf(&buf, "%s: %s\r\n", key, value)
 			}
 		}
 		buf.WriteString("\r\n")
-		
+
 		writer := multipart.NewWriter(&buf)
 		writer.SetBoundary(boundary)
-		
+
 		plainHeader := textproto.MIMEHeader{}
 		plainHeader.Set("Content-Type", "text/plain; charset=utf-8")
 		plainPart, _ := writer.CreatePart(plainHeader)
 		plainPart.Write([]byte(msg.BodyPlain))
-		
+
 		htmlHeader := textproto.MIMEHeader{}
 		htmlHeader.Set("Content-Type", "text/html; charset=utf-8")
 		htmlPart, _ := writer.CreatePart(htmlHeader)
 		htmlPart.Write([]byte(msg.BodyHTML))
-		
+
 		writer.Close()
 	} else {
 		if hasHTML {
@@ -160,72 +184,43 @@ func (c *SMTPClient) buildMIMEMessage(msg *EmailMessage) ([]byte, error) {
 		} else {
 			headers.Set("Content-Type", "text/plain; charset=utf-8")
 		}
-		
+
 		for key, values := range headers {
 			for _, value := range values {
 				fmt.Fprintf(&buf, "%s: %s\r\n", key, value)
 			}
 		}
 		buf.WriteString("\r\n")
-		
+
 		if hasHTML {
 			buf.WriteString(msg.BodyHTML)
 		} else {
 			buf.WriteString(msg.BodyPlain)
 		}
 	}
-	
+
 	return buf.Bytes(), nil
 }
 
-func (c *SMTPClient) connect(email, password string) (*smtp.Client, error) {
-	config := c.manager.config
-	addr := fmt.Sprintf("localhost:%d", config.SubmissionPort)
-	
-	client, err := smtp.Dial(addr)
-	if err != nil {
-		return nil, fmt.Errorf("dial failed: %w", err)
-	}
-	
-	auth := sasl.NewPlainClient("", email, password)
-	if err := client.Auth(auth); err != nil {
-		client.Close()
-		return nil, fmt.Errorf("authentication failed: %w", err)
-	}
-	
-	return client, nil
-}
-
+// saveToSent files a copy of an outgoing message in the sender's Sent folder.
 func (c *SMTPClient) saveToSent(mailboxID uint, msg *EmailMessage, mimeMsg []byte) error {
 	mailbox, err := memory.FindByID[*EmailMailbox](c.manager.db, "email_mailboxes", mailboxID)
 	if err != nil {
 		return fmt.Errorf("mailbox not found: %w", err)
 	}
-	
+
 	domain, err := memory.FindByID[*EmailDomain](c.manager.db, "email_domains", mailbox.DomainID)
 	if err != nil {
 		return fmt.Errorf("domain not found: %w", err)
 	}
-	
-	// With named volumes, we can write directly via container!
-	// Create unique Maildir filename with Seen flag
-	timestamp := time.Now().UnixNano()
-	filename := fmt.Sprintf("%d.%s:2,S", timestamp, "localhost")
-	
-	// Use docker exec to write inside container as docker user (not root!)
-	// Note: docker-mailserver uses mail_home=/var/mail/%d/%n/home/, so Maildir is at home/.Sent/
-	containerPath := fmt.Sprintf("/var/mail/%s/%s/home/.Sent/cur/%s", domain.Domain, mailbox.Username, filename)
-	
-	// Run as docker user to ensure correct ownership
-	cmd := exec.Command("docker", "exec", "-i", "-u", "docker", c.manager.config.ContainerName, 
-		"tee", containerPath)
-	cmd.Stdin = bytes.NewReader(mimeMsg)
-	
-	if output, err := cmd.CombinedOutput(); err != nil {
-		return fmt.Errorf("failed to save via docker exec: %w (output: %s)", err, string(output))
+
+	if err := c.manager.store().EnsureMailbox(domain.Domain, mailbox.Username); err != nil {
+		return err
 	}
-	
-	return nil
+
+	base := c.manager.store().MailboxPath(domain.Domain, mailbox.Username)
+	_, err = c.manager.store().Deliver(base, "Sent", mimeMsg, []string{imapFlagSeen}, time.Now())
+	return err
 }
 
 func (c *SMTPClient) logSentEmail(mailboxID uint, msg *EmailMessage) {
@@ -239,7 +234,7 @@ func (c *SMTPClient) logSentEmail(mailboxID uint, msg *EmailMessage) {
 		StatusMessage: "Sent successfully",
 		Timestamp:     time.Now(),
 	}
-	
+
 	memory.Create[*EmailLog](c.manager.db, "email_logs", logEntry)
 }
 
