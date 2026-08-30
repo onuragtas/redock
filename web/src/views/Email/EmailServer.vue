@@ -44,7 +44,7 @@ import {
   mdiChevronDown,
   mdiChevronUp
 } from '@mdi/js';
-import { computed, onMounted, ref, watch } from "vue";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useToast } from 'vue-toastification';
 import { useI18n } from 'vue-i18n';
 
@@ -789,6 +789,142 @@ const plainTextToHtml = (plain) => {
   return parts.join('');
 };
 
+// ---- Mail traffic logs -------------------------------------------------
+const logsLoading = ref(false);
+const logEntries = ref([]);
+const logStats = ref({ incoming: 0, outgoing: 0, rejected: 0, deferred: 0, bounced: 0 });
+const logSource = ref('');
+const logDirection = ref('');
+const logStatus = ref('');
+const logSearch = ref('');
+const logTail = ref(1000);
+const logAutoRefresh = ref(true);
+const expandedLogIds = ref(new Set());
+const logError = ref('');
+const rawLogLines = ref([]);
+const showRawLog = ref(false);
+let logTimer = null;
+
+const loadLogs = async () => {
+  logsLoading.value = true;
+  try {
+    const response = await ApiService.get('/api/email/logs', {
+      params: {
+        tail: logTail.value,
+        direction: logDirection.value || undefined,
+        status: logStatus.value || undefined,
+        search: logSearch.value || undefined
+      }
+    });
+    if (!response.data.error) {
+      const data = response.data.data || {};
+      logEntries.value = data.entries || [];
+      logStats.value = data.stats || logStats.value;
+      logSource.value = data.source || '';
+      logError.value = '';
+    } else {
+      logError.value = response.data.msg || t('em.logsFailed');
+    }
+  } catch (error) {
+    logError.value = error.response?.data?.msg || error.message || t('em.logsFailed');
+  } finally {
+    logsLoading.value = false;
+  }
+};
+
+const loadRawLog = async () => {
+  logsLoading.value = true;
+  try {
+    const response = await ApiService.get('/api/email/logs/raw', { params: { tail: logTail.value } });
+    if (!response.data.error) {
+      rawLogLines.value = response.data.data?.lines || [];
+      logError.value = '';
+    } else {
+      logError.value = response.data.msg || t('em.logsFailed');
+    }
+  } catch (error) {
+    logError.value = error.response?.data?.msg || error.message || t('em.logsFailed');
+  } finally {
+    logsLoading.value = false;
+  }
+};
+
+const refreshLogs = () => (showRawLog.value ? loadRawLog() : loadLogs());
+
+const toggleLogDetail = (id) => {
+  const next = new Set(expandedLogIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  expandedLogIds.value = next;
+};
+
+const directionMeta = (direction) => {
+  switch (direction) {
+    case 'in':
+      return { icon: mdiInbox, label: t('em.logIncoming'), cls: 'text-emerald-500' };
+    case 'out':
+      return { icon: mdiSend, label: t('em.logOutgoing'), cls: 'text-blue-500' };
+    default:
+      return { icon: mdiInformationOutline, label: t('em.logSystem'), cls: 'text-gray-400' };
+  }
+};
+
+const statusClass = (status) => {
+  switch (status) {
+    case 'sent':
+    case 'delivered':
+      return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400';
+    case 'rejected':
+    case 'bounced':
+      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+    case 'deferred':
+    case 'expired':
+      return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+    case 'login':
+      return 'bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300';
+    default:
+      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+  }
+};
+
+const formatLogTime = (value) => {
+  if (!value) return '-';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? value : d.toLocaleString();
+};
+
+const formatLogSize = (bytes) => {
+  if (!bytes) return '';
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+};
+
+// Poll only while the logs tab is open, so the other tabs cost nothing.
+watch([activeTab, logAutoRefresh, showRawLog], () => {
+  if (logTimer) {
+    clearInterval(logTimer);
+    logTimer = null;
+  }
+  if (activeTab.value !== 'logs') return;
+
+  refreshLogs();
+  if (logAutoRefresh.value) {
+    logTimer = setInterval(refreshLogs, 10000);
+  }
+});
+
+watch([logDirection, logStatus], () => {
+  if (activeTab.value === 'logs' && !showRawLog.value) loadLogs();
+});
+
+onUnmounted(() => {
+  if (logTimer) clearInterval(logTimer);
+});
+
 onMounted(() => {
   loadData();
 });
@@ -866,7 +1002,7 @@ onMounted(() => {
     <div class="mb-6 overflow-x-auto pb-px -mx-1 px-1">
       <div class="flex flex-nowrap gap-2 border-b border-gray-200 dark:border-gray-700">
         <button
-          v-for="tab in ['overview', 'domains', 'mailboxes', 'webmail']"
+          v-for="tab in ['overview', 'domains', 'mailboxes', 'webmail', 'logs']"
           :key="tab"
           :class="[
             'shrink-0 whitespace-nowrap px-4 py-2 font-medium transition-colors',
@@ -1491,6 +1627,180 @@ onMounted(() => {
           <p class="text-sm">{{ t('em.selectAccountAbove') }}</p>
         </div>
       </div>
+    </div>
+
+    <!-- Logs Tab - mail traffic in / out -->
+    <div v-if="activeTab === 'logs'">
+      <!-- Counters for the scanned window -->
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
+        <CardBox>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.logIncoming') }}</p>
+          <p class="text-2xl font-semibold mt-1 text-emerald-500">{{ logStats.incoming }}</p>
+        </CardBox>
+        <CardBox>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.logOutgoing') }}</p>
+          <p class="text-2xl font-semibold mt-1 text-blue-500">{{ logStats.outgoing }}</p>
+        </CardBox>
+        <CardBox>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.logRejected') }}</p>
+          <p class="text-2xl font-semibold mt-1 text-red-500">{{ logStats.rejected }}</p>
+        </CardBox>
+        <CardBox>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.logDeferred') }}</p>
+          <p class="text-2xl font-semibold mt-1 text-amber-500">{{ logStats.deferred }}</p>
+        </CardBox>
+        <CardBox>
+          <p class="text-sm text-gray-500 dark:text-gray-400">{{ t('em.logBounced') }}</p>
+          <p class="text-2xl font-semibold mt-1 text-red-500">{{ logStats.bounced }}</p>
+        </CardBox>
+      </div>
+
+      <CardBox>
+        <!-- Toolbar -->
+        <div class="flex flex-wrap items-center gap-3 mb-4">
+          <select
+            v-model="logDirection"
+            class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 text-sm"
+          >
+            <option value="">{{ t('em.logAllDirections') }}</option>
+            <option value="in">{{ t('em.logIncoming') }}</option>
+            <option value="out">{{ t('em.logOutgoing') }}</option>
+            <option value="system">{{ t('em.logSystem') }}</option>
+          </select>
+
+          <select
+            v-model="logStatus"
+            class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 text-sm"
+          >
+            <option value="">{{ t('em.logAllStatuses') }}</option>
+            <option value="sent">sent</option>
+            <option value="delivered">delivered</option>
+            <option value="deferred">deferred</option>
+            <option value="bounced">bounced</option>
+            <option value="rejected">rejected</option>
+            <option value="login">login</option>
+          </select>
+
+          <input
+            v-model="logSearch"
+            type="text"
+            :placeholder="t('em.logSearchPlaceholder')"
+            class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 text-sm flex-1 min-w-[200px]"
+            @keyup.enter="loadLogs"
+          />
+
+          <select
+            v-model.number="logTail"
+            class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 text-sm"
+            @change="refreshLogs"
+          >
+            <option :value="500">500 {{ t('em.logLines') }}</option>
+            <option :value="1000">1000 {{ t('em.logLines') }}</option>
+            <option :value="5000">5000 {{ t('em.logLines') }}</option>
+          </select>
+
+          <label class="flex items-center gap-2 text-sm text-gray-500">
+            <input v-model="logAutoRefresh" type="checkbox" />
+            {{ t('em.logAutoRefresh') }}
+          </label>
+
+          <label class="flex items-center gap-2 text-sm text-gray-500">
+            <input v-model="showRawLog" type="checkbox" />
+            {{ t('em.logRawView') }}
+          </label>
+
+          <BaseButton :icon="mdiRefresh" color="info" small :disabled="logsLoading" @click="refreshLogs" />
+        </div>
+
+        <p v-if="logSource" class="text-xs text-gray-500 mb-3">
+          {{ t('em.logSource', { source: logSource, tail: logTail }) }}
+        </p>
+
+        <div v-if="logError" class="p-4 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-sm">
+          {{ logError }}
+        </div>
+
+        <!-- Raw view -->
+        <pre
+          v-else-if="showRawLog"
+          class="text-xs font-mono bg-gray-50 dark:bg-slate-900 p-3 rounded-lg overflow-auto max-h-[60vh] whitespace-pre-wrap"
+        >{{ rawLogLines.join('\n') }}</pre>
+
+        <!-- Parsed view -->
+        <div v-else-if="logEntries.length" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-gray-500 dark:text-gray-400">
+              <tr>
+                <th class="py-2 pr-3">{{ t('em.logTime') }}</th>
+                <th class="py-2 pr-3">{{ t('em.logDirection') }}</th>
+                <th class="py-2 pr-3">{{ t('em.logFrom') }}</th>
+                <th class="py-2 pr-3">{{ t('em.logTo') }}</th>
+                <th class="py-2 pr-3">{{ t('em.logStatus') }}</th>
+                <th class="py-2">{{ t('em.logDetail') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template v-for="entry in logEntries" :key="entry.id">
+                <tr
+                  class="border-t border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-slate-800/50 cursor-pointer"
+                  @click="toggleLogDetail(entry.id)"
+                >
+                  <td class="py-2 pr-3 whitespace-nowrap text-xs text-gray-500">{{ formatLogTime(entry.timestamp) }}</td>
+                  <td class="py-2 pr-3 whitespace-nowrap">
+                    <span class="inline-flex items-center gap-1" :class="directionMeta(entry.direction).cls">
+                      <BaseIcon :path="directionMeta(entry.direction).icon" size="16" />
+                      <span class="text-xs">{{ directionMeta(entry.direction).label }}</span>
+                    </span>
+                  </td>
+                  <td class="py-2 pr-3 max-w-[220px] truncate">{{ entry.from || '-' }}</td>
+                  <td class="py-2 pr-3 max-w-[220px] truncate">{{ (entry.to || []).join(', ') || '-' }}</td>
+                  <td class="py-2 pr-3 whitespace-nowrap">
+                    <span class="px-2 py-1 rounded-full text-xs font-medium" :class="statusClass(entry.status)">
+                      {{ entry.status }}
+                    </span>
+                  </td>
+                  <td class="py-2 text-xs text-gray-500 max-w-[320px] truncate">{{ entry.detail }}</td>
+                </tr>
+                <tr v-if="expandedLogIds.has(entry.id)" class="bg-gray-50 dark:bg-slate-900/60">
+                  <td colspan="6" class="p-4">
+                    <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
+                      <div>
+                        <span class="text-gray-500 block">{{ t('em.logService') }}</span>
+                        <span class="font-mono">{{ entry.service }}</span>
+                      </div>
+                      <div v-if="entry.queue_id">
+                        <span class="text-gray-500 block">{{ t('em.logQueueId') }}</span>
+                        <span class="font-mono">{{ entry.queue_id }}</span>
+                      </div>
+                      <div v-if="entry.remote_ip">
+                        <span class="text-gray-500 block">{{ t('em.logRemote') }}</span>
+                        <span class="font-mono">{{ entry.remote_host }} {{ entry.remote_ip }}</span>
+                      </div>
+                      <div v-if="entry.size">
+                        <span class="text-gray-500 block">{{ t('em.logSize') }}</span>
+                        <span>{{ formatLogSize(entry.size) }}</span>
+                      </div>
+                      <div v-if="entry.message_id" class="col-span-2 md:col-span-4">
+                        <span class="text-gray-500 block">Message-ID</span>
+                        <span class="font-mono break-all">{{ entry.message_id }}</span>
+                      </div>
+                    </div>
+                    <pre
+                      v-if="entry.raw && entry.raw.length"
+                      class="text-[11px] font-mono bg-white dark:bg-slate-950 p-3 rounded overflow-x-auto"
+                    >{{ entry.raw.join('\n') }}</pre>
+                  </td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+
+        <div v-else class="text-center py-12 text-gray-500">
+          <BaseIcon :path="mdiInbox" size="48" class="mx-auto mb-3 opacity-40" />
+          <p>{{ logsLoading ? t('em.logLoading') : t('em.logEmpty') }}</p>
+        </div>
+      </CardBox>
     </div>
 
     <!-- Add Domain Modal -->

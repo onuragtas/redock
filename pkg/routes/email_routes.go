@@ -19,6 +19,10 @@ func EmailRoutes(app *fiber.App) {
 	email.Post("/server/stop", controllers.StopEmailServer)
 	email.Get("/server/check-passwords", controllers.CheckMailboxPasswords)
 
+	// Mail traffic logs (incoming / outgoing / rejected)
+	email.Get("/logs", controllers.GetEmailLogs)
+	email.Get("/logs/raw", controllers.GetEmailRawLogs)
+
 	// Domain management
 	email.Get("/domains", controllers.GetEmailDomains)
 	email.Post("/domains", controllers.AddEmailDomain)
