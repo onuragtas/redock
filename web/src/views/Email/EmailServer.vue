@@ -832,6 +832,36 @@ const logView = ref('events'); // events | connections | raw
 const certificate = ref(null);
 const requestingCert = ref(false);
 
+const deliverability = ref(null);
+const checkingDeliverability = ref(false);
+
+// The inbox-versus-spam verdict is decided by DNS the receiver looks up, not by
+// anything in the message — so the server checks that DNS and reports it.
+const runDeliverabilityCheck = async () => {
+  checkingDeliverability.value = true;
+  try {
+    const response = await ApiService.get('/api/email/deliverability');
+    if (!response.data.error) deliverability.value = response.data.data;
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.deliverFailed'));
+  } finally {
+    checkingDeliverability.value = false;
+  }
+};
+
+const checkLevelClass = (level) => {
+  switch (level) {
+    case 'ok':
+      return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400';
+    case 'fail':
+      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+    case 'warning':
+      return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+    default:
+      return 'bg-gray-100 dark:bg-slate-800 text-gray-600 dark:text-gray-300';
+  }
+};
+
 const loadCertificate = async () => {
   try {
     const response = await ApiService.get('/api/email/certificate');
@@ -1160,7 +1190,8 @@ const formatQueueTime = (value) => {
 watch(
   activeTab,
   (tab) => {
-    if (['overview', 'listeners', 'queue', 'dns', 'cleanup'].includes(tab)) loadEngine();
+      if (['overview', 'listeners', 'queue', 'dns', 'cleanup'].includes(tab)) loadEngine();
+    if (tab === 'dns' && !deliverability.value) runDeliverabilityCheck();
   },
   { immediate: true }
 );
@@ -2505,6 +2536,49 @@ onMounted(() => {
 
     <!-- DNS -->
     <div v-if="activeTab === 'dns'">
+      <!-- What a receiving server sees -->
+      <CardBox class="mb-6">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 class="text-lg font-semibold">{{ t('em.deliverTitle') }}</h3>
+            <p class="text-sm text-gray-500">{{ t('em.deliverHint') }}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <span v-if="deliverability" class="text-sm font-medium">
+              {{ deliverability.passed }} / {{ deliverability.total }}
+            </span>
+            <BaseButton
+              :icon="mdiRefresh"
+              :label="t('em.deliverRun')"
+              color="info"
+              small
+              :disabled="checkingDeliverability"
+              @click="runDeliverabilityCheck"
+            />
+          </div>
+        </div>
+
+        <div v-if="deliverability?.checks?.length" class="space-y-2">
+          <div
+            v-for="(check, i) in deliverability.checks"
+            :key="i"
+            class="p-3 rounded-lg"
+            :class="checkLevelClass(check.level)"
+          >
+            <div class="flex flex-wrap items-center gap-2 text-sm font-medium">
+              <span>{{ check.level === 'ok' ? '✓' : check.level === 'fail' ? '✕' : '!' }}</span>
+              <span>{{ check.title }}</span>
+              <span v-if="check.domain" class="font-mono text-xs opacity-70">{{ check.domain }}</span>
+            </div>
+            <p class="text-xs mt-1 opacity-90 break-all">{{ check.detail }}</p>
+            <p v-if="check.advice" class="text-xs mt-1 opacity-80">→ {{ check.advice }}</p>
+          </div>
+        </div>
+        <p v-else class="text-sm text-gray-500">
+          {{ checkingDeliverability ? t('em.deliverRunning') : t('em.deliverEmpty') }}
+        </p>
+      </CardBox>
+
       <CardBox>
         <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
           <div>

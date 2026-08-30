@@ -356,3 +356,22 @@ func RequestEmailCertificate(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"error": false, "data": status})
 }
+
+// CheckEmailDeliverability inspects the public DNS and reverse DNS this server
+// depends on and reports what a receiving system would see — the things that
+// actually decide inbox versus spam.
+// @Summary deliverability check
+// @Tags Email
+// @Security ApiKeyAuth
+// @Produce json
+// @Router /email/deliverability [get]
+func CheckEmailDeliverability(c *fiber.Ctx) error {
+	manager := email_server.GetEmailManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Email server not initialized",
+		})
+	}
+	return c.JSON(fiber.Map{"error": false, "data": manager.CheckDeliverability()})
+}

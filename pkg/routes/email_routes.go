@@ -33,6 +33,7 @@ func EmailRoutes(app *fiber.App) {
 	email.Delete("/queue/:id", controllers.DeleteEmailQueueItem)
 	email.Get("/certificate", controllers.GetEmailCertificate)
 	email.Post("/certificate/request", controllers.RequestEmailCertificate)
+	email.Get("/deliverability", controllers.CheckEmailDeliverability)
 	email.Get("/dns-records", controllers.GetEmailDNSRecords)
 	email.Post("/dns-records/sync", controllers.SyncEmailDNS)
 	email.Get("/legacy", controllers.GetEmailLegacyArtifacts)

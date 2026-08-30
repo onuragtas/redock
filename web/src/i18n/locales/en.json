@@ -1762,7 +1762,13 @@
     "certNameChecks": "Validation readiness",
     "certNameChecksHint": "Only names that resolve to this server are included in the request; the rest are skipped so one unready domain cannot fail the whole certificate.",
     "logView_events": "Events",
-    "logShowing": "showing {shown} of {total} retained"
+    "logShowing": "showing {shown} of {total} retained",
+    "deliverTitle": "Deliverability check",
+    "deliverHint": "What a receiving server like Gmail looks up before deciding inbox or spam.",
+    "deliverRun": "Run check",
+    "deliverRunning": "Checking DNS…",
+    "deliverEmpty": "Run the check to see how this server looks from the outside.",
+    "deliverFailed": "The check could not be run"
   },
   "ta": {
     "title": "Sign in to tunnel server",

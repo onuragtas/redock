@@ -1762,7 +1762,13 @@
     "certNameChecks": "Doğrulamaya hazırlık",
     "certNameChecksHint": "Sadece bu sunucuya çözülen adlar isteğe dahil edilir; hazır olmayanlar atlanır, böylece tek bir alan adı tüm sertifikayı çökertmez.",
     "logView_events": "Olaylar",
-    "logShowing": "tutulan {total} kayıttan {shown} tanesi gösteriliyor"
+    "logShowing": "tutulan {total} kayıttan {shown} tanesi gösteriliyor",
+    "deliverTitle": "Teslim edilebilirlik kontrolü",
+    "deliverHint": "Gmail gibi bir alıcı sunucunun, gelen kutusu mu spam mı kararını vermeden önce baktığı kayıtlar.",
+    "deliverRun": "Kontrol et",
+    "deliverRunning": "DNS kontrol ediliyor…",
+    "deliverEmpty": "Sunucunun dışarıdan nasıl göründüğünü görmek için kontrolü çalıştır.",
+    "deliverFailed": "Kontrol çalıştırılamadı"
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",
