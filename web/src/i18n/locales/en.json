@@ -1756,7 +1756,10 @@
     "certMissingHint": "Clients dialling these names will refuse the certificate.",
     "certSelfSigned": "self-signed",
     "certIssued": "Certificate issued and listeners reloaded",
-    "certFailed": "Certificate request failed"
+    "certFailed": "Certificate request failed",
+    "settingsHostname": "Mail hostname (FQDN)",
+    "settingsHostnameHint": "The name clients connect to and the name the certificate is issued for. Must resolve to this server.",
+    "settingsIpHint": "Published in the SPF record and the mail.<domain> A record."
   },
   "ta": {
     "title": "Sign in to tunnel server",

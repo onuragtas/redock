@@ -1756,7 +1756,10 @@
     "certMissingHint": "Bu adlarla bağlanan istemciler sertifikayı reddeder.",
     "certSelfSigned": "kendi imzalı",
     "certIssued": "Sertifika alındı, dinleyiciler yeniden yüklendi",
-    "certFailed": "Sertifika alınamadı"
+    "certFailed": "Sertifika alınamadı",
+    "settingsHostname": "Mail hostname (FQDN)",
+    "settingsHostnameHint": "İstemcilerin bağlandığı ve sertifikanın alındığı ad. Bu sunucuya çözülmeli.",
+    "settingsIpHint": "SPF kaydında ve mail.<alanadi> A kaydında yayınlanır."
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

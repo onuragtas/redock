@@ -24,6 +24,7 @@ func (m *EmailManager) UpdateNativeSettings(updated EmailServerConfig) (*EmailSe
 	// container fields keep their stored values.
 	current := m.config
 	current.Hostname = orDefault(updated.Hostname, current.Hostname)
+	current.IPAddress = orDefault(updated.IPAddress, current.IPAddress)
 	current.SMTPPort = updated.SMTPPort
 	current.SMTPSPort = updated.SMTPSPort
 	current.SubmissionPort = updated.SubmissionPort

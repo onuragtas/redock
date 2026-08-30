@@ -2323,6 +2323,31 @@ onMounted(() => {
       <CardBox v-if="nativeConfig">
         <h3 class="text-lg font-semibold mb-4">{{ t('em.engineSettings') }}</h3>
 
+        <!-- Identity: this is the name clients dial and the name a certificate
+             can be issued for, so it comes first. -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-5">
+          <label class="block">
+            <span class="text-xs text-gray-500">{{ t('em.settingsHostname') }}</span>
+            <input
+              v-model="nativeConfig.hostname"
+              type="text"
+              placeholder="mail.alanadi.com"
+              class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800"
+            />
+            <span class="text-xs text-gray-500">{{ t('em.settingsHostnameHint') }}</span>
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">{{ t('em.publicIpAddress') }}</span>
+            <input
+              v-model="nativeConfig.ip_address"
+              type="text"
+              placeholder="203.0.113.10"
+              class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800"
+            />
+            <span class="text-xs text-gray-500">{{ t('em.settingsIpHint') }}</span>
+          </label>
+        </div>
+
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-5">
           <label class="block">
             <span class="text-xs text-gray-500">SMTP</span>
