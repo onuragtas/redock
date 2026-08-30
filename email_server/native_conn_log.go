@@ -44,7 +44,7 @@ func (l *mailLogger) record(message string) {
 }
 
 // remoteIPFromMessage digs the peer address out of the library's error text
-// ("error handling 10.0.70.5:54321: ...") so the entry can be filtered by IP
+// ("error handling 203.0.113.5:54321: ...") so the entry can be filtered by IP
 // like every other event.
 func remoteIPFromMessage(message string) string {
 	const marker = "error handling "

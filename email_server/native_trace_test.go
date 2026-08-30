@@ -237,7 +237,7 @@ func TestConnectEventsReachTheMessageLog(t *testing.T) {
 
 func TestSelfSignedCertificateCoversLocalAddresses(t *testing.T) {
 	dir := t.TempDir()
-	ips := append(localAddresses(), net.ParseIP("10.0.70.5"))
+	ips := append(localAddresses(), net.ParseIP("203.0.113.5"))
 	manager := newCertManager("mail.example.com", dir, filepath.Join(dir, "work"), "", "",
 		[]string{"mail.example.com", "mail.other.test"}, ips)
 
@@ -254,7 +254,7 @@ func TestSelfSignedCertificateCoversLocalAddresses(t *testing.T) {
 	if len(leaf.IPAddresses) == 0 {
 		t.Fatal("the certificate carries no IP SANs")
 	}
-	if err := leaf.VerifyHostname("10.0.70.5"); err != nil {
+	if err := leaf.VerifyHostname("203.0.113.5"); err != nil {
 		t.Errorf("the certificate does not cover the address a client dialled: %v", err)
 	}
 	for _, name := range []string{"mail.example.com", "mail.other.test", "localhost"} {

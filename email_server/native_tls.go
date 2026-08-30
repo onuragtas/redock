@@ -37,7 +37,7 @@ type certManager struct {
 	hostname string
 	// names / ips are every identity the certificate must cover: the mail
 	// hostname, mail.<domain> for each served domain, and every address this
-	// machine answers on. A client that connects by IP (10.0.70.5, say) fails
+	// machine answers on. A client that connects by IP (203.0.113.5, say) fails
 	// verification unless that IP is in the SAN list.
 	names []string
 	ips   []net.IP

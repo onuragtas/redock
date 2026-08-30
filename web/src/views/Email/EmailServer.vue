@@ -2349,7 +2349,7 @@ onMounted(() => {
             <input
               v-model="nativeConfig.hostname"
               type="text"
-              placeholder="mail.alanadi.com"
+              placeholder="mail.example.com"
               class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800"
             />
             <span class="text-xs text-gray-500">{{ t('em.settingsHostnameHint') }}</span>

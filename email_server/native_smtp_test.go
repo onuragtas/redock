@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"redock/pkg/security"
 	"redock/platform/memory"
 
 	"github.com/emersion/go-msgauth/dkim"
@@ -95,7 +96,7 @@ func TestLookupAccountResolvesMailboxAliasAndCatchAll(t *testing.T) {
 	if account := m.LookupAccount("nobody@example.com"); account != nil {
 		t.Fatal("an unknown local address must not resolve")
 	}
-	if account := m.LookupAccount("alice@elsewhere.com"); account != nil {
+	if account := m.LookupAccount("alice@elsewhere.test"); account != nil {
 		t.Fatal("an address in a foreign domain must not resolve")
 	}
 
@@ -390,5 +391,60 @@ func TestRequiredDNSRecordsCoverTheEssentials(t *testing.T) {
 	}
 	if !kinds["TXT _dmarc.example.com"] {
 		t.Error("DMARC record is missing")
+	}
+}
+
+// A mailbox whose bcrypt hash was lost — the dashboard used to blank it when
+// listing accounts — must be repaired from the encrypted copy rather than
+// leaving the user unable to log in.
+func TestRepairMissingPasswordHashes(t *testing.T) {
+	m := newTestManager(t)
+	key, err := security.GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey: %v", err)
+	}
+	m.encryptionKey = key
+
+	_, mailbox := seedDomain(t, m, "example.com", "alice", "secret")
+
+	// Reproduce the damage: hash gone, encrypted copy intact.
+	encrypted, err := security.EncryptAES256GCM("secret", m.encryptionKey)
+	if err != nil {
+		t.Fatalf("EncryptAES256GCM: %v", err)
+	}
+	mailbox.Password = ""
+	mailbox.PlainPassword = encrypted
+	if err := memory.Update(m.db, "email_mailboxes", mailbox); err != nil {
+		t.Fatalf("update mailbox: %v", err)
+	}
+
+	if _, err := m.Authenticate("alice@example.com", "secret"); err == nil {
+		t.Fatal("the damaged mailbox should not authenticate before repair")
+	}
+
+	if repaired := m.repairMissingPasswordHashes(); repaired != 1 {
+		t.Fatalf("expected 1 mailbox to be repaired, got %d", repaired)
+	}
+
+	if _, err := m.Authenticate("alice@example.com", "secret"); err != nil {
+		t.Fatalf("the repaired mailbox still cannot authenticate: %v", err)
+	}
+	if _, err := m.Authenticate("alice@example.com", "wrong"); err == nil {
+		t.Fatal("repair must not accept a wrong password")
+	}
+}
+
+func TestRepairSkipsMailboxesWithNoPasswordAtAll(t *testing.T) {
+	m := newTestManager(t)
+	_, mailbox := seedDomain(t, m, "example.com", "empty", "secret")
+
+	mailbox.Password = ""
+	mailbox.PlainPassword = ""
+	if err := memory.Update(m.db, "email_mailboxes", mailbox); err != nil {
+		t.Fatalf("update mailbox: %v", err)
+	}
+
+	if repaired := m.repairMissingPasswordHashes(); repaired != 0 {
+		t.Fatalf("there is nothing to repair, got %d", repaired)
 	}
 }

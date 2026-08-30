@@ -160,6 +160,20 @@ func DeleteEmailDomain(c *fiber.Ctx) error {
 	})
 }
 
+// sanitizedMailbox returns a copy of a mailbox with its secrets removed, for
+// sending to the dashboard. It must never mutate the argument: the in-memory
+// database hands out pointers to the live records, so editing one in place
+// changes — and eventually persists — the stored account.
+func sanitizedMailbox(mb *email_server.EmailMailbox) *email_server.EmailMailbox {
+	if mb == nil {
+		return nil
+	}
+	copied := *mb
+	copied.Password = ""
+	copied.PlainPassword = ""
+	return &copied
+}
+
 func GetMailboxes(c *fiber.Ctx) error {
 	manager := email_server.GetEmailManager()
 	if manager == nil {
@@ -188,14 +202,17 @@ func GetMailboxes(c *fiber.Ctx) error {
 		})
 	}
 
+	// Never blank the stored entity: memory.Filter hands back pointers into the
+	// in-memory database, so clearing a field here would wipe the real password
+	// hash — and the periodic flush would persist that loss.
+	response := make([]*email_server.EmailMailbox, 0, len(mailboxes))
 	for _, mb := range mailboxes {
-		mb.PlainPassword = ""
-		mb.Password = ""
+		response = append(response, sanitizedMailbox(mb))
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
-		"data":  mailboxes,
+		"data":  response,
 	})
 }
 
@@ -230,13 +247,14 @@ func AddMailbox(c *fiber.Ctx) error {
 		})
 	}
 
-	mailbox.PlainPassword = ""
-	mailbox.Password = ""
+	// Respond with a copy; blanking the stored mailbox would destroy the
+	// password that was just set.
+	response := sanitizedMailbox(mailbox)
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "Mailbox created successfully",
-		"data":  mailbox,
+		"data":  response,
 	})
 }
 
@@ -318,7 +336,7 @@ func UpdateMailbox(c *fiber.Ctx) error {
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,
 		"msg":   "Mailbox updated successfully and DNS records queued for update",
-		"data":  mailbox,
+		"data":  sanitizedMailbox(mailbox),
 	})
 }
 

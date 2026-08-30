@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"golang.org/x/crypto/bcrypt"
 )
 
 var (
@@ -93,6 +95,12 @@ func (m *EmailManager) Init(db *memory.Database, dataPath string) error {
 	}
 
 	m.restorePasswordCache()
+
+	// Repair accounts whose bcrypt hash was lost. Until recently the dashboard
+	// blanked the stored record when listing mailboxes, which wiped the hash the
+	// engine authenticates against. The encrypted copy of the password survives,
+	// so the hash can be rebuilt rather than forcing everyone to reset.
+	m.repairMissingPasswordHashes()
 
 	if m.config.IPAddress == "" {
 		go m.autoDetectPublicIP()
@@ -225,6 +233,50 @@ func (m *EmailManager) restorePasswordCache() {
 		}
 		m.passwordCache[mailbox.Email] = decrypted
 	}
+}
+
+// repairMissingPasswordHashes rebuilds the bcrypt hash for any mailbox that
+// still has its encrypted password but lost the hash. Returns how many were
+// repaired.
+func (m *EmailManager) repairMissingPasswordHashes() int {
+	if m.db == nil {
+		return 0
+	}
+
+	repaired := 0
+	for _, mailbox := range memory.FindAll[*EmailMailbox](m.db, "email_mailboxes") {
+		if mailbox == nil || mailbox.IsDeleted() || mailbox.Password != "" {
+			continue
+		}
+		if mailbox.PlainPassword == "" {
+			log.Printf("email_server: %s has no password at all; set one from the dashboard", mailbox.Email)
+			continue
+		}
+
+		plain, err := security.DecryptAES256GCM(mailbox.PlainPassword, m.encryptionKey)
+		if err != nil {
+			log.Printf("email_server: cannot recover the password for %s: %v", mailbox.Email, err)
+			continue
+		}
+
+		hashed, err := bcrypt.GenerateFromPassword([]byte(plain), bcrypt.DefaultCost)
+		if err != nil {
+			log.Printf("email_server: cannot rehash the password for %s: %v", mailbox.Email, err)
+			continue
+		}
+
+		mailbox.Password = string(hashed)
+		if err := memory.Update(m.db, "email_mailboxes", mailbox); err != nil {
+			log.Printf("email_server: cannot persist the repaired password for %s: %v", mailbox.Email, err)
+			continue
+		}
+		repaired++
+	}
+
+	if repaired > 0 {
+		log.Printf("email_server: rebuilt the password hash for %d mailbox(es)", repaired)
+	}
+	return repaired
 }
 
 // GetMailboxPassword returns a mailbox's stored password. Authentication uses
