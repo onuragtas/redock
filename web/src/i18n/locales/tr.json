@@ -1640,7 +1640,7 @@
     "logSize": "Boyut",
     "logLoading": "Loglar yükleniyor…",
     "logEmpty": "Bu aralıkta mail trafiği yok.",
-    "logLines": "satır",
+    "logLines": "kayıt",
     "tab_engine": "Motor",
     "engineTitle": "Mail motoru",
     "engineHint": "Redock maili kendisi çalıştırabilir (bu süreç içindeki Go SMTP/IMAP/POP3 sunucuları) ya da docker-mailserver container'ına devredebilir. İkisi de aynı Maildir'i kullanır.",
@@ -1732,7 +1732,6 @@
     "tab_queue": "Kuyruk",
     "tab_dns": "DNS",
     "tab_cleanup": "Temizlik",
-    "logView_messages": "Mesajlar",
     "logView_connections": "Bağlantılar",
     "logView_raw": "Ham",
     "connEncrypted": "TLS",
@@ -1761,7 +1760,9 @@
     "settingsHostnameHint": "İstemcilerin bağlandığı ve sertifikanın alındığı ad. Bu sunucuya çözülmeli.",
     "settingsIpHint": "SPF kaydında ve mail.<alanadi> A kaydında yayınlanır.",
     "certNameChecks": "Doğrulamaya hazırlık",
-    "certNameChecksHint": "Sadece bu sunucuya çözülen adlar isteğe dahil edilir; hazır olmayanlar atlanır, böylece tek bir alan adı tüm sertifikayı çökertmez."
+    "certNameChecksHint": "Sadece bu sunucuya çözülen adlar isteğe dahil edilir; hazır olmayanlar atlanır, böylece tek bir alan adı tüm sertifikayı çökertmez.",
+    "logView_events": "Olaylar",
+    "logShowing": "tutulan {total} kayıttan {shown} tanesi gösteriliyor"
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

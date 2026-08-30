@@ -766,6 +766,7 @@ const logsLoading = ref(false);
 const logEntries = ref([]);
 const logStats = ref({ incoming: 0, outgoing: 0, rejected: 0, deferred: 0, bounced: 0 });
 const logSource = ref('');
+const logTotal = ref(0);
 const logDirection = ref('');
 const logStatus = ref('');
 const logSearch = ref('');
@@ -781,6 +782,7 @@ const loadLogs = async () => {
   try {
     const response = await ApiService.get('/api/email/logs', {
       params: {
+        limit: logTail.value,
         tail: logTail.value,
         direction: logDirection.value || undefined,
         status: logStatus.value || undefined,
@@ -792,6 +794,7 @@ const loadLogs = async () => {
       logEntries.value = data.entries || [];
       logStats.value = data.stats || logStats.value;
       logSource.value = data.source || '';
+      logTotal.value = data.total || 0;
       logError.value = '';
     } else {
       logError.value = response.data.msg || t('em.logsFailed');
@@ -822,7 +825,7 @@ const loadRawLog = async () => {
 
 const connections = ref([]);
 const expandedConnIds = ref(new Set());
-const logView = ref('messages'); // messages | connections | raw
+const logView = ref('events'); // events | connections | raw
 
 // Connection traces show what happened on the wire: attempts that never became
 // a message (refused TLS, probes, bad passwords) live here, not in the message log.
@@ -974,7 +977,7 @@ watch([activeTab, logAutoRefresh, logView], () => {
 });
 
 watch([logDirection, logStatus], () => {
-  if (activeTab.value === 'logs' && logView.value === 'messages') loadLogs();
+  if (activeTab.value === 'logs' && logView.value === 'events') loadLogs();
 });
 
 onUnmounted(() => {
@@ -2026,9 +2029,10 @@ onMounted(() => {
             class="px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 text-sm"
             @change="refreshLogs"
           >
+            <option :value="200">200 {{ t('em.logLines') }}</option>
             <option :value="500">500 {{ t('em.logLines') }}</option>
             <option :value="1000">1000 {{ t('em.logLines') }}</option>
-            <option :value="5000">5000 {{ t('em.logLines') }}</option>
+            <option :value="2000">2000 {{ t('em.logLines') }}</option>
           </select>
 
           <label class="flex items-center gap-2 text-sm text-gray-500">
@@ -2038,7 +2042,7 @@ onMounted(() => {
 
           <div class="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-700 text-sm">
             <button
-              v-for="view in ['messages', 'connections', 'raw']"
+              v-for="view in ['events', 'connections', 'raw']"
               :key="view"
               :class="[
                 'px-3 py-2 transition-colors',
@@ -2057,6 +2061,9 @@ onMounted(() => {
 
         <p v-if="logSource" class="text-xs text-gray-500 mb-3">
           {{ t('em.logSource', { source: logSource, tail: logTail }) }}
+          <span v-if="logView === 'events' && logTotal">
+            — {{ t('em.logShowing', { shown: logEntries.length, total: logTotal }) }}
+          </span>
         </p>
 
         <div v-if="logError" class="p-4 rounded-lg bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 text-sm">
@@ -2070,7 +2077,7 @@ onMounted(() => {
         >{{ rawLogLines.join('\n') }}</pre>
 
         <!-- Parsed view -->
-        <div v-else-if="logView === 'messages' && logEntries.length" class="overflow-x-auto">
+        <div v-else-if="logView === 'events' && logEntries.length" class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="text-left text-gray-500 dark:text-gray-400">
               <tr>

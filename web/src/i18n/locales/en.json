@@ -1640,7 +1640,7 @@
     "logSize": "Size",
     "logLoading": "Loading logs…",
     "logEmpty": "No mail traffic in this window.",
-    "logLines": "lines",
+    "logLines": "records",
     "tab_engine": "Engine",
     "engineTitle": "Mail engine",
     "engineHint": "Redock can run mail itself (Go SMTP/IMAP/POP3 servers in this process) or delegate to the docker-mailserver container. Both serve the same Maildir.",
@@ -1732,7 +1732,6 @@
     "tab_queue": "Queue",
     "tab_dns": "DNS",
     "tab_cleanup": "Cleanup",
-    "logView_messages": "Messages",
     "logView_connections": "Connections",
     "logView_raw": "Raw",
     "connEncrypted": "TLS",
@@ -1761,7 +1760,9 @@
     "settingsHostnameHint": "The name clients connect to and the name the certificate is issued for. Must resolve to this server.",
     "settingsIpHint": "Published in the SPF record and the mail.<domain> A record.",
     "certNameChecks": "Validation readiness",
-    "certNameChecksHint": "Only names that resolve to this server are included in the request; the rest are skipped so one unready domain cannot fail the whole certificate."
+    "certNameChecksHint": "Only names that resolve to this server are included in the request; the rest are skipped so one unready domain cannot fail the whole certificate.",
+    "logView_events": "Events",
+    "logShowing": "showing {shown} of {total} retained"
   },
   "ta": {
     "title": "Sign in to tunnel server",
