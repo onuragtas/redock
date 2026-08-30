@@ -1759,7 +1759,9 @@
     "certFailed": "Sertifika alınamadı",
     "settingsHostname": "Mail hostname (FQDN)",
     "settingsHostnameHint": "İstemcilerin bağlandığı ve sertifikanın alındığı ad. Bu sunucuya çözülmeli.",
-    "settingsIpHint": "SPF kaydında ve mail.<alanadi> A kaydında yayınlanır."
+    "settingsIpHint": "SPF kaydında ve mail.<alanadi> A kaydında yayınlanır.",
+    "certNameChecks": "Doğrulamaya hazırlık",
+    "certNameChecksHint": "Sadece bu sunucuya çözülen adlar isteğe dahil edilir; hazır olmayanlar atlanır, böylece tek bir alan adı tüm sertifikayı çökertmez."
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

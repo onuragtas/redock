@@ -1759,7 +1759,9 @@
     "certFailed": "Certificate request failed",
     "settingsHostname": "Mail hostname (FQDN)",
     "settingsHostnameHint": "The name clients connect to and the name the certificate is issued for. Must resolve to this server.",
-    "settingsIpHint": "Published in the SPF record and the mail.<domain> A record."
+    "settingsIpHint": "Published in the SPF record and the mail.<domain> A record.",
+    "certNameChecks": "Validation readiness",
+    "certNameChecksHint": "Only names that resolve to this server are included in the request; the rest are skipped so one unready domain cannot fail the whole certificate."
   },
   "ta": {
     "title": "Sign in to tunnel server",

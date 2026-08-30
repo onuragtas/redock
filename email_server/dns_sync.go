@@ -130,16 +130,27 @@ func (m *EmailManager) findCloudflareZone(domainName string) *cloudflare.Cloudfl
 	return best
 }
 
-// mxHostFor is the hostname a domain's MX record should point at: the server's
-// own hostname when it is set to a real name, otherwise mail.<domain>.
+// defaultMXHost is the per-domain name the dashboard generates when a domain is
+// created. Recognising it lets us tell an auto-generated value from one the
+// operator deliberately chose.
+func defaultMXHost(domain *EmailDomain) string {
+	return "mail." + domain.Domain
+}
+
+// mxHostFor is the hostname a domain's MX record points at.
+//
+// One mail host serves every domain, so by default they all point at the
+// server's own hostname. That is the standard arrangement and it keeps the
+// setup small: one A record, one name on the TLS certificate, one PTR to get
+// right — however many domains are hosted. A domain whose MXRecord was set to
+// something other than the generated "mail.<domain>" keeps that choice.
 func (m *EmailManager) mxHostFor(domain *EmailDomain) string {
-	if domain.MXRecord != "" {
-		return domain.MXRecord
+	if domain.MXRecord != "" && domain.MXRecord != defaultMXHost(domain) {
+		return domain.MXRecord // deliberately overridden
 	}
 
-	hostname := m.nativeConfig().Hostname
-	if hostname != "" && strings.Contains(hostname, ".") && !strings.HasSuffix(hostname, ".localhost") {
+	if hostname := m.nativeConfig().Hostname; isPublicName(hostname) {
 		return hostname
 	}
-	return "mail." + domain.Domain
+	return defaultMXHost(domain)
 }

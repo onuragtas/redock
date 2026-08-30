@@ -1,10 +1,12 @@
 package email_server
 
 import (
+	"context"
 	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"log"
+	"net"
 	"os"
 	"path/filepath"
 	"sort"
@@ -50,6 +52,8 @@ type CertificateStatus struct {
 	ACMEReady  bool   `json:"acme_ready"`
 	ACMEReason string `json:"acme_reason,omitempty"`
 	CertPath   string `json:"cert_path,omitempty"`
+	// NameChecks says, per name, whether Let's Encrypt could validate it.
+	NameChecks []NameCheck `json:"name_checks,omitempty"`
 }
 
 // mailCertPaths returns where this server's own certificate lives.
@@ -64,10 +68,11 @@ func (m *EmailManager) mailCertPaths() (string, string) {
 // by IP will always have to trust the self-signed certificate instead.
 func (m *EmailManager) certificateWantedNames() []string {
 	cfg := m.nativeConfig()
+	hostname := cfg.Hostname
 
 	names := []string{}
-	if isPublicName(cfg.Hostname) {
-		names = append(names, cfg.Hostname)
+	if isPublicName(hostname) {
+		names = append(names, hostname)
 	}
 
 	if m.db != nil {
@@ -75,11 +80,14 @@ func (m *EmailManager) certificateWantedNames() []string {
 			if domain == nil || domain.IsDeleted() || !domain.Enabled {
 				continue
 			}
-			if candidate := "mail." + domain.Domain; isPublicName(candidate) {
-				names = append(names, candidate)
-			}
-			if domain.MXRecord != "" && isPublicName(domain.MXRecord) {
-				names = append(names, domain.MXRecord)
+
+			// With a real server hostname every domain's MX points at it, so
+			// that single name is all the certificate needs. Only a domain with
+			// its own mail host — either an explicit override, or the fallback
+			// used when no server hostname is set — adds a name here.
+			mxHost := m.mxHostFor(domain)
+			if mxHost != hostname && isPublicName(mxHost) {
+				names = append(names, mxHost)
 			}
 		}
 	}
@@ -102,6 +110,57 @@ func isPublicName(name string) bool {
 		}
 	}
 	return lower != "localhost"
+}
+
+// NameCheck is the verdict on one name before an ACME order is placed.
+type NameCheck struct {
+	Name       string   `json:"name"`
+	Resolves   bool     `json:"resolves"`
+	PointsAtUs bool     `json:"points_at_us"`
+	Addresses  []string `json:"addresses,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+}
+
+// checkNames resolves each wanted name and reports whether Let's Encrypt would
+// be able to validate it. An ACME order fails as a whole if any single
+// authorisation fails, so a domain whose DNS is not ready yet must be left out
+// rather than allowed to block the certificate for every other domain.
+func (m *EmailManager) checkNames(names []string) []NameCheck {
+	ours := make(map[string]struct{})
+	for _, ip := range m.certificateIPs(m.nativeConfig()) {
+		ours[ip.String()] = struct{}{}
+	}
+
+	resolver := net.DefaultResolver
+	checks := make([]NameCheck, 0, len(names))
+
+	for _, name := range names {
+		check := NameCheck{Name: name}
+
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		addrs, err := resolver.LookupHost(ctx, name)
+		cancel()
+
+		if err != nil || len(addrs) == 0 {
+			check.Reason = "does not resolve"
+			checks = append(checks, check)
+			continue
+		}
+
+		check.Resolves = true
+		check.Addresses = addrs
+		for _, addr := range addrs {
+			if _, ok := ours[addr]; ok {
+				check.PointsAtUs = true
+				break
+			}
+		}
+		if !check.PointsAtUs {
+			check.Reason = "resolves to " + strings.Join(addrs, ", ") + ", which is not this server"
+		}
+		checks = append(checks, check)
+	}
+	return checks
 }
 
 // CertificateStatus reports on the active certificate.
@@ -160,6 +219,9 @@ func (m *EmailManager) CertificateStatus() CertificateStatus {
 	if cfg.SSLCertPath != "" {
 		status.CertPath = cfg.SSLCertPath
 	}
+	if status.ACMEReady {
+		status.NameChecks = m.checkNames(wanted)
+	}
 	return status
 }
 
@@ -172,10 +234,37 @@ func (m *EmailManager) RequestLetsEncryptCertificate() (CertificateStatus, error
 		return m.CertificateStatus(), fmt.Errorf("%s", reason)
 	}
 
-	names := m.certificateWantedNames()
-	if len(names) == 0 {
+	wanted := m.certificateWantedNames()
+	if len(wanted) == 0 {
 		return m.CertificateStatus(), fmt.Errorf(
 			"no publicly resolvable name to request a certificate for — set the mail hostname to a real FQDN first")
+	}
+
+	// Order only the names that can actually pass validation: one unready name
+	// would otherwise fail the order for all of them.
+	checks := m.checkNames(wanted)
+	names := make([]string, 0, len(checks))
+	skipped := make([]string, 0, len(checks))
+	for _, check := range checks {
+		if check.PointsAtUs {
+			names = append(names, check.Name)
+			continue
+		}
+		skipped = append(skipped, check.Name+" ("+check.Reason+")")
+	}
+
+	if len(names) == 0 {
+		return m.CertificateStatus(), fmt.Errorf(
+			"none of these names point at this server yet: %s", strings.Join(skipped, "; "))
+	}
+	if len(skipped) > 0 {
+		log.Printf("mail: leaving unready names out of the certificate order: %s", strings.Join(skipped, "; "))
+		m.logMailEvent(mailEvent{
+			Direction: "system",
+			Status:    "certificate",
+			Service:   "tls",
+			Detail:    "names left out of the certificate request: " + strings.Join(skipped, "; "),
+		})
 	}
 
 	settings := api_gateway.LetsEncryptSettings()

@@ -2306,6 +2306,24 @@ onMounted(() => {
               >{{ ip }}</span>
             </div>
           </div>
+          <div v-if="certificate.name_checks?.length">
+            <span class="text-gray-500 block text-xs mb-1">{{ t('em.certNameChecks') }}</span>
+            <div class="space-y-1">
+              <div
+                v-for="check in certificate.name_checks"
+                :key="check.name"
+                class="flex items-start gap-2 text-xs"
+              >
+                <span :class="check.points_at_us ? 'text-emerald-500' : 'text-amber-500'">
+                  {{ check.points_at_us ? '✓' : '!' }}
+                </span>
+                <span class="font-mono">{{ check.name }}</span>
+                <span v-if="!check.points_at_us" class="text-gray-500">— {{ check.reason }}</span>
+              </div>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">{{ t('em.certNameChecksHint') }}</p>
+          </div>
+
           <div v-if="certificate.missing?.length">
             <span class="text-gray-500 block text-xs mb-1">{{ t('em.certMissing') }}</span>
             <div class="flex flex-wrap gap-1">

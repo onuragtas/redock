@@ -22,16 +22,22 @@ func TestIsPublicNameRejectsUnissuableNames(t *testing.T) {
 	}
 }
 
-func TestCertificateWantedNamesCoversHostAndDomains(t *testing.T) {
+func TestCertificateWantedNamesCoversHostAndOverrides(t *testing.T) {
 	m := newTestManager(t)
 	m.config.Hostname = "mx.redock.dev"
 
-	// example.com is a reserved example domain; use something requestable.
-	domain := &EmailDomain{Domain: "acikkaynak.dev", Enabled: true}
-	if err := memory.Create(m.db, "email_domains", domain); err != nil {
+	// A domain on the shared mail host adds no name of its own.
+	shared := &EmailDomain{Domain: "acikkaynak.dev", Enabled: true, MXRecord: "mail.acikkaynak.dev"}
+	if err := memory.Create(m.db, "email_domains", shared); err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
-	disabled := &EmailDomain{Domain: "kapali.dev", Enabled: false}
+	// A domain with its own mail host does.
+	custom := &EmailDomain{Domain: "ozel.dev", Enabled: true, MXRecord: "posta.ozel.dev"}
+	if err := memory.Create(m.db, "email_domains", custom); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+	// A disabled domain is not served, so it is not certified either.
+	disabled := &EmailDomain{Domain: "kapali.dev", Enabled: false, MXRecord: "posta.kapali.dev"}
 	if err := memory.Create(m.db, "email_domains", disabled); err != nil {
 		t.Fatalf("create disabled domain: %v", err)
 	}
@@ -41,17 +47,19 @@ func TestCertificateWantedNamesCoversHostAndDomains(t *testing.T) {
 	if !containsString(names, "mx.redock.dev") {
 		t.Errorf("the mail hostname is missing: %v", names)
 	}
-	if !containsString(names, "mail.acikkaynak.dev") {
-		t.Errorf("mail.<domain> is missing: %v", names)
+	if !containsString(names, "posta.ozel.dev") {
+		t.Errorf("an overridden mail host must be certified: %v", names)
 	}
-	if containsString(names, "mail.kapali.dev") {
+	if containsString(names, "mail.acikkaynak.dev") {
+		t.Errorf("a domain on the shared host needs no name of its own: %v", names)
+	}
+	if containsString(names, "posta.kapali.dev") {
 		t.Errorf("a disabled domain must not be requested: %v", names)
 	}
 
 	// A hostname a CA cannot issue for must not reach the order.
 	m.config.Hostname = "redock.localhost"
-	names = m.certificateWantedNames()
-	if containsString(names, "redock.localhost") {
+	if names := m.certificateWantedNames(); containsString(names, "redock.localhost") {
 		t.Errorf(".localhost must be filtered out: %v", names)
 	}
 }
@@ -60,13 +68,15 @@ func TestCertificateStatusReportsMissingNames(t *testing.T) {
 	m := newTestManager(t)
 	m.config.Hostname = "mx.redock.dev"
 
-	domain := &EmailDomain{Domain: "acikkaynak.dev", Enabled: true}
+	// This domain has its own mail host, so it needs a name the hostname-only
+	// certificate will not cover.
+	domain := &EmailDomain{Domain: "acikkaynak.dev", Enabled: true, MXRecord: "posta.acikkaynak.dev"}
 	if err := memory.Create(m.db, "email_domains", domain); err != nil {
 		t.Fatalf("create domain: %v", err)
 	}
 
 	// Bring up the cert manager with a self-signed certificate that only covers
-	// the hostname, so mail.<domain> is reported as missing.
+	// the hostname, so the domain's own mail host is reported as missing.
 	n := m.Native()
 	n.mu.Lock()
 	n.certs = newCertManager(m.config.Hostname, m.dataPath, m.workDir(), "", "", nil, nil)
@@ -80,10 +90,10 @@ func TestCertificateStatusReportsMissingNames(t *testing.T) {
 	if !status.SelfSigned {
 		t.Error("a locally generated certificate must be flagged as self-signed")
 	}
-	if !containsString(status.Wanted, "mail.acikkaynak.dev") {
+	if !containsString(status.Wanted, "posta.acikkaynak.dev") {
 		t.Errorf("the wanted set is wrong: %v", status.Wanted)
 	}
-	if !containsString(status.Missing, "mail.acikkaynak.dev") {
+	if !containsString(status.Missing, "posta.acikkaynak.dev") {
 		t.Errorf("a name the certificate does not cover must be reported: %+v", status)
 	}
 	if containsString(status.Missing, "mx.redock.dev") {
@@ -112,5 +122,99 @@ func TestRequestCertificateRefusesUnissuableHostname(t *testing.T) {
 	_, err := m.RequestLetsEncryptCertificate()
 	if err == nil {
 		t.Fatal("a .localhost hostname must not produce an ACME order")
+	}
+}
+
+func TestMXHostIsSharedAcrossDomains(t *testing.T) {
+	m := newTestManager(t)
+	m.config.Hostname = "mx.redock.dev"
+
+	// Domains created through the dashboard carry the generated
+	// "mail.<domain>" value; that must not override the shared mail host.
+	first := &EmailDomain{Domain: "birinci.dev", Enabled: true, MXRecord: "mail.birinci.dev"}
+	second := &EmailDomain{Domain: "ikinci.dev", Enabled: true, MXRecord: "mail.ikinci.dev"}
+	for _, domain := range []*EmailDomain{first, second} {
+		if err := memory.Create(m.db, "email_domains", domain); err != nil {
+			t.Fatalf("create domain: %v", err)
+		}
+	}
+
+	if got := m.mxHostFor(first); got != "mx.redock.dev" {
+		t.Errorf("all domains should point at the shared mail host, got %q", got)
+	}
+	if got := m.mxHostFor(second); got != "mx.redock.dev" {
+		t.Errorf("all domains should point at the shared mail host, got %q", got)
+	}
+
+	// One certificate name serves every domain.
+	names := m.certificateWantedNames()
+	if len(names) != 1 || names[0] != "mx.redock.dev" {
+		t.Fatalf("expected a single certificate name for all domains, got %v", names)
+	}
+}
+
+func TestExplicitMXOverrideIsKeptAndCertified(t *testing.T) {
+	m := newTestManager(t)
+	m.config.Hostname = "mx.redock.dev"
+
+	custom := &EmailDomain{Domain: "ozel.dev", Enabled: true, MXRecord: "posta.ozel.dev"}
+	if err := memory.Create(m.db, "email_domains", custom); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+
+	if got := m.mxHostFor(custom); got != "posta.ozel.dev" {
+		t.Errorf("an explicit MX host must be respected, got %q", got)
+	}
+
+	names := m.certificateWantedNames()
+	if !containsString(names, "posta.ozel.dev") {
+		t.Errorf("a domain with its own mail host needs its own certificate name: %v", names)
+	}
+	if !containsString(names, "mx.redock.dev") {
+		t.Errorf("the server hostname must still be covered: %v", names)
+	}
+}
+
+func TestWithoutAServerHostnameEachDomainGetsItsOwnName(t *testing.T) {
+	m := newTestManager(t)
+	m.config.Hostname = "redock.localhost" // not issuable
+
+	domain := &EmailDomain{Domain: "yedek.dev", Enabled: true, MXRecord: "mail.yedek.dev"}
+	if err := memory.Create(m.db, "email_domains", domain); err != nil {
+		t.Fatalf("create domain: %v", err)
+	}
+
+	if got := m.mxHostFor(domain); got != "mail.yedek.dev" {
+		t.Errorf("without a usable server hostname the per-domain host is the fallback, got %q", got)
+	}
+	if names := m.certificateWantedNames(); !containsString(names, "mail.yedek.dev") {
+		t.Errorf("the fallback host must be certified: %v", names)
+	}
+}
+
+func TestCheckNamesFlagsNamesThatDoNotPointHere(t *testing.T) {
+	m := newTestManager(t)
+
+	// "localhost" resolves to a loopback address, which is in our set;
+	// a name that cannot resolve must be reported rather than ordered.
+	checks := m.checkNames([]string{"localhost", "definitely-not-a-real-name.invalid"})
+	if len(checks) != 2 {
+		t.Fatalf("expected a verdict per name, got %d", len(checks))
+	}
+
+	byName := map[string]NameCheck{}
+	for _, check := range checks {
+		byName[check.Name] = check
+	}
+
+	if !byName["localhost"].PointsAtUs {
+		t.Errorf("localhost should resolve to this machine: %+v", byName["localhost"])
+	}
+	bad := byName["definitely-not-a-real-name.invalid"]
+	if bad.PointsAtUs {
+		t.Error("an unresolvable name must not be considered ready")
+	}
+	if bad.Reason == "" {
+		t.Error("an unready name must come with a reason")
 	}
 }
