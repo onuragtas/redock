@@ -287,3 +287,72 @@ func CleanupEmailLegacyArtifacts(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"error": false, "data": manager.CleanupLegacyArtifacts()})
 }
+
+// GetEmailConnections returns the recent connection traces: every connection
+// the mail server accepted, with its protocol conversation and how it ended.
+// This is where an attempt that never became a message — a refused TLS
+// handshake, a probe, a bad password — becomes visible.
+// @Summary recent mail connections
+// @Tags Email
+// @Security ApiKeyAuth
+// @Produce json
+// @Router /email/logs/connections [get]
+func GetEmailConnections(c *fiber.Ctx) error {
+	manager := email_server.GetEmailManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Email server not initialized",
+		})
+	}
+
+	return c.JSON(fiber.Map{
+		"error": false,
+		"data":  manager.ConnectionTraces(atoiDefault(c.Query("limit"), 100)),
+	})
+}
+
+// GetEmailCertificate reports on the mail server's TLS certificate: what it
+// covers, what it is missing, and whether a Let's Encrypt request can be made.
+// @Summary mail TLS certificate status
+// @Tags Email
+// @Security ApiKeyAuth
+// @Produce json
+// @Router /email/certificate [get]
+func GetEmailCertificate(c *fiber.Ctx) error {
+	manager := email_server.GetEmailManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Email server not initialized",
+		})
+	}
+	return c.JSON(fiber.Map{"error": false, "data": manager.CertificateStatus()})
+}
+
+// RequestEmailCertificate issues a Let's Encrypt certificate for the mail
+// hostname through the API Gateway's ACME account.
+// @Summary request a Let's Encrypt certificate for mail
+// @Tags Email
+// @Security ApiKeyAuth
+// @Produce json
+// @Router /email/certificate/request [post]
+func RequestEmailCertificate(c *fiber.Ctx) error {
+	manager := email_server.GetEmailManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "Email server not initialized",
+		})
+	}
+
+	status, err := manager.RequestLetsEncryptCertificate()
+	if err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+			"data":  status,
+		})
+	}
+	return c.JSON(fiber.Map{"error": false, "data": status})
+}

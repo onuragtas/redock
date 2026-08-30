@@ -774,7 +774,6 @@ const logAutoRefresh = ref(true);
 const expandedLogIds = ref(new Set());
 const logError = ref('');
 const rawLogLines = ref([]);
-const showRawLog = ref(false);
 let logTimer = null;
 
 const loadLogs = async () => {
@@ -821,7 +820,92 @@ const loadRawLog = async () => {
   }
 };
 
-const refreshLogs = () => (showRawLog.value ? loadRawLog() : loadLogs());
+const connections = ref([]);
+const expandedConnIds = ref(new Set());
+const logView = ref('messages'); // messages | connections | raw
+
+// Connection traces show what happened on the wire: attempts that never became
+// a message (refused TLS, probes, bad passwords) live here, not in the message log.
+const certificate = ref(null);
+const requestingCert = ref(false);
+
+const loadCertificate = async () => {
+  try {
+    const response = await ApiService.get('/api/email/certificate');
+    if (!response.data.error) certificate.value = response.data.data;
+  } catch (error) {
+    console.error('Failed to load certificate status:', error);
+  }
+};
+
+// Ask Let's Encrypt — through the API Gateway's ACME account — for a
+// certificate covering the mail hostname.
+const requestCertificate = async () => {
+  requestingCert.value = true;
+  try {
+    const response = await ApiService.post('/api/email/certificate/request');
+    if (!response.data.error) {
+      certificate.value = response.data.data;
+      toast.success(t('em.certIssued'));
+      await loadEngine();
+    } else {
+      certificate.value = response.data.data || certificate.value;
+      toast.error(response.data.msg || t('em.certFailed'));
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.certFailed'));
+  } finally {
+    requestingCert.value = false;
+  }
+};
+
+const loadConnections = async () => {
+  logsLoading.value = true;
+  try {
+    const response = await ApiService.get('/api/email/logs/connections', { params: { limit: 200 } });
+    if (!response.data.error) {
+      connections.value = response.data.data || [];
+      logError.value = '';
+    } else {
+      logError.value = response.data.msg || t('em.logsFailed');
+    }
+  } catch (error) {
+    logError.value = error.response?.data?.msg || error.message || t('em.logsFailed');
+  } finally {
+    logsLoading.value = false;
+  }
+};
+
+const toggleConnection = (id) => {
+  const next = new Set(expandedConnIds.value);
+  if (next.has(id)) {
+    next.delete(id);
+  } else {
+    next.add(id);
+  }
+  expandedConnIds.value = next;
+};
+
+const formatTraceTime = (value) => {
+  if (!value) return '';
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? '' : d.toLocaleTimeString();
+};
+
+const connectionDuration = (conn) => {
+  if (!conn.started_at) return '-';
+  const start = new Date(conn.started_at).getTime();
+  const end = conn.ended_at ? new Date(conn.ended_at).getTime() : Date.now();
+  const ms = end - start;
+  if (ms < 1000) return ms + ' ms';
+  return (ms / 1000).toFixed(1) + ' s';
+};
+
+const refreshLogs = () => {
+  if (logView.value === 'connections') return loadConnections();
+  if (logView.value === 'raw') return loadRawLog();
+  return loadLogs();
+};
 
 const toggleLogDetail = (id) => {
   const next = new Set(expandedLogIds.value);
@@ -876,7 +960,7 @@ const formatLogSize = (bytes) => {
 };
 
 // Poll only while the logs tab is open, so the other tabs cost nothing.
-watch([activeTab, logAutoRefresh, showRawLog], () => {
+watch([activeTab, logAutoRefresh, logView], () => {
   if (logTimer) {
     clearInterval(logTimer);
     logTimer = null;
@@ -890,7 +974,7 @@ watch([activeTab, logAutoRefresh, showRawLog], () => {
 });
 
 watch([logDirection, logStatus], () => {
-  if (activeTab.value === 'logs' && !showRawLog.value) loadLogs();
+  if (activeTab.value === 'logs' && logView.value === 'messages') loadLogs();
 });
 
 onUnmounted(() => {
@@ -931,6 +1015,7 @@ const loadEngine = async () => {
     queueItems.value = queueRes.data?.data || [];
     dnsRecords.value = dnsRes.data?.data || [];
     legacyArtifacts.value = legacyRes.data?.data || [];
+    await loadCertificate();
   } catch (error) {
     console.error('Failed to load mail server status:', error);
   } finally {
@@ -1920,6 +2005,12 @@ onMounted(() => {
             <option value="bounced">bounced</option>
             <option value="rejected">rejected</option>
             <option value="login">login</option>
+            <option value="auth-failed">auth-failed</option>
+            <option value="connect">connect</option>
+            <option value="disconnect">disconnect</option>
+            <option value="tls-handshake">tls-handshake</option>
+            <option value="conn-error">conn-error</option>
+            <option value="error">error</option>
           </select>
 
           <input
@@ -1945,10 +2036,21 @@ onMounted(() => {
             {{ t('em.logAutoRefresh') }}
           </label>
 
-          <label class="flex items-center gap-2 text-sm text-gray-500">
-            <input v-model="showRawLog" type="checkbox" />
-            {{ t('em.logRawView') }}
-          </label>
+          <div class="flex rounded-lg overflow-hidden border border-gray-300 dark:border-gray-700 text-sm">
+            <button
+              v-for="view in ['messages', 'connections', 'raw']"
+              :key="view"
+              :class="[
+                'px-3 py-2 transition-colors',
+                logView === view
+                  ? 'bg-blue-500 text-white'
+                  : 'bg-white dark:bg-slate-800 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-slate-700'
+              ]"
+              @click="logView = view"
+            >
+              {{ t('em.logView_' + view) }}
+            </button>
+          </div>
 
           <BaseButton :icon="mdiRefresh" color="info" small :disabled="logsLoading" @click="refreshLogs" />
         </div>
@@ -1963,12 +2065,12 @@ onMounted(() => {
 
         <!-- Raw view -->
         <pre
-          v-else-if="showRawLog"
+          v-else-if="logView === 'raw'"
           class="text-xs font-mono bg-gray-50 dark:bg-slate-900 p-3 rounded-lg overflow-auto max-h-[60vh] whitespace-pre-wrap"
         >{{ rawLogLines.join('\n') }}</pre>
 
         <!-- Parsed view -->
-        <div v-else-if="logEntries.length" class="overflow-x-auto">
+        <div v-else-if="logView === 'messages' && logEntries.length" class="overflow-x-auto">
           <table class="w-full text-sm">
             <thead class="text-left text-gray-500 dark:text-gray-400">
               <tr>
@@ -2037,6 +2139,55 @@ onMounted(() => {
           </table>
         </div>
 
+        <!-- Connections: every accepted connection with its protocol trace -->
+        <div v-else-if="logView === 'connections' && connections.length" class="space-y-2">
+          <div
+            v-for="conn in connections"
+            :key="conn.id"
+            class="border border-gray-200 dark:border-gray-700 rounded-lg overflow-hidden"
+          >
+            <button
+              class="w-full flex flex-wrap items-center gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50 dark:hover:bg-slate-800/50"
+              @click="toggleConnection(conn.id)"
+            >
+              <span class="text-xs text-gray-500 w-36 shrink-0">{{ formatLogTime(conn.started_at) }}</span>
+              <span class="font-mono text-xs px-2 py-0.5 rounded-full" :class="tlsBadge(conn.tls)">
+                {{ conn.service }}
+              </span>
+              <span class="font-mono text-xs">{{ conn.remote_ip }}<span class="text-gray-400">:{{ conn.remote_port }}</span></span>
+              <span
+                class="text-xs px-2 py-0.5 rounded-full"
+                :class="conn.encrypted
+                  ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                  : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'"
+              >
+                {{ conn.encrypted ? t('em.connEncrypted') : t('em.connPlaintext') }}
+              </span>
+              <span class="text-xs text-gray-500">{{ connectionDuration(conn) }}</span>
+              <span v-if="conn.error" class="text-xs text-red-500 truncate flex-1">{{ conn.error }}</span>
+              <span v-else class="text-xs text-gray-400 flex-1">{{ conn.lines?.length || 0 }} {{ t('em.connLines') }}</span>
+              <span v-if="!conn.ended_at" class="text-xs text-blue-500">{{ t('em.connOpen') }}</span>
+            </button>
+
+            <div v-if="expandedConnIds.has(conn.id)" class="bg-gray-50 dark:bg-slate-900/60 px-3 py-2">
+              <div v-if="conn.lines?.length" class="font-mono text-[11px] space-y-0.5 max-h-80 overflow-y-auto">
+                <div v-for="(line, i) in conn.lines" :key="i" class="flex gap-2">
+                  <span class="w-16 shrink-0 text-gray-400">{{ formatTraceTime(line.timestamp) }}</span>
+                  <span
+                    class="w-6 shrink-0"
+                    :class="line.direction === 'in' ? 'text-blue-500' : line.direction === 'out' ? 'text-emerald-500' : 'text-amber-500'"
+                  >
+                    {{ line.direction === 'in' ? '→' : line.direction === 'out' ? '←' : '·' }}
+                  </span>
+                  <span class="break-all whitespace-pre-wrap">{{ line.text }}</span>
+                </div>
+              </div>
+              <p v-else class="text-xs text-gray-500">{{ t('em.connNoLines') }}</p>
+              <p v-if="conn.truncated" class="text-xs text-amber-500 mt-1">{{ t('em.connTruncated') }}</p>
+            </div>
+          </div>
+        </div>
+
         <div v-else class="text-center py-12 text-gray-500">
           <BaseIcon :path="mdiInbox" size="48" class="mx-auto mb-3 opacity-40" />
           <p>{{ logsLoading ? t('em.logLoading') : t('em.logEmpty') }}</p>
@@ -2083,6 +2234,88 @@ onMounted(() => {
           <div>
             <span class="text-gray-500 block text-xs">{{ t('em.engineMailRoot') }}</span>
             <span class="font-mono text-xs break-all">{{ nativeStatus.mail_root }}</span>
+          </div>
+        </div>
+      </CardBox>
+
+      <!-- TLS certificate -->
+      <CardBox v-if="certificate" class="mb-6">
+        <div class="flex flex-wrap items-start justify-between gap-3 mb-4">
+          <div>
+            <h3 class="text-lg font-semibold">{{ t('em.certTitle') }}</h3>
+            <p class="text-sm text-gray-500">{{ t('em.certHint') }}</p>
+          </div>
+          <BaseButton
+            :icon="mdiKey"
+            :label="t('em.certRequest')"
+            color="success"
+            small
+            :disabled="requestingCert || !certificate.acme_ready"
+            @click="requestCertificate"
+          />
+        </div>
+
+        <div
+          v-if="!certificate.acme_ready && certificate.acme_reason"
+          class="mb-4 px-3 py-2 rounded text-sm bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+        >
+          {{ certificate.acme_reason }}
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-sm mb-4">
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.certSource') }}</span>
+            <span class="font-medium">{{ certificate.source }}</span>
+            <span
+              v-if="certificate.self_signed"
+              class="ml-1 text-xs px-2 py-0.5 rounded-full bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400"
+            >
+              {{ t('em.certSelfSigned') }}
+            </span>
+          </div>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.certIssuer') }}</span>
+            <span class="font-medium">{{ certificate.issuer || '-' }}</span>
+          </div>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.certExpiry') }}</span>
+            <span class="font-medium" :class="certificate.days_left < 15 ? 'text-red-500' : ''">
+              {{ formatQueueTime(certificate.not_after) }}
+              <span class="text-gray-500">({{ certificate.days_left }} {{ t('em.certDays') }})</span>
+            </span>
+          </div>
+          <div>
+            <span class="text-gray-500 block text-xs">{{ t('em.certPath') }}</span>
+            <span class="font-mono text-xs break-all">{{ certificate.cert_path || t('em.certSelfPath') }}</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
+          <div>
+            <span class="text-gray-500 block text-xs mb-1">{{ t('em.certNames') }}</span>
+            <div class="flex flex-wrap gap-1">
+              <span
+                v-for="name in certificate.names"
+                :key="name"
+                class="text-xs font-mono px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800"
+              >{{ name }}</span>
+              <span
+                v-for="ip in certificate.ips"
+                :key="ip"
+                class="text-xs font-mono px-2 py-0.5 rounded-full bg-gray-100 dark:bg-slate-800"
+              >{{ ip }}</span>
+            </div>
+          </div>
+          <div v-if="certificate.missing?.length">
+            <span class="text-gray-500 block text-xs mb-1">{{ t('em.certMissing') }}</span>
+            <div class="flex flex-wrap gap-1">
+              <span
+                v-for="name in certificate.missing"
+                :key="name"
+                class="text-xs font-mono px-2 py-0.5 rounded-full bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400"
+              >{{ name }}</span>
+            </div>
+            <p class="text-xs text-gray-500 mt-1">{{ t('em.certMissingHint') }}</p>
           </div>
         </div>
       </CardBox>
@@ -2165,6 +2398,10 @@ onMounted(() => {
           <label class="flex items-center gap-2">
             <input v-model="nativeConfig.reject_on_dmarc_fail" type="checkbox" />
             {{ t('em.optDMARCReject') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.log_connections" type="checkbox" />
+            {{ t('em.optLogConnections') }}
           </label>
         </div>
 

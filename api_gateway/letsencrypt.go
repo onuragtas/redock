@@ -567,7 +567,7 @@ func obtainCertificateViaACME(workDir string, cfg *LetsEncryptConfig, wantDomain
 	}
 
 	csrTemplate := &x509.CertificateRequest{
-		Subject:  pkix.Name{CommonName: domains[0]},
+		Subject:   pkix.Name{CommonName: domains[0]},
 		DNSNames:  domains,
 		Signature: nil,
 	}
@@ -805,4 +805,65 @@ func ClearACMEChallenge(token string) {
 func createJWS(key *ecdsa.PrivateKey, protected, payload []byte) ([]byte, error) {
 	// This is a placeholder - full implementation would require proper JWS creation
 	return bytes.Join([][]byte{protected, payload}, []byte(".")), nil
+}
+
+// ObtainCertificate issues a Let's Encrypt certificate for the given domains
+// into certPath/keyPath, reusing the gateway's ACME account and its port-80
+// HTTP-01 responder. Exported so other services — the mail server, whose
+// hostname needs its own certificate — can be issued one without duplicating
+// the ACME plumbing.
+//
+// The gateway must be listening on port 80 for the challenge to be answered.
+func ObtainCertificate(workDir string, cfg *LetsEncryptConfig, domains []string, certPath, keyPath string) error {
+	if cfg == nil {
+		return errors.New("Let's Encrypt is not configured")
+	}
+	if strings.TrimSpace(cfg.Email) == "" {
+		return errors.New("Let's Encrypt needs a contact email address")
+	}
+	return obtainCertificateViaACME(workDir, cfg, domains, certPath, keyPath)
+}
+
+// ACMEReady reports whether an ACME order can succeed right now: the gateway
+// has to be serving port 80 so Let's Encrypt can fetch the challenge token.
+func ACMEReady() (bool, string) {
+	g := GetGateway()
+	if g == nil {
+		return false, "the API Gateway is not initialised"
+	}
+	if !g.IsRunning() {
+		return false, "the API Gateway must be running: Let's Encrypt validates over port 80"
+	}
+
+	config := g.GetConfig()
+	if config == nil || config.LetsEncrypt == nil {
+		return false, "Let's Encrypt is not configured on the API Gateway"
+	}
+	if strings.TrimSpace(config.LetsEncrypt.Email) == "" {
+		return false, "set a Let's Encrypt contact email on the API Gateway first"
+	}
+	return true, ""
+}
+
+// LetsEncryptSettings returns the gateway's ACME settings (contact address,
+// staging flag, renewal window) for another service to reuse.
+func LetsEncryptSettings() *LetsEncryptConfig {
+	g := GetGateway()
+	if g == nil {
+		return nil
+	}
+	config := g.GetConfig()
+	if config == nil {
+		return nil
+	}
+	return config.LetsEncrypt
+}
+
+// GatewayWorkDir is where the shared ACME account key lives.
+func GatewayWorkDir() string {
+	g := GetGateway()
+	if g == nil {
+		return ""
+	}
+	return g.workDir
 }

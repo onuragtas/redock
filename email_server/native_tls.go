@@ -35,6 +35,12 @@ type certManager struct {
 	leKey    string
 	selfDir  string
 	hostname string
+	// names / ips are every identity the certificate must cover: the mail
+	// hostname, mail.<domain> for each served domain, and every address this
+	// machine answers on. A client that connects by IP (10.0.70.5, say) fails
+	// verification unless that IP is in the SAN list.
+	names []string
+	ips   []net.IP
 
 	cached     *tls.Certificate
 	cachedFrom string
@@ -45,7 +51,7 @@ type certManager struct {
 // certReloadInterval is how often the files are re-stat'ed during handshakes.
 const certReloadInterval = 60 * time.Second
 
-func newCertManager(hostname, dataPath, workDir, certFile, keyFile string) *certManager {
+func newCertManager(hostname, dataPath, workDir, certFile, keyFile string, names []string, ips []net.IP) *certManager {
 	return &certManager{
 		certFile: certFile,
 		keyFile:  keyFile,
@@ -53,7 +59,64 @@ func newCertManager(hostname, dataPath, workDir, certFile, keyFile string) *cert
 		leKey:    filepath.Join(workDir, "data", "tls.key"),
 		selfDir:  filepath.Join(dataPath, "tls"),
 		hostname: hostname,
+		names:    names,
+		ips:      ips,
 	}
+}
+
+// localAddresses collects every non-loopback address of this host, so a client
+// reaching the server on a LAN or container address still gets a certificate
+// that matches what it dialled.
+func localAddresses() []net.IP {
+	ips := []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")}
+
+	addrs, err := net.InterfaceAddrs()
+	if err != nil {
+		return ips
+	}
+	for _, addr := range addrs {
+		var ip net.IP
+		switch v := addr.(type) {
+		case *net.IPNet:
+			ip = v.IP
+		case *net.IPAddr:
+			ip = v.IP
+		}
+		if ip == nil || ip.IsLoopback() || ip.IsLinkLocalUnicast() {
+			continue
+		}
+		ips = append(ips, ip)
+	}
+	return ips
+}
+
+// certificateCovers reports whether a certificate already vouches for every
+// name and address we need, which is what decides if it has to be re-issued.
+func certificateCovers(cert *x509.Certificate, names []string, ips []net.IP) bool {
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		if cert.VerifyHostname(name) != nil {
+			return false
+		}
+	}
+	for _, ip := range ips {
+		if ip == nil {
+			continue
+		}
+		found := false
+		for _, certIP := range cert.IPAddresses {
+			if certIP.Equal(ip) {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return false
+		}
+	}
+	return true
 }
 
 // TLSConfig returns a config usable for both STARTTLS and implicit-TLS
@@ -154,9 +217,23 @@ func (c *certManager) selfSigned() (*tls.Certificate, error) {
 	certPath := filepath.Join(c.selfDir, "self.crt")
 	keyPath := filepath.Join(c.selfDir, "self.key")
 
-	if pair, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil {
-		if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil && time.Now().Before(leaf.NotAfter) {
-			return &pair, nil
+	hostname := c.hostname
+	if hostname == "" {
+		hostname = "localhost"
+	}
+
+	names := dedupeStrings(append([]string{hostname, "localhost"}, c.names...))
+	ips := dedupeIPs(append(localAddresses(), c.ips...))
+
+	// Reuse the existing certificate only while it is valid *and* still covers
+	// everything: a new interface address or a new mail domain has to trigger a
+	// re-issue, otherwise clients keep failing verification.
+	if pair, err := tls.LoadX509KeyPair(certPath, keyPath); err == nil && len(pair.Certificate) > 0 {
+		if leaf, err := x509.ParseCertificate(pair.Certificate[0]); err == nil {
+			if time.Now().Before(leaf.NotAfter) && certificateCovers(leaf, names, ips) {
+				return &pair, nil
+			}
+			log.Printf("mail: re-issuing the self-signed certificate to cover %v / %v", names, ips)
 		}
 	}
 
@@ -174,11 +251,6 @@ func (c *certManager) selfSigned() (*tls.Certificate, error) {
 		return nil, err
 	}
 
-	hostname := c.hostname
-	if hostname == "" {
-		hostname = "localhost"
-	}
-
 	template := x509.Certificate{
 		SerialNumber:          serial,
 		Subject:               pkix.Name{CommonName: hostname, Organization: []string{"Redock Mail"}},
@@ -187,8 +259,8 @@ func (c *certManager) selfSigned() (*tls.Certificate, error) {
 		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
-		DNSNames:              []string{hostname, "localhost"},
-		IPAddresses:           []net.IP{net.ParseIP("127.0.0.1"), net.ParseIP("::1")},
+		DNSNames:              names,
+		IPAddresses:           ips,
 	}
 
 	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
@@ -214,6 +286,39 @@ func (c *certManager) selfSigned() (*tls.Certificate, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to build self-signed certificate: %w", err)
 	}
-	log.Printf("mail: generated a self-signed TLS certificate for %s", hostname)
+	log.Printf("mail: generated a self-signed TLS certificate for %v (%v)", names, ips)
 	return &pair, nil
+}
+
+func dedupeStrings(values []string) []string {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
+}
+
+func dedupeIPs(values []net.IP) []net.IP {
+	seen := make(map[string]struct{}, len(values))
+	out := make([]net.IP, 0, len(values))
+	for _, ip := range values {
+		if ip == nil {
+			continue
+		}
+		key := ip.String()
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, ip)
+	}
+	return out
 }

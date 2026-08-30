@@ -22,6 +22,7 @@ func EmailRoutes(app *fiber.App) {
 	// Mail traffic logs (incoming / outgoing / rejected)
 	email.Get("/logs", controllers.GetEmailLogs)
 	email.Get("/logs/raw", controllers.GetEmailRawLogs)
+	email.Get("/logs/connections", controllers.GetEmailConnections)
 
 	// Native engine: mode switch, listener settings, outbound queue, DNS help
 	email.Get("/engine", controllers.GetEmailEngine)
@@ -30,6 +31,8 @@ func EmailRoutes(app *fiber.App) {
 	email.Get("/queue", controllers.GetEmailQueue)
 	email.Post("/queue/flush", controllers.FlushEmailQueue)
 	email.Delete("/queue/:id", controllers.DeleteEmailQueueItem)
+	email.Get("/certificate", controllers.GetEmailCertificate)
+	email.Post("/certificate/request", controllers.RequestEmailCertificate)
 	email.Get("/dns-records", controllers.GetEmailDNSRecords)
 	email.Post("/dns-records/sync", controllers.SyncEmailDNS)
 	email.Get("/legacy", controllers.GetEmailLegacyArtifacts)

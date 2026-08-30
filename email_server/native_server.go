@@ -21,13 +21,15 @@ import (
 type NativeServer struct {
 	manager *EmailManager
 
-	mu        sync.Mutex
-	running   bool
-	startedAt time.Time
-	listeners []*mailListener
-	certs     *certManager
-	store     *MaildirStore
-	queue     *OutboundQueue
+	mu         sync.Mutex
+	running    bool
+	startedAt  time.Time
+	listeners  []*mailListener
+	certs      *certManager
+	stop       chan struct{}
+	store      *MaildirStore
+	queue      *OutboundQueue
+	traceStore *traceStore
 }
 
 // mailListener is one bound port plus what is needed to shut it down.
@@ -169,6 +171,7 @@ func EnableAllNativeServices(cfg *EmailServerConfig) {
 	cfg.IMAPsEnabled = true
 	cfg.POP3Enabled = true
 	cfg.POP3sEnabled = true
+	cfg.LogConnections = true
 	cfg.CheckSPF = true
 	cfg.CheckDKIM = true
 	cfg.CheckDMARC = true
@@ -197,8 +200,9 @@ func (n *NativeServer) Start() error {
 		log.Printf("mail: could not prepare mailboxes: %v", err)
 	}
 
-	certs := newCertManager(cfg.Hostname, m.dataPath, m.workDir(), cfg.SSLCertPath, cfg.SSLKeyPath)
-	tlsConfig := certs.TLSConfig()
+	certs := newCertManager(cfg.Hostname, m.dataPath, m.workDir(), cfg.SSLCertPath, cfg.SSLKeyPath,
+		m.certificateNames(cfg), m.certificateIPs(cfg))
+	tlsConfig := m.tlsConfigForService(certs.TLSConfig(), "tls")
 
 	var listeners []*mailListener
 	fail := func(err error) error {
@@ -210,14 +214,14 @@ func (n *NativeServer) Start() error {
 
 	// --- SMTP family ---
 	inbound := n.newSMTPServer(cfg, false, tlsConfig, true)
-	if l, err := listenPlain(cfg.SMTPPort, "smtp", "starttls", inbound); err != nil {
+	if l, err := listenPlain(m, cfg.SMTPPort, "smtp", "starttls", inbound); err != nil {
 		return fail(err)
 	} else if l != nil {
 		listeners = append(listeners, l)
 	}
 
 	submission := n.newSMTPServer(cfg, true, tlsConfig, true)
-	if l, err := listenPlain(cfg.SubmissionPort, "submission", "starttls", submission); err != nil {
+	if l, err := listenPlain(m, cfg.SubmissionPort, "submission", "starttls", submission); err != nil {
 		return fail(err)
 	} else if l != nil {
 		listeners = append(listeners, l)
@@ -225,7 +229,7 @@ func (n *NativeServer) Start() error {
 
 	if cfg.SMTPSEnabled {
 		smtps := n.newSMTPServer(cfg, true, tlsConfig, false)
-		if l, err := listenTLS(cfg.SMTPSPort, "smtps", smtps, tlsConfig); err != nil {
+		if l, err := listenTLS(m, cfg.SMTPSPort, "smtps", smtps, tlsConfig); err != nil {
 			return fail(err)
 		} else if l != nil {
 			listeners = append(listeners, l)
@@ -240,7 +244,7 @@ func (n *NativeServer) Start() error {
 			imapSrv := server.New(backend)
 			imapSrv.TLSConfig = tlsConfig
 			imapSrv.AllowInsecureAuth = !cfg.STARTTLSRequired
-			if l, err := listenIMAP(cfg.IMAPPort, "imap", "starttls", imapSrv, false); err != nil {
+			if l, err := listenIMAP(m, cfg.IMAPPort, "imap", "starttls", imapSrv, false); err != nil {
 				return fail(err)
 			} else if l != nil {
 				listeners = append(listeners, l)
@@ -250,7 +254,7 @@ func (n *NativeServer) Start() error {
 		if cfg.IMAPsEnabled {
 			imapsSrv := server.New(backend)
 			imapsSrv.TLSConfig = tlsConfig
-			if l, err := listenIMAP(cfg.IMAPsPort, "imaps", "implicit", imapsSrv, true); err != nil {
+			if l, err := listenIMAP(m, cfg.IMAPsPort, "imaps", "implicit", imapsSrv, true); err != nil {
 				return fail(err)
 			} else if l != nil {
 				listeners = append(listeners, l)
@@ -261,7 +265,7 @@ func (n *NativeServer) Start() error {
 	// --- POP3 family ---
 	if cfg.POP3Enabled {
 		pop3 := &pop3Server{manager: m, tlsConfig: tlsConfig, requireTLS: cfg.STARTTLSRequired}
-		if l, err := listenPOP3(cfg.POP3Port, "pop3", "starttls", pop3, false); err != nil {
+		if l, err := listenPOP3(m, cfg.POP3Port, "pop3", "starttls", pop3, false); err != nil {
 			return fail(err)
 		} else if l != nil {
 			listeners = append(listeners, l)
@@ -269,7 +273,7 @@ func (n *NativeServer) Start() error {
 	}
 	if cfg.POP3sEnabled {
 		pop3s := &pop3Server{manager: m, tlsConfig: tlsConfig}
-		if l, err := listenPOP3(cfg.POP3sPort, "pop3s", "implicit", pop3s, true); err != nil {
+		if l, err := listenPOP3(m, cfg.POP3sPort, "pop3s", "implicit", pop3s, true); err != nil {
 			return fail(err)
 		} else if l != nil {
 			listeners = append(listeners, l)
@@ -280,12 +284,18 @@ func (n *NativeServer) Start() error {
 		return fail(err)
 	}
 
+	stop := make(chan struct{})
+
 	n.mu.Lock()
 	n.listeners = listeners
 	n.certs = certs
 	n.running = true
 	n.startedAt = time.Now()
+	n.stop = stop
 	n.mu.Unlock()
+
+	// Keep the certificate current for as long as the server runs.
+	go n.startCertificateRenewal(stop)
 
 	ports := make([]string, 0, len(listeners))
 	for _, l := range listeners {
@@ -305,6 +315,10 @@ func (n *NativeServer) Stop() {
 	listeners := n.listeners
 	n.listeners = nil
 	n.running = false
+	if n.stop != nil {
+		close(n.stop)
+		n.stop = nil
+	}
 	n.mu.Unlock()
 
 	for _, l := range listeners {
@@ -355,6 +369,11 @@ func (n *NativeServer) Status() NativeStatus {
 }
 
 func (n *NativeServer) newSMTPServer(cfg EmailServerConfig, submission bool, tlsConfig *tls.Config, starttls bool) *smtp.Server {
+	serviceName := "smtp"
+	if submission {
+		serviceName = "submission"
+	}
+
 	backend := &smtpBackend{
 		manager:    n.manager,
 		submission: submission,
@@ -369,22 +388,59 @@ func (n *NativeServer) newSMTPServer(cfg EmailServerConfig, submission bool, tls
 	srv.WriteTimeout = 5 * time.Minute
 	srv.AllowInsecureAuth = !cfg.STARTTLSRequired
 	srv.EnableSMTPUTF8 = true
+	// Protocol failures the library handles itself (bad commands, aborted
+	// connections) would otherwise only reach stdout.
+	srv.ErrorLog = &mailLogger{manager: n.manager, service: serviceName}
 	if starttls {
 		srv.TLSConfig = tlsConfig
 	}
 	return srv
 }
 
+// certificateNames is every hostname the TLS certificate must vouch for: the
+// mail hostname itself plus mail.<domain> for each served domain, so a client
+// configured with either name verifies cleanly.
+func (m *EmailManager) certificateNames(cfg EmailServerConfig) []string {
+	names := []string{cfg.Hostname}
+
+	if m.db != nil {
+		for _, domain := range memory.FindAll[*EmailDomain](m.db, "email_domains") {
+			if domain == nil || domain.IsDeleted() {
+				continue
+			}
+			names = append(names, "mail."+domain.Domain, domain.Domain)
+			if domain.MXRecord != "" {
+				names = append(names, domain.MXRecord)
+			}
+		}
+	}
+	return names
+}
+
+// certificateIPs is every address a client might dial: the configured public
+// address plus whatever this machine answers on. Without these a client
+// connecting by IP fails with "doesn't contain any IP SANs".
+func (m *EmailManager) certificateIPs(cfg EmailServerConfig) []net.IP {
+	ips := localAddresses()
+	if cfg.IPAddress != "" {
+		if ip := net.ParseIP(cfg.IPAddress); ip != nil {
+			ips = append(ips, ip)
+		}
+	}
+	return ips
+}
+
 // ---- listener helpers ----
 
-func listenPlain(port int, name, tlsMode string, srv *smtp.Server) (*mailListener, error) {
+func listenPlain(m *EmailManager, port int, name, tlsMode string, srv *smtp.Server) (*mailListener, error) {
 	if port <= 0 {
 		return nil, nil
 	}
-	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
+	raw, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("mail: cannot listen on %s port %d: %w", name, port, err)
 	}
+	listener := &tracedListener{Listener: raw, manager: m, service: name}
 
 	go func() {
 		if err := srv.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
@@ -395,14 +451,17 @@ func listenPlain(port int, name, tlsMode string, srv *smtp.Server) (*mailListene
 	return &mailListener{Name: name, Port: port, TLS: tlsMode, listener: listener, closeFn: srv.Close}, nil
 }
 
-func listenTLS(port int, name string, srv *smtp.Server, tlsConfig *tls.Config) (*mailListener, error) {
+func listenTLS(m *EmailManager, port int, name string, srv *smtp.Server, tlsConfig *tls.Config) (*mailListener, error) {
 	if port <= 0 {
 		return nil, nil
 	}
-	listener, err := tls.Listen("tcp", fmt.Sprintf(":%d", port), tlsConfig)
+	raw, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("mail: cannot listen on %s port %d: %w", name, port, err)
 	}
+	// Trace before the TLS layer so the connection itself is recorded even when
+	// the handshake never completes.
+	listener := tls.NewListener(&tracedListener{Listener: raw, manager: m, service: name, implicitTLS: true}, tlsConfig)
 
 	go func() {
 		if err := srv.Serve(listener); err != nil && !errors.Is(err, net.ErrClosed) {
@@ -413,20 +472,19 @@ func listenTLS(port int, name string, srv *smtp.Server, tlsConfig *tls.Config) (
 	return &mailListener{Name: name, Port: port, TLS: "implicit", listener: listener, closeFn: srv.Close}, nil
 }
 
-func listenIMAP(port int, name, tlsMode string, srv *server.Server, implicitTLS bool) (*mailListener, error) {
+func listenIMAP(m *EmailManager, port int, name, tlsMode string, srv *server.Server, implicitTLS bool) (*mailListener, error) {
 	if port <= 0 {
 		return nil, nil
 	}
 
-	var listener net.Listener
-	var err error
-	if implicitTLS {
-		listener, err = tls.Listen("tcp", fmt.Sprintf(":%d", port), srv.TLSConfig)
-	} else {
-		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
-	}
+	raw, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("mail: cannot listen on %s port %d: %w", name, port, err)
+	}
+
+	var listener net.Listener = &tracedListener{Listener: raw, manager: m, service: name, implicitTLS: implicitTLS}
+	if implicitTLS {
+		listener = tls.NewListener(listener, srv.TLSConfig)
 	}
 
 	go func() {
@@ -438,20 +496,19 @@ func listenIMAP(port int, name, tlsMode string, srv *server.Server, implicitTLS 
 	return &mailListener{Name: name, Port: port, TLS: tlsMode, listener: listener, closeFn: srv.Close}, nil
 }
 
-func listenPOP3(port int, name, tlsMode string, srv *pop3Server, implicitTLS bool) (*mailListener, error) {
+func listenPOP3(m *EmailManager, port int, name, tlsMode string, srv *pop3Server, implicitTLS bool) (*mailListener, error) {
 	if port <= 0 {
 		return nil, nil
 	}
 
-	var listener net.Listener
-	var err error
-	if implicitTLS {
-		listener, err = tls.Listen("tcp", fmt.Sprintf(":%d", port), srv.tlsConfig)
-	} else {
-		listener, err = net.Listen("tcp", fmt.Sprintf(":%d", port))
-	}
+	raw, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
 	if err != nil {
 		return nil, fmt.Errorf("mail: cannot listen on %s port %d: %w", name, port, err)
+	}
+
+	var listener net.Listener = &tracedListener{Listener: raw, manager: m, service: name, implicitTLS: implicitTLS}
+	if implicitTLS {
+		listener = tls.NewListener(listener, srv.tlsConfig)
 	}
 
 	go srv.Serve(listener)

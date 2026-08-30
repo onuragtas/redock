@@ -214,6 +214,10 @@ type EmailServerConfig struct {
 	CheckDMARC        bool `json:"check_dmarc"`
 	RejectOnDMARCFail bool `json:"reject_on_dmarc_fail"`
 
+	// LogConnections records every connection, TLS handshake and protocol error,
+	// not just the messages that made it through. Verbose but complete.
+	LogConnections bool `json:"log_connections"`
+
 	// Outbound queue behaviour.
 	QueueMaxAttempts  int `json:"queue_max_attempts"`
 	QueueRetryMinutes int `json:"queue_retry_minutes"`

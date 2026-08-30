@@ -23,7 +23,9 @@ type smtpBackend struct {
 }
 
 func (b *smtpBackend) NewSession(c *smtp.Conn) (smtp.Session, error) {
-	return &smtpSession{backend: b, conn: c}, nil
+	session := &smtpSession{backend: b, conn: c}
+	session.trace("session started")
+	return session, nil
 }
 
 // smtpSession is one client connection's state.
@@ -36,12 +38,25 @@ type smtpSession struct {
 	recipients []string
 }
 
+// trace records a protocol step against the connection's trace. Once STARTTLS
+// takes over, raw bytes are ciphertext, so these notes are the only record of
+// what the client actually did.
+func (s *smtpSession) trace(format string, args ...any) {
+	if s.conn == nil {
+		return
+	}
+	s.backend.manager.TraceSessionEvent(s.conn.Conn(), fmt.Sprintf(format, args...))
+}
+
 func (s *smtpSession) Reset() {
 	s.from = ""
 	s.recipients = nil
 }
 
-func (s *smtpSession) Logout() error { return nil }
+func (s *smtpSession) Logout() error {
+	s.trace("session ended")
+	return nil
+}
 
 // AuthMechanisms advertises the SASL mechanisms we accept.
 func (s *smtpSession) AuthMechanisms() []string {
@@ -75,6 +90,7 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 				Service:   "smtp",
 				Detail:    err.Error(),
 			})
+			s.trace("AUTH failed for %s: %s", username, err.Error())
 			return smtp.ErrAuthFailed
 		}
 		if !account.Mailbox.SMTPEnabled && account.Mailbox.ID != 0 {
@@ -85,6 +101,7 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 			}
 		}
 		s.account = account
+		s.trace("AUTH succeeded for %s", account.Address())
 		return nil
 	}), nil
 }
@@ -124,6 +141,7 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 
 	s.from = normalizeAddress(from)
 	s.recipients = nil
+	s.trace("MAIL FROM <%s>", s.from)
 	return nil
 }
 
@@ -165,6 +183,7 @@ func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 				SMTPCode:  550,
 				Detail:    "relay access denied: no such local recipient",
 			})
+			s.trace("RCPT TO <%s> rejected: relay access denied", address)
 			return &smtp.SMTPError{
 				Code:         550,
 				EnhancedCode: smtp.EnhancedCode{5, 7, 1},
@@ -176,6 +195,7 @@ func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 	}
 
 	s.recipients = append(s.recipients, address)
+	s.trace("RCPT TO <%s> accepted", address)
 	return nil
 }
 
@@ -190,8 +210,10 @@ func (s *smtpSession) Data(r io.Reader) error {
 
 	raw, err := readAllLimited(r, limit)
 	if err != nil {
+		s.trace("DATA rejected: %s", err.Error())
 		return &smtp.SMTPError{Code: 552, EnhancedCode: smtp.EnhancedCode{5, 3, 4}, Message: err.Error()}
 	}
+	s.trace("DATA received, %d bytes", len(raw))
 	if len(s.recipients) == 0 {
 		return &smtp.SMTPError{Code: 554, EnhancedCode: smtp.EnhancedCode{5, 5, 1}, Message: "No valid recipients"}
 	}
