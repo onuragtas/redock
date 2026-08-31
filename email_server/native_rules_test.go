@@ -226,3 +226,31 @@ func TestAliasLifecycle(t *testing.T) {
 		t.Error("a deleted alias should no longer be found")
 	}
 }
+
+func TestEnsurePostmasterCreatesTheMailboxOnce(t *testing.T) {
+	m := newTestManager(t)
+	domain, _ := seedDomain(t, m, "example.com", "alice", "secret")
+
+	if err := m.EnsurePostmaster(domain); err != nil {
+		t.Fatalf("EnsurePostmaster: %v", err)
+	}
+
+	account := m.LookupAccount("postmaster@example.com")
+	if account == nil {
+		t.Fatal("the postmaster mailbox was not created")
+	}
+	if account.Mailbox.Password == "" {
+		t.Error("the postmaster mailbox needs a password so it can be logged into")
+	}
+
+	// Running again must not create a second one.
+	if err := m.EnsurePostmaster(domain); err != nil {
+		t.Fatalf("second EnsurePostmaster: %v", err)
+	}
+	boxes := memory.Filter[*EmailMailbox](m.db, "email_mailboxes", func(mb *EmailMailbox) bool {
+		return mb.Email == "postmaster@example.com"
+	})
+	if len(boxes) != 1 {
+		t.Fatalf("expected exactly one postmaster mailbox, found %d", len(boxes))
+	}
+}

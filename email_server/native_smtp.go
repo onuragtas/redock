@@ -275,8 +275,26 @@ func (s *smtpSession) handleInbound(cfg EmailServerConfig, raw []byte, subject s
 			continue
 		}
 
+		// The owner's own rules decide where it lands and how it is flagged.
+		rules := s.backend.manager.applyFilters(account, stamped, folder)
+		if rules.Discard {
+			s.backend.manager.logMailEvent(mailEvent{
+				Direction: "in", Status: "filtered", From: s.from, To: rcpt, Subject: subject,
+				RemoteIP: s.remoteIP(), Service: "filter", MailboxID: account.Mailbox.ID,
+				Detail: "discarded by filter: " + strings.Join(rules.Applied, ", "),
+			})
+			continue
+		}
+		if len(rules.Applied) > 0 {
+			s.backend.manager.logMailEvent(mailEvent{
+				Direction: "in", Status: "filtered", From: s.from, To: rcpt, Subject: subject,
+				RemoteIP: s.remoteIP(), Service: "filter", MailboxID: account.Mailbox.ID,
+				Detail: fmt.Sprintf("filed in %s by: %s", rules.Folder, strings.Join(rules.Applied, ", ")),
+			})
+		}
+
 		if store {
-			if err := s.backend.manager.deliverLocal(account, folder, stamped, nil); err != nil {
+			if err := s.backend.manager.deliverLocal(account, rules.Folder, stamped, rules.Flags); err != nil {
 				firstErr = err
 				s.backend.manager.logMailEvent(mailEvent{
 					Direction: "in",
@@ -302,7 +320,7 @@ func (s *smtpSession) handleInbound(cfg EmailServerConfig, raw []byte, subject s
 			RemoteIP:  s.remoteIP(),
 			Service:   "smtp",
 			MailboxID: account.Mailbox.ID,
-			Detail:    fmt.Sprintf("stored in %s (spf=%s dkim=%s dmarc=%s)", folder, results.SPF, results.DKIM, results.DMARC),
+			Detail:    fmt.Sprintf("stored in %s (spf=%s dkim=%s dmarc=%s)", rules.Folder, results.SPF, results.DKIM, results.DMARC),
 		})
 	}
 

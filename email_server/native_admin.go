@@ -2,9 +2,7 @@ package email_server
 
 import (
 	"fmt"
-	"log"
 	"strings"
-	"time"
 
 	"redock/pkg/security"
 	"redock/platform/memory"
@@ -179,96 +177,6 @@ func (m *EmailManager) NativeSelfTest() []string {
 		findings = append(findings, "no problems found")
 	}
 	return findings
-}
-
-// MailboxUsage recomputes the on-disk size and message count of every mailbox
-// from the Maildir, which is the only accurate source once the native engine
-// owns delivery.
-func (m *EmailManager) MailboxUsage() error {
-	if m.db == nil {
-		return nil
-	}
-
-	mailboxes := memory.FindAll[*EmailMailbox](m.db, "email_mailboxes")
-	for _, mb := range mailboxes {
-		if mb == nil || mb.IsDeleted() {
-			continue
-		}
-		domain, err := memory.FindByID[*EmailDomain](m.db, "email_domains", mb.DomainID)
-		if err != nil || domain == nil {
-			continue
-		}
-
-		base := m.store().MailboxPath(domain.Domain, mb.Username)
-		folders, err := m.store().ListFolders(base)
-		if err != nil {
-			continue
-		}
-
-		var total int64
-		count := 0
-		for _, folder := range folders {
-			stats, err := m.store().Stats(base, folder)
-			if err != nil {
-				continue
-			}
-			total += stats.Size
-			count += int(stats.Messages)
-		}
-
-		if mb.UsedQuota == total && mb.MessageCount == count {
-			continue
-		}
-		mb.UsedQuota = total
-		mb.MessageCount = count
-		mb.LastActivity = timePtr(time.Now())
-		if err := memory.Update(m.db, "email_mailboxes", mb); err != nil {
-			log.Printf("mail: could not update usage for %s: %v", mb.Email, err)
-		}
-	}
-	return nil
-}
-
-// NativeFolderSummary is one folder's counts for the dashboard.
-type NativeFolderSummary struct {
-	Name     string `json:"name"`
-	Messages uint32 `json:"messages"`
-	Unseen   uint32 `json:"unseen"`
-	Size     int64  `json:"size"`
-}
-
-// FolderSummary lists a mailbox's folders straight from the Maildir, which is
-// what the webmail uses in native mode instead of an IMAP round-trip.
-func (m *EmailManager) FolderSummary(mailboxID uint) ([]NativeFolderSummary, error) {
-	mailbox, err := memory.FindByID[*EmailMailbox](m.db, "email_mailboxes", mailboxID)
-	if err != nil || mailbox == nil {
-		return nil, fmt.Errorf("mailbox not found")
-	}
-	domain, err := memory.FindByID[*EmailDomain](m.db, "email_domains", mailbox.DomainID)
-	if err != nil || domain == nil {
-		return nil, fmt.Errorf("domain not found")
-	}
-
-	base := m.store().MailboxPath(domain.Domain, mailbox.Username)
-	folders, err := m.store().ListFolders(base)
-	if err != nil {
-		return nil, err
-	}
-
-	out := make([]NativeFolderSummary, 0, len(folders))
-	for _, folder := range folders {
-		stats, err := m.store().Stats(base, folder)
-		if err != nil {
-			continue
-		}
-		out = append(out, NativeFolderSummary{
-			Name:     folder,
-			Messages: stats.Messages,
-			Unseen:   stats.Unseen,
-			Size:     stats.Size,
-		})
-	}
-	return out, nil
 }
 
 // ensureDomainDKIM generates a DKIM key for a domain that has none, so mail

@@ -13,6 +13,7 @@ import (
 
 	"redock/platform/memory"
 
+	idle "github.com/emersion/go-imap-idle"
 	"github.com/emersion/go-imap/server"
 	"github.com/emersion/go-smtp"
 )
@@ -253,6 +254,9 @@ func (n *NativeServer) Start() error {
 
 		if cfg.IMAPEnabled {
 			imapSrv := server.New(backend)
+			// IDLE lets a client wait for new mail instead of polling for it.
+			imapSrv.Enable(idle.NewExtension())
+			imapSrv.ErrorLog = &mailLogger{manager: m, service: "imap"}
 			imapSrv.TLSConfig = tlsConfig
 			imapSrv.AllowInsecureAuth = !cfg.STARTTLSRequired
 			if l, err := listenIMAP(m, cfg.IMAPPort, "imap", "starttls", imapSrv, false); err != nil {
@@ -264,6 +268,8 @@ func (n *NativeServer) Start() error {
 
 		if cfg.IMAPsEnabled {
 			imapsSrv := server.New(backend)
+			imapsSrv.Enable(idle.NewExtension())
+			imapsSrv.ErrorLog = &mailLogger{manager: m, service: "imaps"}
 			imapsSrv.TLSConfig = tlsConfig
 			if l, err := listenIMAP(m, cfg.IMAPsPort, "imaps", "implicit", imapsSrv, true); err != nil {
 				return fail(err)

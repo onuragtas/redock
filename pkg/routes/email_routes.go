@@ -71,6 +71,12 @@ func EmailRoutes(app *fiber.App) {
 	email.Post("/mailboxes/:mailbox_id/send", controllers.SendEmail)
 	email.Post("/mailboxes/:mailbox_id/drafts", controllers.SaveDraft)
 
+	// Mailbox filters
+	email.Get("/mailboxes/:mailbox_id/filters", controllers.GetEmailFilters)
+	email.Post("/mailboxes/:mailbox_id/filters", controllers.AddEmailFilter)
+	email.Put("/filters/:id", controllers.UpdateEmailFilter)
+	email.Delete("/filters/:id", controllers.DeleteEmailFilter)
+
 	// Message actions
 	email.Put("/mailboxes/:mailbox_id/messages/:uid/flag", controllers.SetMessageFlag)
 	email.Post("/mailboxes/:mailbox_id/messages/:uid/move", controllers.MoveMessage)

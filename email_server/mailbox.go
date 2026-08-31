@@ -71,6 +71,12 @@ func (m *EmailManager) AddDomain(domain, description string) (*EmailDomain, erro
 		return nil, fmt.Errorf("failed to create domain directory: %w", err)
 	}
 
+	// Give the domain a postmaster mailbox: DMARC reports and bounces are
+	// addressed there, and a domain without one rejects them.
+	if err := m.EnsurePostmaster(emailDomain); err != nil {
+		log.Printf("⚠️  %v", err)
+	}
+
 	return emailDomain, nil
 }
 

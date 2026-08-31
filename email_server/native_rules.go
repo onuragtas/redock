@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"redock/pkg/security"
 	"redock/platform/memory"
 )
 
@@ -441,6 +442,33 @@ func (m *EmailManager) DeleteAlias(id uint) error {
 	m.logMailEvent(mailEvent{
 		Direction: "system", Status: "alias-deleted", Service: "directory",
 		From: entry.Alias, Detail: "alias removed",
+	})
+	return nil
+}
+
+// EnsurePostmaster creates the postmaster mailbox for a domain if it is
+// missing. DMARC reports and delivery notifications are addressed there by
+// convention, and a domain without one rejects them silently.
+func (m *EmailManager) EnsurePostmaster(domain *EmailDomain) error {
+	address := "postmaster@" + domain.Domain
+	if account := m.LookupAccount(address); account != nil {
+		return nil
+	}
+
+	password, err := security.GenerateSecurePassword(24)
+	if err != nil {
+		return err
+	}
+
+	mailbox, err := m.AddMailbox(domain.ID, "postmaster", password, "Postmaster")
+	if err != nil {
+		return fmt.Errorf("could not create %s: %w", address, err)
+	}
+
+	m.logMailEvent(mailEvent{
+		Direction: "system", Status: "mailbox-created", Service: "directory",
+		To: mailbox.Email, MailboxID: mailbox.ID,
+		Detail: "postmaster mailbox created so reports and bounces have somewhere to go",
 	})
 	return nil
 }

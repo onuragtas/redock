@@ -37,6 +37,7 @@ require (
 require (
 	blitiri.com.ar/go/spf v1.6.0 // indirect
 	github.com/cretz/bine v0.2.0 // indirect
+	github.com/emersion/go-imap-idle v0.0.0-20210907174914-db2568431445 // indirect
 	github.com/emersion/go-msgauth v0.7.0 // indirect
 	github.com/onuragtas/go-requests v1.0.6 // indirect
 	github.com/quic-go/quic-go v0.61.0 // indirect

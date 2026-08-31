@@ -33,15 +33,24 @@ func newTestManager(t *testing.T) *EmailManager {
 		{"email_mailboxes", func() error { return memory.Register[*EmailMailbox](db, "email_mailboxes") }},
 		{"email_aliases", func() error { return memory.Register[*EmailAlias](db, "email_aliases") }},
 		{"email_logs", func() error { return memory.Register[*EmailLog](db, "email_logs") }},
+		{"email_filters", func() error { return memory.Register[*EmailFilter](db, "email_filters") }},
 	} {
 		if err := table.register(); err != nil {
 			t.Fatalf("register %s: %v", table.name, err)
 		}
 	}
 
+	// A real encryption key: Init always sets one, and code paths that store a
+	// recoverable password fail without it.
+	key, err := security.GenerateEncryptionKey()
+	if err != nil {
+		t.Fatalf("GenerateEncryptionKey: %v", err)
+	}
+
 	manager := &EmailManager{
 		db:            db,
 		dataPath:      dir,
+		encryptionKey: key,
 		passwordCache: make(map[string]string),
 		config: &EmailServerConfig{
 			Hostname:      "mail.example.com",
@@ -399,12 +408,6 @@ func TestRequiredDNSRecordsCoverTheEssentials(t *testing.T) {
 // leaving the user unable to log in.
 func TestRepairMissingPasswordHashes(t *testing.T) {
 	m := newTestManager(t)
-	key, err := security.GenerateEncryptionKey()
-	if err != nil {
-		t.Fatalf("GenerateEncryptionKey: %v", err)
-	}
-	m.encryptionKey = key
-
 	_, mailbox := seedDomain(t, m, "example.com", "alice", "secret")
 
 	// Reproduce the damage: hash gone, encrypted copy intact.
