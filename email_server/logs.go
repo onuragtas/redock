@@ -37,6 +37,9 @@ type MailLogEntry struct {
 	RemoteHost string    `json:"remote_host,omitempty"`
 	Size       int64     `json:"size,omitempty"`
 	MailboxID  uint      `json:"mailbox_id,omitempty"`
+	// SMTPCode is the response code the far side gave: 4xx clears itself on a
+	// retry, 5xx does not.
+	SMTPCode int `json:"smtp_code,omitempty"`
 }
 
 // MailLogQuery filters what the logs endpoint returns.
@@ -164,6 +167,9 @@ func matchesQuery(e MailLogEntry, q MailLogQuery) bool {
 
 	needle := strings.ToLower(q.Search)
 	haystack := []string{e.From, e.Subject, e.Detail, e.RemoteIP, e.RemoteHost, e.QueueID, e.MessageID, e.Service}
+	if e.SMTPCode != 0 {
+		haystack = append(haystack, fmt.Sprint(e.SMTPCode))
+	}
 	haystack = append(haystack, e.To...)
 	for _, h := range haystack {
 		if h != "" && strings.Contains(strings.ToLower(h), needle) {
@@ -214,6 +220,7 @@ func (m *EmailManager) storedLogEntries() []MailLogEntry {
 			RemoteHost: row.RemoteHost,
 			QueueID:    row.QueueID,
 			MailboxID:  row.MailboxID,
+			SMTPCode:   row.SMTPCode,
 		}
 		if row.To != "" {
 			for _, addr := range strings.Split(row.To, ",") {

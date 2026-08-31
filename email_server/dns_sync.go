@@ -12,10 +12,13 @@ import (
 
 // DNSSyncResult reports what publishing a domain's mail records did.
 type DNSSyncResult struct {
-	Domain  string `json:"domain"`
-	Synced  bool   `json:"synced"`
-	ZoneID  string `json:"zone_id,omitempty"`
-	Message string `json:"message"`
+	Domain string `json:"domain"`
+	Synced bool   `json:"synced"`
+	ZoneID string `json:"zone_id,omitempty"`
+	// Records lists what was published, so the operator can see that the MX
+	// actually went out rather than having to check the zone by hand.
+	Records []string `json:"records,omitempty"`
+	Message string   `json:"message"`
 }
 
 // SyncDomainDNS publishes a domain's MX, SPF, DKIM and DMARC records to
@@ -56,7 +59,23 @@ func (m *EmailManager) SyncDomainDNS(domain *EmailDomain) DNSSyncResult {
 
 	if err := cfManager.CreateEmailDNSRecords(zone.ZoneID, params); err != nil {
 		result.Message = "Cloudflare rejected the records: " + err.Error()
+		m.logMailEvent(mailEvent{
+			Direction: "system",
+			Status:    "dns-failed",
+			Service:   "dns",
+			Detail:    "Cloudflare sync for " + domain.Domain + " failed: " + err.Error(),
+		})
 		return result
+	}
+
+	result.Records = []string{
+		fmt.Sprintf("MX %s → %s", domain.Domain, params.MXRecord),
+		fmt.Sprintf("TXT %s (SPF)", domain.Domain),
+		fmt.Sprintf("TXT %s._domainkey.%s (DKIM)", params.DKIMSelector, domain.Domain),
+		fmt.Sprintf("TXT _dmarc.%s (DMARC)", domain.Domain),
+	}
+	if cfg.IPAddress != "" {
+		result.Records = append(result.Records, fmt.Sprintf("A mail.%s → %s", domain.Domain, cfg.IPAddress))
 	}
 
 	domain.DNSConfigured = true
@@ -68,6 +87,13 @@ func (m *EmailManager) SyncDomainDNS(domain *EmailDomain) DNSSyncResult {
 
 	result.Synced = true
 	result.Message = "MX, SPF, DKIM and DMARC records published"
+
+	m.logMailEvent(mailEvent{
+		Direction: "system",
+		Status:    "dns-synced",
+		Service:   "dns",
+		Detail:    "Cloudflare records published for " + domain.Domain + ": " + strings.Join(result.Records, "; "),
+	})
 	return result
 }
 
@@ -96,6 +122,12 @@ func (m *EmailManager) SyncDomainDNSAsync(domain *EmailDomain) {
 		}
 		if result.Message != "" {
 			log.Printf("email_server: Cloudflare DNS for %s skipped: %s", result.Domain, result.Message)
+			m.logMailEvent(mailEvent{
+				Direction: "system",
+				Status:    "dns-skipped",
+				Service:   "dns",
+				Detail:    "DNS for " + result.Domain + " was not published: " + result.Message,
+			})
 		}
 	}()
 }

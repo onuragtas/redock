@@ -557,18 +557,19 @@ func (m *EmailManager) deliverLocal(account *Account, folder string, raw []byte,
 // server writes these directly, the dashboard no longer has to parse a
 // container's syslog output to know what happened.
 type mailEvent struct {
-	Direction string // in, out, system
-	Status    string // delivered, sent, queued, deferred, bounced, rejected, error, login, auth-failed
-	From      string
-	To        string
-	Subject   string
-	Size      int64
-	RemoteIP  string
-	Service   string
-	SMTPCode  int
-	QueueID   string
-	MailboxID uint
-	Detail    string
+	Direction  string // in, out, system
+	Status     string // delivered, sent, queued, deferred, bounced, rejected, error, login, auth-failed
+	From       string
+	To         string
+	Subject    string
+	Size       int64
+	RemoteIP   string
+	Service    string
+	SMTPCode   int
+	RemoteHost string
+	QueueID    string
+	MailboxID  uint
+	Detail     string
 }
 
 // logMailEvent records an event in the email_logs table (capped by the memory
@@ -588,6 +589,7 @@ func (m *EmailManager) logMailEvent(event mailEvent) {
 			SMTPCode:      event.SMTPCode,
 			Service:       event.Service,
 			RemoteIP:      event.RemoteIP,
+			RemoteHost:    event.RemoteHost,
 			QueueID:       event.QueueID,
 		}
 		if err := memory.Create(m.db, "email_logs", entry); err != nil {

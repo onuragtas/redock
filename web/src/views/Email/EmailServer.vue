@@ -136,9 +136,26 @@ const updatePasswordForm = ref({
 
 const newEmail = ref({
   to: '',
+  cc: '',
+  bcc: '',
   subject: '',
   body: ''
 });
+
+// Cc/Bcc stay folded away until asked for, the way mail clients do it.
+const showCcBcc = ref(false);
+
+// The address a message will be sent from, shown so it is never a surprise.
+const composeFrom = computed(() => {
+  const mailbox = mailboxes.value.find((mb) => mb.id === selectedMailbox.value);
+  return mailbox?.email || '';
+});
+
+const emptyCompose = () => ({ to: '', cc: '', bcc: '', subject: '', body: '' });
+
+// Recipients may be separated by commas or semicolons.
+const parseAddressList = (value) =>
+  (value || '').split(/[,;]/).map((address) => address.trim()).filter(Boolean);
 
 const editDomainForm = ref({
   description: '',
@@ -609,7 +626,7 @@ const sendEmail = async () => {
     toast.error(t('em.selectMailboxFirst'));
     return;
   }
-  const toList = newEmail.value.to.split(/[,;]/).map(e => e.trim()).filter(Boolean);
+  const toList = parseAddressList(newEmail.value.to);
   if (!toList.length) {
     toast.error(t('em.enterRecipient'));
     return;
@@ -621,6 +638,8 @@ const sendEmail = async () => {
   try {
     const emailData = {
       to: toList,
+      cc: parseAddressList(newEmail.value.cc),
+      bcc: parseAddressList(newEmail.value.bcc),
       subject: newEmail.value.subject.trim(),
       body: newEmail.value.body || ''
     };
@@ -631,7 +650,8 @@ const sendEmail = async () => {
     if (!response.data.error) {
       toast.success(t('em.emailSent'));
       isComposeModalActive.value = false;
-      newEmail.value = { to: '', subject: '', body: '' };
+      newEmail.value = emptyCompose();
+      showCcBcc.value = false;
       loadEmails(selectedMailbox.value, selectedFolder.value);
     } else {
       toast.error('❌ ' + response.data.msg);
@@ -695,16 +715,22 @@ const openReplyCompose = (replyAll = false) => {
   const quoted = selectedEmail.value.body_plain
     ? `\n\nOn ${formatDate(selectedEmail.value.date)} ${selectedEmail.value.from} wrote:\n${selectedEmail.value.body_plain.split('\n').map(l => '> ' + l).join('\n')}`
     : '';
-  newEmail.value = {
-    to: toAddr,
-    subject: subj,
-    body: quoted
-  };
+  // Reply-all carries the original Cc across, minus our own address.
+  let ccAddr = '';
+  if (replyAll && selectedEmail.value.cc) {
+    ccAddr = parseAddressList(selectedEmail.value.cc)
+      .filter((address) => !address.toLowerCase().includes((composeFrom.value || '').toLowerCase()))
+      .join(', ');
+  }
+
+  newEmail.value = { ...emptyCompose(), to: toAddr, cc: ccAddr, subject: subj, body: quoted };
+  showCcBcc.value = ccAddr !== '';
   isComposeModalActive.value = true;
 };
 
 const openComposeNew = () => {
-  newEmail.value = { to: '', subject: '', body: '' };
+  newEmail.value = emptyCompose();
+  showCcBcc.value = false;
   isComposeModalActive.value = true;
 };
 
@@ -713,12 +739,10 @@ const toggleStar = (email) => {
   toast.info(email.flagged ? t('em.starred') : t('em.unstarred'));
 };
 
-const onArchive = () => {
-  toast.info(t('em.archiveSoon'));
-};
+const onArchive = () => moveSelected('Archive');
 
 const onMoveToTrash = () => {
-  toast.info(t('em.trashSoon'));
+  if (selectedEmail.value) deleteMessage(selectedEmail.value);
 };
 
 const formatFileSize = (bytes) => {
@@ -1086,9 +1110,13 @@ const syncDns = async (domainId) => {
       const ok = results.filter((r) => r.synced).length;
       if (ok > 0) {
         toast.success(t('em.dnsSynced', { count: ok }));
+        // Show what went out; a missing MX is the usual reason mail vanishes.
+        const published = results.flatMap((r) => r.records || []);
+        if (published.length) toast.info(published.join(' · '), { timeout: 8000 });
       } else {
-        toast.info(results[0]?.message || t('em.dnsSyncSkipped'));
+        toast.warning(results[0]?.message || t('em.dnsSyncSkipped'));
       }
+      await runDeliverabilityCheck();
       await Promise.all([loadEngine(), loadDomains()]);
     } else {
       toast.error(response.data.msg || t('em.dnsSyncFailed'));
@@ -1204,6 +1232,121 @@ watch(activeTab, (tab) => {
   loadFolders(selectedMailbox.value);
   loadEmails(selectedMailbox.value, selectedFolder.value);
 });
+
+// Opening a message is what marks it read, and is when its attachments are
+// worth fetching.
+const openMessage = (email) => {
+  selectedEmail.value = email;
+  showEmailDetail.value = true;
+  loadThread(selectedMailbox.value, selectedFolder.value, email.uid);
+  loadAttachments(email);
+  if (!email.seen) setMessageFlag(email, 'seen', true);
+};
+
+// ---- Message actions ----
+const messageBusy = ref(false);
+
+const messageParams = () => ({ folder: selectedFolder.value });
+
+const setMessageFlag = async (email, flag, value) => {
+  messageBusy.value = true;
+  try {
+    await ApiService.put(
+      `/api/email/mailboxes/${selectedMailbox.value}/messages/${email.uid}/flag`,
+      { flag, value },
+      { options: { params: messageParams() } }
+    );
+    // Reflect it locally so the list does not have to be refetched.
+    if (flag === 'seen') email.seen = value;
+    if (flag === 'flagged') email.flagged = value;
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.messageActionFailed'));
+  } finally {
+    messageBusy.value = false;
+  }
+};
+
+const deleteMessage = async (email) => {
+  messageBusy.value = true;
+  try {
+    const response = await ApiService.delete(
+      `/api/email/mailboxes/${selectedMailbox.value}/messages/${email.uid}`,
+      { params: messageParams() }
+    );
+    if (!response.data.error) {
+      toast.success(t('em.messageDeleted'));
+      showEmailDetail.value = false;
+      await loadEmails(selectedMailbox.value, selectedFolder.value);
+      await loadFolders(selectedMailbox.value);
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.messageActionFailed'));
+  } finally {
+    messageBusy.value = false;
+  }
+};
+
+// Attachments are fetched on demand: the message list never carries them.
+const attachments = ref([]);
+
+const loadAttachments = async (email) => {
+  attachments.value = [];
+  if (!email?.has_attachments) return;
+  try {
+    const response = await ApiService.get(
+      `/api/email/mailboxes/${selectedMailbox.value}/messages/${email.uid}/attachments`,
+      { params: messageParams() }
+    );
+    if (!response.data.error) attachments.value = response.data.data || [];
+  } catch (error) {
+    console.error('Failed to list attachments:', error);
+  }
+};
+
+// The blob route keeps the JWT header, which a plain link would drop.
+const downloadAttachment = async (email, attachment) => {
+  try {
+    const response = await ApiService.get(
+      `/api/email/mailboxes/${selectedMailbox.value}/messages/${email.uid}/attachments/${attachment.index}`,
+      { params: messageParams(), options: { responseType: 'blob' } }
+    );
+    const url = URL.createObjectURL(new Blob([response.data], { type: attachment.content_type }));
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = attachment.filename;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.attachmentFailed'));
+  }
+};
+
+// moveSelected files the open message into another folder.
+const moveSelected = async (destination) => {
+  const email = selectedEmail.value;
+  if (!email) return;
+
+  messageBusy.value = true;
+  try {
+    const response = await ApiService.post(
+      `/api/email/mailboxes/${selectedMailbox.value}/messages/${email.uid}/move`,
+      { to: destination },
+      { options: { params: messageParams() } }
+    );
+    if (!response.data.error) {
+      toast.success(t('em.messageMoved', { folder: destination }));
+      showEmailDetail.value = false;
+      await loadEmails(selectedMailbox.value, selectedFolder.value);
+      await loadFolders(selectedMailbox.value);
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.messageActionFailed'));
+  } finally {
+    messageBusy.value = false;
+  }
+};
 
 onMounted(() => {
   loadData();
@@ -1696,8 +1839,12 @@ onMounted(() => {
             >
               <BaseIcon :path="folder.icon" :class="folder.color" w="w-5" h="h-5" />
               <span class="flex-1">{{ folder.name }}</span>
-              <span v-if="folder.value === selectedFolder" class="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded-full">
-                {{ totalEmailCount }}
+              <span
+                v-if="folder.message_count"
+                class="text-xs bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded-full"
+                :title="t('em.folderServerCount')"
+              >
+                {{ folder.message_count }}
               </span>
             </button>
           </nav>
@@ -1748,7 +1895,7 @@ onMounted(() => {
                     selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : '',
                     !email.seen ? 'bg-white dark:bg-slate-800' : 'bg-gray-50/50 dark:bg-slate-800/50'
                   ]"
-                  @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
+                  @click="openMessage(email)"
                 >
                   <button class="mt-1 shrink-0" @click.stop="toggleStar(email)">
                     <BaseIcon
@@ -1833,7 +1980,7 @@ onMounted(() => {
                       'px-4 py-2.5 pl-12 flex items-start gap-3 cursor-pointer border-b border-gray-100 dark:border-gray-700 last:border-b-0 hover:bg-gray-100 dark:hover:bg-gray-700/50',
                       selectedEmail?.uid === email.uid ? 'bg-blue-50 dark:bg-blue-900/10' : ''
                     ]"
-                    @click="selectedEmail = email; showEmailDetail = true; loadThread(selectedMailbox, selectedFolder, email.uid)"
+                    @click="openMessage(email)"
                   >
                     <button class="mt-0.5 shrink-0" @click.stop="toggleStar(email)">
                       <BaseIcon
@@ -1881,8 +2028,33 @@ onMounted(() => {
               <div class="flex items-center gap-2">
                 <BaseButton :icon="mdiReply" :label="t('em.reply')" color="light" small @click="openReplyCompose(false)" />
                 <BaseButton :icon="mdiReplyAll" :label="t('em.replyAll')" color="light" small @click="openReplyCompose(true)" />
-                <BaseButton :icon="mdiArchive" :label="t('em.archive')" color="light" small @click="onArchive" />
-                <BaseButton :icon="mdiTrashCan" :label="t('em.moveToTrash')" color="danger" small @click="onMoveToTrash" />
+                <BaseButton
+                  :icon="selectedEmail.flagged ? mdiStar : mdiStarOutline"
+                  :label="t('em.star')"
+                  color="light"
+                  small
+                  :disabled="messageBusy"
+                  @click="setMessageFlag(selectedEmail, 'flagged', !selectedEmail.flagged)"
+                />
+                <BaseButton :icon="mdiArchive" :label="t('em.archive')" color="light" small :disabled="messageBusy" @click="onArchive" />
+                <BaseButton :icon="mdiTrashCan" :label="t('em.moveToTrash')" color="danger" small :disabled="messageBusy" @click="onMoveToTrash" />
+              </div>
+            </div>
+
+            <!-- Attachments -->
+            <div v-if="attachments.length" class="px-6 py-3 border-b border-gray-200 dark:border-gray-700">
+              <p class="text-xs text-gray-500 mb-2">{{ t('em.attachments') }} ({{ attachments.length }})</p>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  v-for="attachment in attachments"
+                  :key="attachment.index"
+                  class="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-200 dark:border-gray-700 hover:border-blue-500 text-left"
+                  @click="downloadAttachment(selectedEmail, attachment)"
+                >
+                  <BaseIcon :path="mdiAttachment" size="18" class="text-gray-500" />
+                  <span class="text-sm truncate max-w-[180px]">{{ attachment.filename }}</span>
+                  <span class="text-xs text-gray-500">{{ formatFileSize(attachment.size) }}</span>
+                </button>
               </div>
             </div>
 
@@ -2140,7 +2312,18 @@ onMounted(() => {
                       {{ entry.status }}
                     </span>
                   </td>
-                  <td class="py-2 text-xs text-gray-500 max-w-[320px] truncate">{{ entry.detail }}</td>
+                  <td class="py-2 text-xs text-gray-500 max-w-[320px] truncate">
+                    <span
+                      v-if="entry.smtp_code"
+                      class="font-mono mr-1 px-1.5 rounded"
+                      :class="entry.smtp_code >= 500
+                        ? 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400'
+                        : entry.smtp_code >= 400
+                          ? 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400'
+                          : 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'"
+                    >{{ entry.smtp_code }}</span>
+                    {{ entry.detail }}
+                  </td>
                 </tr>
                 <tr v-if="expandedLogIds.has(entry.id)" class="bg-gray-50 dark:bg-slate-900/60">
                   <td colspan="6" class="p-4">
@@ -2152,6 +2335,10 @@ onMounted(() => {
                       <div v-if="entry.queue_id">
                         <span class="text-gray-500 block">{{ t('em.logQueueId') }}</span>
                         <span class="font-mono">{{ entry.queue_id }}</span>
+                      </div>
+                      <div v-if="entry.smtp_code">
+                        <span class="text-gray-500 block">{{ t('em.logSmtpCode') }}</span>
+                        <span class="font-mono">{{ entry.smtp_code }}</span>
                       </div>
                       <div v-if="entry.remote_ip">
                         <span class="text-gray-500 block">{{ t('em.logRemote') }}</span>
@@ -2727,10 +2914,34 @@ onMounted(() => {
       has-cancel
       @confirm="sendEmail"
     >
+      <div v-if="composeFrom" class="mb-3 text-sm">
+        <span class="text-gray-500">{{ t('em.logFrom') }}:</span>
+        <span class="font-medium ml-1">{{ composeFrom }}</span>
+      </div>
+
       <FormField :label="t('em.to')">
         <FormControl v-model="newEmail.to" :placeholder="t('em.toPlaceholder')" />
-        <p class="text-xs text-gray-500 mt-1">{{ t('em.multipleRecipientsHint') }}</p>
+        <div class="flex items-center justify-between mt-1">
+          <p class="text-xs text-gray-500">{{ t('em.multipleRecipientsHint') }}</p>
+          <button
+            v-if="!showCcBcc"
+            class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
+            @click.prevent="showCcBcc = true"
+          >
+            {{ t('em.addCcBcc') }}
+          </button>
+        </div>
       </FormField>
+
+      <template v-if="showCcBcc">
+        <FormField label="Cc">
+          <FormControl v-model="newEmail.cc" :placeholder="t('em.toPlaceholder')" />
+        </FormField>
+        <FormField label="Bcc">
+          <FormControl v-model="newEmail.bcc" :placeholder="t('em.toPlaceholder')" />
+          <p class="text-xs text-gray-500 mt-1">{{ t('em.bccHint') }}</p>
+        </FormField>
+      </template>
       <FormField :label="t('em.subject')">
         <FormControl v-model="newEmail.subject" :placeholder="t('em.subject')" />
       </FormField>

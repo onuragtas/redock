@@ -1768,7 +1768,16 @@
     "deliverRun": "Run check",
     "deliverRunning": "Checking DNS…",
     "deliverEmpty": "Run the check to see how this server looks from the outside.",
-    "deliverFailed": "The check could not be run"
+    "deliverFailed": "The check could not be run",
+    "logSmtpCode": "SMTP code",
+    "messageActionFailed": "The action failed",
+    "messageDeleted": "Message moved to Trash",
+    "messageMoved": "Message moved to {folder}",
+    "attachmentFailed": "The attachment could not be downloaded",
+    "folderServerCount": "Messages on the server",
+    "star": "Star",
+    "addCcBcc": "Add Cc / Bcc",
+    "bccHint": "Bcc recipients are hidden from everyone else."
   },
   "ta": {
     "title": "Sign in to tunnel server",

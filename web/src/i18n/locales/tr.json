@@ -1768,7 +1768,16 @@
     "deliverRun": "Kontrol et",
     "deliverRunning": "DNS kontrol ediliyor…",
     "deliverEmpty": "Sunucunun dışarıdan nasıl göründüğünü görmek için kontrolü çalıştır.",
-    "deliverFailed": "Kontrol çalıştırılamadı"
+    "deliverFailed": "Kontrol çalıştırılamadı",
+    "logSmtpCode": "SMTP kodu",
+    "messageActionFailed": "İşlem başarısız",
+    "messageDeleted": "Mail çöpe taşındı",
+    "messageMoved": "Mail {folder} klasörüne taşındı",
+    "attachmentFailed": "Ek indirilemedi",
+    "folderServerCount": "Sunucudaki mail sayısı",
+    "star": "Yıldızla",
+    "addCcBcc": "Cc / Bcc ekle",
+    "bccHint": "Bcc alıcıları diğerlerine görünmez."
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

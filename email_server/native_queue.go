@@ -2,12 +2,10 @@ package email_server
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net"
-	netsmtp "net/smtp"
 	"net/textproto"
 	"os"
 	"path/filepath"
@@ -254,36 +252,51 @@ func (q *OutboundQueue) attempt(item QueueItem) {
 	permanent := false
 
 	for domain, recipients := range groupByDomain(item.Recipients) {
-		err := q.deliverToDomain(cfg, domain, item.From, recipients, signed)
+		result, err := q.deliverToDomain(cfg, domain, item.From, recipients, signed)
 		if err == nil {
-			for _, rcpt := range recipients {
+			// The accepting reply usually carries the remote queue id, which is
+			// what a receiving provider asks for when tracing a message.
+			detail := fmt.Sprintf("accepted by %s: %s", result.Host, result.Accepted)
+			if result.TLS {
+				detail += " (over TLS)"
+			}
+			for _, rcpt := range result.Recipients {
 				q.manager.logMailEvent(mailEvent{
-					Direction: "out",
-					Status:    "sent",
-					From:      item.From,
-					To:        rcpt,
-					Subject:   item.Subject,
-					Size:      item.Size,
-					MailboxID: item.MailboxID,
-					QueueID:   item.ID,
-					Detail:    "delivered to " + domain,
+					Direction:  "out",
+					Status:     "sent",
+					From:       item.From,
+					To:         rcpt,
+					Subject:    item.Subject,
+					Size:       item.Size,
+					MailboxID:  item.MailboxID,
+					QueueID:    item.ID,
+					Service:    "queue",
+					SMTPCode:   result.Accepted.Code,
+					RemoteHost: result.Host,
+					Detail:     detail,
 				})
 			}
 			continue
 		}
 
 		lastErr = err
+		reply := replyOf(err)
+		remoteHost := hostOfError(err)
+
 		if isPermanentSMTPError(err) {
 			permanent = true
 			for _, rcpt := range recipients {
 				q.manager.logMailEvent(mailEvent{
-					Direction: "out",
-					Status:    "bounced",
-					From:      item.From,
-					To:        rcpt,
-					Subject:   item.Subject,
-					QueueID:   item.ID,
-					Detail:    err.Error(),
+					Direction:  "out",
+					Status:     "bounced",
+					From:       item.From,
+					To:         rcpt,
+					Subject:    item.Subject,
+					QueueID:    item.ID,
+					Service:    "queue",
+					SMTPCode:   reply.Code,
+					RemoteHost: remoteHost,
+					Detail:     err.Error(),
 				})
 			}
 			continue
@@ -330,25 +343,30 @@ func (q *OutboundQueue) attempt(item QueueItem) {
 	}
 	item.NextTry = time.Now().Add(delay)
 
+	deferReply := replyOf(lastErr)
+	deferHost := hostOfError(lastErr)
 	for _, rcpt := range remaining {
 		q.manager.logMailEvent(mailEvent{
-			Direction: "out",
-			Status:    "deferred",
-			From:      item.From,
-			To:        rcpt,
-			Subject:   item.Subject,
-			QueueID:   item.ID,
-			Detail:    fmt.Sprintf("attempt %d failed: %s (retry in %s)", item.Attempts, item.LastError, delay.Round(time.Minute)),
+			Direction:  "out",
+			Status:     "deferred",
+			From:       item.From,
+			To:         rcpt,
+			Subject:    item.Subject,
+			QueueID:    item.ID,
+			Service:    "queue",
+			SMTPCode:   deferReply.Code,
+			RemoteHost: deferHost,
+			Detail:     fmt.Sprintf("attempt %d failed: %s (retry in %s)", item.Attempts, item.LastError, delay.Round(time.Minute)),
 		})
 	}
 	_ = q.writeMeta(&item)
 }
 
-// deliverToDomain performs one SMTP transaction against a domain's best MX.
-func (q *OutboundQueue) deliverToDomain(cfg EmailServerConfig, domain, from string, recipients []string, raw []byte) error {
+// deliverToDomain tries each of a domain's mail exchangers in turn.
+func (q *OutboundQueue) deliverToDomain(cfg EmailServerConfig, domain, from string, recipients []string, raw []byte) (*DeliveryResult, error) {
 	hosts, err := lookupMailHosts(domain)
 	if err != nil {
-		return fmt.Errorf("MX lookup for %s failed: %w", domain, err)
+		return nil, fmt.Errorf("MX lookup for %s failed: %w", domain, err)
 	}
 
 	helo := cfg.OutboundHELO
@@ -358,75 +376,26 @@ func (q *OutboundQueue) deliverToDomain(cfg EmailServerConfig, domain, from stri
 
 	var lastErr error
 	for _, host := range hosts {
-		err := q.deliverToHost(host, helo, from, recipients, raw)
+		result, err := q.deliverToHost(host, helo, from, recipients, raw)
 		if err == nil {
-			return nil
+			return result, nil
 		}
 		lastErr = err
+		// A final refusal from one exchanger will be repeated by the others.
 		if isPermanentSMTPError(err) {
-			return err
+			return nil, err
 		}
 	}
 	if lastErr == nil {
 		lastErr = fmt.Errorf("no mail host reachable for %s", domain)
 	}
-	return lastErr
+	return nil, lastErr
 }
 
-// deliverToHost runs the SMTP transaction. It uses net/smtp rather than
-// go-smtp's client because only the standard library exposes STARTTLS as a
-// step we can take *after* greeting with our own HELO name — and the HELO name
-// is what receiving servers check against our PTR record.
-func (q *OutboundQueue) deliverToHost(host, helo, from string, recipients []string, raw []byte) error {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(host, "25"), queueDialTimeout)
-	if err != nil {
-		return fmt.Errorf("connect to %s: %w", host, err)
-	}
-	_ = conn.SetDeadline(time.Now().Add(10 * time.Minute))
-
-	client, err := netsmtp.NewClient(conn, host)
-	if err != nil {
-		conn.Close()
-		return fmt.Errorf("greeting from %s: %w", host, err)
-	}
-	defer client.Close()
-
-	if err := client.Hello(helo); err != nil {
-		return fmt.Errorf("HELO to %s: %w", host, err)
-	}
-
-	// Opportunistic TLS: encrypt when the peer offers it, but never refuse to
-	// deliver because its certificate is self-signed — that is how MTA-to-MTA
-	// TLS works in practice.
-	if ok, _ := client.Extension("STARTTLS"); ok {
-		if err := client.StartTLS(&tls.Config{ServerName: host, InsecureSkipVerify: true}); err != nil {
-			return fmt.Errorf("STARTTLS with %s: %w", host, err)
-		}
-	}
-
-	if err := client.Mail(from); err != nil {
-		return fmt.Errorf("MAIL FROM at %s: %w", host, err)
-	}
-	for _, rcpt := range recipients {
-		if err := client.Rcpt(rcpt); err != nil {
-			return fmt.Errorf("RCPT TO <%s> at %s: %w", rcpt, host, err)
-		}
-	}
-
-	writer, err := client.Data()
-	if err != nil {
-		return fmt.Errorf("DATA at %s: %w", host, err)
-	}
-	if _, err := writer.Write(raw); err != nil {
-		writer.Close()
-		return fmt.Errorf("writing message to %s: %w", host, err)
-	}
-	if err := writer.Close(); err != nil {
-		return fmt.Errorf("finishing message at %s: %w", host, err)
-	}
-
-	_ = client.Quit()
-	return nil
+// deliverToHost runs one SMTP transaction and hands back what the far side
+// said, so the log can show the remote's own words rather than "failed".
+func (q *OutboundQueue) deliverToHost(host, helo, from string, recipients []string, raw []byte) (*DeliveryResult, error) {
+	return deliverSMTP(host, helo, from, recipients, raw)
 }
 
 // bounce delivers a delivery-status notification to the original sender when
@@ -506,6 +475,10 @@ func lookupMailHosts(domain string) ([]string, error) {
 func isPermanentSMTPError(err error) bool {
 	if err == nil {
 		return false
+	}
+
+	if reply := replyOf(err); reply.Code != 0 {
+		return reply.Permanent()
 	}
 
 	var protoErr *textproto.Error
