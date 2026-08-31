@@ -221,6 +221,11 @@ type EmailServerConfig struct {
 	// blocked; MaxConnectionsPerMinute caps how fast it may reconnect.
 	MaxAuthFailures         int `json:"max_auth_failures"`
 	MaxConnectionsPerMinute int `json:"max_connections_per_minute"`
+	// MaxRelayAttempts is how many times an unauthenticated client may ask this
+	// server to deliver to somebody else's domain before it is blocked. There
+	// is no innocent reason to ask twice: a real mail server writes to a
+	// recipient here, and this server's own users authenticate first.
+	MaxRelayAttempts int `json:"max_relay_attempts"`
 	// BlockMinutes is how long a block lasts.
 	BlockMinutes int `json:"block_minutes"`
 

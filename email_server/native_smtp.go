@@ -212,6 +212,10 @@ func (s *smtpSession) Rcpt(to string, _ *smtp.RcptOptions) error {
 				Detail:    "relay access denied: no such local recipient",
 			})
 			s.trace("RCPT TO <%s> rejected: relay access denied", address)
+			// Asking this server to carry mail to a domain it does not host is
+			// not a mistake a working client makes, so it counts against the
+			// address the way a failed login does.
+			s.backend.manager.noteRelayAttempt("smtp", s.remoteIP(), address)
 			return &smtp.SMTPError{
 				Code:         550,
 				EnhancedCode: smtp.EnhancedCode{5, 7, 1},

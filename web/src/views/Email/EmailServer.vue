@@ -2065,6 +2065,10 @@ onMounted(() => {
             <input v-model.number="nativeConfig.max_auth_failures" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
           </label>
           <label class="block">
+            <span class="text-xs text-gray-500">{{ t('em.optMaxRelayAttempts') }}</span>
+            <input v-model.number="nativeConfig.max_relay_attempts" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
             <span class="text-xs text-gray-500">{{ t('em.optMaxConnections') }}</span>
             <input v-model.number="nativeConfig.max_connections_per_minute" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
           </label>

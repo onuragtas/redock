@@ -1912,7 +1912,8 @@
     "connAuthHint": "Gönderim için de alımdaki kullanıcı adı ve şifre gerekir.",
     "connPasswordHint": "Şifre, bu hesap için belirlenen şifredir. Burada gösterilmez; kaybolduysa yenisini atayın.",
     "connNoListeners": "Çalışan dinleyici yok, yani bağlanılacak bir şey de yok. Önce mail sunucusunu başlatın.",
-    "connNoHostname": "Sunucu adı tanımlı değil, bu yüzden IP gösteriliyor. TLS sertifikası IP adresini değil sunucu adını kapsar; ad tanımlanana kadar istemciler uyarı verir."
+    "connNoHostname": "Sunucu adı tanımlı değil, bu yüzden IP gösteriliyor. TLS sertifikası IP adresini değil sunucu adını kapsar; ad tanımlanana kadar istemciler uyarı verir.",
+    "optMaxRelayAttempts": "Engellemeden önceki aktarım denemesi"
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

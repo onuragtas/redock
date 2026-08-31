@@ -40,6 +40,9 @@ type connectionGuard struct {
 
 	// failures counts recent authentication failures per address.
 	failures map[string][]time.Time
+	// relays counts recent attempts to have mail delivered somewhere this
+	// server has no business delivering to.
+	relays map[string][]time.Time
 	// connections counts recent connections per address.
 	connections map[string][]time.Time
 	// blocked maps an address to when its block expires.
@@ -51,6 +54,7 @@ type connectionGuard struct {
 func newConnectionGuard() *connectionGuard {
 	guard := &connectionGuard{
 		failures:    make(map[string][]time.Time),
+		relays:      make(map[string][]time.Time),
 		connections: make(map[string][]time.Time),
 		blocked:     make(map[string]*BlockedClient),
 	}
@@ -157,6 +161,29 @@ func (g *connectionGuard) RecordAuthFailure(ip string, limit int) (bool, int) {
 	return len(kept) >= limit, len(kept)
 }
 
+// RecordRelayAttempt counts a refused relay and reports whether the address has
+// now earned a block.
+func (g *connectionGuard) RecordRelayAttempt(ip string, limit int) (bool, int) {
+	if ip == "" || limit <= 0 || g.exempt(ip) {
+		return false, 0
+	}
+
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	cutoff := time.Now().Add(-authFailureWindow)
+	kept := g.relays[ip][:0]
+	for _, when := range g.relays[ip] {
+		if when.After(cutoff) {
+			kept = append(kept, when)
+		}
+	}
+	kept = append(kept, time.Now())
+	g.relays[ip] = kept
+
+	return len(kept) >= limit, len(kept)
+}
+
 // Block refuses an address for a while.
 func (g *connectionGuard) Block(ip, reason string, duration time.Duration, failures int, manual bool) *BlockedClient {
 	if ip == "" || (!manual && g.exempt(ip)) {
@@ -189,6 +216,7 @@ func (g *connectionGuard) Unblock(ip string) bool {
 	}
 	delete(g.blocked, ip)
 	delete(g.failures, ip)
+	delete(g.relays, ip)
 	return true
 }
 
@@ -219,6 +247,11 @@ func (g *connectionGuard) sweep() {
 	for ip, entry := range g.blocked {
 		if now.After(entry.Until) {
 			delete(g.blocked, ip)
+		}
+	}
+	for ip, times := range g.relays {
+		if len(times) == 0 || now.Sub(times[len(times)-1]) > authFailureWindow {
+			delete(g.relays, ip)
 		}
 	}
 	for ip, times := range g.failures {
@@ -295,6 +328,35 @@ func (m *EmailManager) noteAuthFailure(service, ip, username string) {
 	})
 }
 
+// noteRelayAttempt records a refused relay and blocks the address once it has
+// asked too often. Unlike a failed login, which an ordinary user can produce by
+// mistyping, this is not something a correctly configured client ever does.
+func (m *EmailManager) noteRelayAttempt(service, ip, recipient string) {
+	cfg := m.nativeConfig()
+	if !cfg.GuardEnabled || ip == "" {
+		return
+	}
+
+	guard := m.guard()
+	shouldBlock, attempts := guard.RecordRelayAttempt(ip, cfg.MaxRelayAttempts)
+	if !shouldBlock {
+		return
+	}
+
+	entry := guard.Block(ip,
+		fmt.Sprintf("%d relay attempts", attempts),
+		time.Duration(cfg.BlockMinutes)*time.Minute, attempts, false)
+	if entry == nil {
+		return
+	}
+
+	m.logMailEvent(mailEvent{
+		Direction: "system", Status: "blocked", Service: service, RemoteIP: ip, To: recipient,
+		Detail: fmt.Sprintf("%d relay attempts in %s; blocked for %d minutes",
+			attempts, authFailureWindow, cfg.BlockMinutes),
+	})
+}
+
 // BlockedClients exposes the current blocks to the dashboard.
 func (m *EmailManager) BlockedClients() []BlockedClient { return m.guard().List() }
 
@@ -349,12 +411,13 @@ func (g *connectionGuard) clearCounters() int {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	dropped := len(g.failures) + len(g.connections)
+	dropped := len(g.failures) + len(g.connections) + len(g.relays)
 	if dropped == 0 {
 		return 0
 	}
 	g.failures = make(map[string][]time.Time)
 	g.connections = make(map[string][]time.Time)
+	g.relays = make(map[string][]time.Time)
 	return dropped
 }
 

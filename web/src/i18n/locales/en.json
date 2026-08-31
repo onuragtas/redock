@@ -1912,7 +1912,8 @@
     "connAuthHint": "Sending requires the same username and password as receiving.",
     "connPasswordHint": "The password is the one set for this mailbox. It is not shown here; set a new one if it has been lost.",
     "connNoListeners": "No listener is running, so there is nothing to connect to yet. Start the mail server first.",
-    "connNoHostname": "No hostname is set, so the address is shown instead. A TLS certificate covers a name rather than an address, so clients will warn until a hostname is configured."
+    "connNoHostname": "No hostname is set, so the address is shown instead. A TLS certificate covers a name rather than an address, so clients will warn until a hostname is configured.",
+    "optMaxRelayAttempts": "Relay attempts before blocking"
   },
   "ta": {
     "title": "Sign in to tunnel server",

@@ -157,6 +157,9 @@ func applyNativeDefaults(cfg *EmailServerConfig) {
 	if cfg.MaxConnectionsPerMinute <= 0 {
 		cfg.MaxConnectionsPerMinute = 60
 	}
+	if cfg.MaxRelayAttempts <= 0 {
+		cfg.MaxRelayAttempts = 3
+	}
 	if cfg.BlockMinutes <= 0 {
 		cfg.BlockMinutes = 30
 	}
