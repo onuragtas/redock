@@ -104,7 +104,15 @@ func app() {
 	routes.BackupRoutes(app)
 	routes.SystemRoutes(app)
 	// Static SPA after routes.
-	app.Use("/", filesystem.New(filesystem.Config{
+	//
+	// The embedded files carry no modification time, so the filesystem
+	// middleware sends no Last-Modified, no ETag and no Cache-Control at all.
+	// A response with no freshness information and no validator is one the
+	// browser may cache on a heuristic of its own choosing, and cannot
+	// revalidate: a dashboard upgraded underneath an open tab could keep
+	// loading the previous index.html, and with it the previous asset names.
+	// Say explicitly what may be reused instead of leaving it to the browser.
+	app.Use("/", staticCacheHeaders, filesystem.New(filesystem.Config{
 		Root:       http.FS(embedDirStatic),
 		PathPrefix: "web/dist",
 	}))
@@ -228,4 +236,20 @@ func recoverFunction() {
 		stack := string(debug.Stack())
 		log.Println("[RECOVER][ERROR]", r, stack)
 	}
+}
+
+// staticCacheHeaders tells the browser what it may reuse from the embedded UI.
+//
+// Vite names every build artefact after a hash of its contents, so those files
+// can never change meaning and are safe to keep for a year. Everything else —
+// index.html above all, which is what points at the current hashes — must be
+// checked on each load, otherwise a new release stays invisible to a tab that
+// already has the old one.
+func staticCacheHeaders(c *fiber.Ctx) error {
+	if strings.HasPrefix(c.Path(), "/assets/") {
+		c.Set(fiber.HeaderCacheControl, "public, max-age=31536000, immutable")
+	} else {
+		c.Set(fiber.HeaderCacheControl, "no-cache")
+	}
+	return c.Next()
 }
