@@ -214,6 +214,16 @@ type EmailServerConfig struct {
 	CheckDMARC        bool `json:"check_dmarc"`
 	RejectOnDMARCFail bool `json:"reject_on_dmarc_fail"`
 
+	// GuardEnabled turns on connection-rate limiting and blocking after repeated
+	// failed logins — the job fail2ban did in the container setup.
+	GuardEnabled bool `json:"guard_enabled"`
+	// MaxAuthFailures is how many failed logins an address gets before it is
+	// blocked; MaxConnectionsPerMinute caps how fast it may reconnect.
+	MaxAuthFailures         int `json:"max_auth_failures"`
+	MaxConnectionsPerMinute int `json:"max_connections_per_minute"`
+	// BlockMinutes is how long a block lasts.
+	BlockMinutes int `json:"block_minutes"`
+
 	// LogConnections records every connection, TLS handshake and protocol error,
 	// not just the messages that made it through. Verbose but complete.
 	LogConnections bool `json:"log_connections"`

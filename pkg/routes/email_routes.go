@@ -45,6 +45,17 @@ func EmailRoutes(app *fiber.App) {
 	email.Put("/domains/:domain_id", controllers.UpdateEmailDomain)
 	email.Delete("/domains/:domain_id", controllers.DeleteEmailDomain)
 
+	// Aliases
+	email.Get("/aliases", controllers.GetEmailAliases)
+	email.Post("/aliases", controllers.AddEmailAlias)
+	email.Put("/aliases/:id", controllers.UpdateEmailAlias)
+	email.Delete("/aliases/:id", controllers.DeleteEmailAlias)
+
+	// Abuse protection
+	email.Get("/blocked", controllers.GetEmailBlockedClients)
+	email.Post("/blocked", controllers.BlockEmailClient)
+	email.Delete("/blocked/:ip", controllers.UnblockEmailClient)
+
 	// Mailbox management
 	email.Get("/mailboxes", controllers.GetMailboxes)
 	email.Post("/mailboxes", controllers.AddMailbox)

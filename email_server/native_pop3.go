@@ -190,13 +190,16 @@ func (p *pop3Session) handlePass(args []string) {
 
 	account, err := p.server.manager.Authenticate(p.username, strings.Join(args, " "))
 	if err != nil {
+		remoteIP := hostOf(p.conn.RemoteAddr())
 		p.server.manager.logMailEvent(mailEvent{
 			Direction: "system",
 			Status:    "auth-failed",
 			From:      p.username,
+			RemoteIP:  remoteIP,
 			Service:   "pop3",
 			Detail:    err.Error(),
 		})
+		p.server.manager.noteAuthFailure("pop3", remoteIP, p.username)
 		p.reply("-ERR Authentication failed")
 		return
 	}

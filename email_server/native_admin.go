@@ -46,6 +46,10 @@ func (m *EmailManager) UpdateNativeSettings(updated EmailServerConfig) (*EmailSe
 	current.CheckDMARC = updated.CheckDMARC
 	current.RejectOnDMARCFail = updated.RejectOnDMARCFail
 	current.LogConnections = updated.LogConnections
+	current.GuardEnabled = updated.GuardEnabled
+	current.MaxAuthFailures = updated.MaxAuthFailures
+	current.MaxConnectionsPerMinute = updated.MaxConnectionsPerMinute
+	current.BlockMinutes = updated.BlockMinutes
 	current.MaxMessageSize = updated.MaxMessageSize
 	current.MaxRecipients = updated.MaxRecipients
 	current.QueueMaxAttempts = updated.QueueMaxAttempts

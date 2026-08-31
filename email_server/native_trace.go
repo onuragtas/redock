@@ -166,8 +166,15 @@ func (l *tracedListener) Accept() (net.Conn, error) {
 		return nil, err
 	}
 
-	id := connectionCounter.Add(1)
 	host, port := splitHostPort(conn.RemoteAddr())
+
+	// A blocked or too-eager address never gets a protocol conversation.
+	if !l.manager.allowConnection(l.service, host) {
+		conn.Close()
+		return l.Accept()
+	}
+
+	id := connectionCounter.Add(1)
 
 	tlsMode := "none"
 	if l.implicitTLS {

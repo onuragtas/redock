@@ -35,16 +35,22 @@ type imapBackend struct {
 	manager *EmailManager
 }
 
-func (b *imapBackend) Login(_ *imap.ConnInfo, username, password string) (backend.User, error) {
+func (b *imapBackend) Login(connInfo *imap.ConnInfo, username, password string) (backend.User, error) {
 	account, err := b.manager.Authenticate(username, password)
 	if err != nil {
+		remoteIP := ""
+		if connInfo != nil && connInfo.RemoteAddr != nil {
+			remoteIP = hostOf(connInfo.RemoteAddr)
+		}
 		b.manager.logMailEvent(mailEvent{
 			Direction: "system",
 			Status:    "auth-failed",
 			From:      username,
+			RemoteIP:  remoteIP,
 			Service:   "imap",
 			Detail:    err.Error(),
 		})
+		b.manager.noteAuthFailure("imap", remoteIP, username)
 		return nil, backend.ErrInvalidCredentials
 	}
 	if account.Mailbox != nil && !account.Mailbox.IMAPEnabled && account.Mailbox.POP3Enabled {

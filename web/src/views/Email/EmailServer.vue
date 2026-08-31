@@ -42,7 +42,8 @@ import {
   mdiKey,
   mdiChevronDown,
   mdiChevronUp,
-  mdiContentCopy
+  mdiContentCopy,
+  mdiContentSave
 } from '@mdi/js';
 import { computed, onMounted, onUnmounted, ref, watch } from "vue";
 import { useToast } from 'vue-toastification';
@@ -1220,6 +1221,8 @@ watch(
   (tab) => {
       if (['overview', 'listeners', 'queue', 'dns', 'cleanup'].includes(tab)) loadEngine();
     if (tab === 'dns' && !deliverability.value) runDeliverabilityCheck();
+    if (['domains', 'mailboxes'].includes(tab)) loadAliases();
+    if (tab === 'cleanup') loadBlockedClients();
   },
   { immediate: true }
 );
@@ -1345,6 +1348,110 @@ const moveSelected = async (destination) => {
     toast.error(error.response?.data?.msg || t('em.messageActionFailed'));
   } finally {
     messageBusy.value = false;
+  }
+};
+
+// ---- Aliases and abuse protection ----
+const aliases = ref([]);
+const blockedClients = ref([]);
+const newAlias = ref({ alias: '', destination: '' });
+const aliasBusy = ref(false);
+
+const loadAliases = async () => {
+  try {
+    const response = await ApiService.get('/api/email/aliases');
+    if (!response.data.error) aliases.value = response.data.data || [];
+  } catch (error) {
+    console.error('Failed to load aliases:', error);
+  }
+};
+
+const addAlias = async () => {
+  if (!newAlias.value.alias || !newAlias.value.destination) {
+    toast.error(t('em.aliasIncomplete'));
+    return;
+  }
+  aliasBusy.value = true;
+  try {
+    const response = await ApiService.post('/api/email/aliases', newAlias.value);
+    if (!response.data.error) {
+      toast.success(t('em.aliasCreated'));
+      newAlias.value = { alias: '', destination: '' };
+      await loadAliases();
+    } else {
+      toast.error(response.data.msg);
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.aliasFailed'));
+  } finally {
+    aliasBusy.value = false;
+  }
+};
+
+const toggleAlias = async (alias) => {
+  try {
+    await ApiService.put(`/api/email/aliases/${alias.id}`, { enabled: !alias.enabled });
+    await loadAliases();
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.aliasFailed'));
+  }
+};
+
+const deleteAlias = async (alias) => {
+  try {
+    const response = await ApiService.delete(`/api/email/aliases/${alias.id}`);
+    if (!response.data.error) {
+      toast.success(t('em.aliasDeleted'));
+      await loadAliases();
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.aliasFailed'));
+  }
+};
+
+const loadBlockedClients = async () => {
+  try {
+    const response = await ApiService.get('/api/email/blocked');
+    if (!response.data.error) blockedClients.value = response.data.data || [];
+  } catch (error) {
+    console.error('Failed to load blocked clients:', error);
+  }
+};
+
+const unblockClient = async (ip) => {
+  try {
+    const response = await ApiService.delete(`/api/email/blocked/${encodeURIComponent(ip)}`);
+    if (!response.data.error) {
+      toast.success(t('em.unblocked'));
+      await loadBlockedClients();
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.unblockFailed'));
+  }
+};
+
+// Saving a draft keeps a half-written message without sending it.
+const saveDraft = async () => {
+  if (!selectedMailbox.value) {
+    toast.error(t('em.selectMailboxFirst'));
+    return;
+  }
+  try {
+    const response = await ApiService.post(`/api/email/mailboxes/${selectedMailbox.value}/drafts`, {
+      to: parseAddressList(newEmail.value.to),
+      cc: parseAddressList(newEmail.value.cc),
+      bcc: parseAddressList(newEmail.value.bcc),
+      subject: newEmail.value.subject || '',
+      body: newEmail.value.body || ''
+    });
+    if (!response.data.error) {
+      toast.success(t('em.draftSaved'));
+      isComposeModalActive.value = false;
+      newEmail.value = emptyCompose();
+      await loadFolders(selectedMailbox.value);
+    }
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.draftFailed'));
   }
 };
 
@@ -1792,6 +1899,69 @@ onMounted(() => {
             </div>
           </div>
         </div>
+      </CardBox>
+    </div>
+
+    <!-- Aliases live with the accounts they point at -->
+    <div v-if="activeTab === 'mailboxes'" class="mt-6">
+      <CardBox>
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-lg font-semibold">{{ t('em.aliasTitle') }}</h3>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">{{ t('em.aliasHint') }}</p>
+
+        <div class="flex flex-wrap gap-2 mb-4">
+          <input
+            v-model="newAlias.alias"
+            type="text"
+            :placeholder="t('em.aliasAddress')"
+            class="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800"
+          />
+          <select
+            v-model="newAlias.destination"
+            class="flex-1 min-w-[200px] px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800"
+          >
+            <option value="">{{ t('em.aliasDestination') }}</option>
+            <option v-for="mailbox in mailboxes" :key="mailbox.id" :value="mailbox.email">
+              {{ mailbox.email }}
+            </option>
+          </select>
+          <BaseButton :icon="mdiPlus" :label="t('em.aliasAdd')" color="success" :disabled="aliasBusy" @click="addAlias" />
+        </div>
+
+        <div v-if="aliases.length" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-gray-500">
+              <tr>
+                <th class="py-2">{{ t('em.aliasAddress') }}</th>
+                <th class="py-2">{{ t('em.aliasDestination') }}</th>
+                <th class="py-2">{{ t('em.status') }}</th>
+                <th class="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="alias in aliases" :key="alias.id" class="border-t border-gray-200 dark:border-gray-700">
+                <td class="py-2 font-mono text-xs">{{ alias.alias }}</td>
+                <td class="py-2 font-mono text-xs">{{ alias.destination }}</td>
+                <td class="py-2">
+                  <button
+                    class="px-2 py-1 rounded-full text-xs"
+                    :class="alias.enabled
+                      ? 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400'
+                      : 'bg-gray-200 dark:bg-slate-700 text-gray-600 dark:text-gray-300'"
+                    @click="toggleAlias(alias)"
+                  >
+                    {{ alias.enabled ? t('em.active') : t('em.disabled') }}
+                  </button>
+                </td>
+                <td class="py-2 text-right">
+                  <BaseButton :icon="mdiDelete" color="danger" small @click="deleteAlias(alias)" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="text-sm text-gray-500">{{ t('em.aliasEmpty') }}</p>
       </CardBox>
     </div>
 
@@ -2621,6 +2791,18 @@ onMounted(() => {
             <input v-model.number="nativeConfig.pop3s_port" type="number" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
           </label>
           <label class="block">
+            <span class="text-xs text-gray-500">{{ t('em.optMaxAuthFailures') }}</span>
+            <input v-model.number="nativeConfig.max_auth_failures" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">{{ t('em.optMaxConnections') }}</span>
+            <input v-model.number="nativeConfig.max_connections_per_minute" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
+            <span class="text-xs text-gray-500">{{ t('em.optBlockMinutes') }}</span>
+            <input v-model.number="nativeConfig.block_minutes" type="number" min="1" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
+          </label>
+          <label class="block">
             <span class="text-xs text-gray-500">HELO</span>
             <input v-model="nativeConfig.outbound_helo" type="text" :placeholder="nativeConfig.hostname" class="w-full mt-1 px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800" />
           </label>
@@ -2670,6 +2852,10 @@ onMounted(() => {
           <label class="flex items-center gap-2">
             <input v-model="nativeConfig.log_connections" type="checkbox" />
             {{ t('em.optLogConnections') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.guard_enabled" type="checkbox" />
+            {{ t('em.optGuard') }}
           </label>
         </div>
 
@@ -2818,6 +3004,41 @@ onMounted(() => {
 
     <!-- Cleanup of the retired container setup -->
     <div v-if="activeTab === 'cleanup'">
+      <CardBox class="mb-6">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-lg font-semibold">{{ t('em.blockedTitle') }}</h3>
+          <BaseButton :icon="mdiRefresh" color="info" small @click="loadBlockedClients" />
+        </div>
+        <p class="text-sm text-gray-500 mb-4">{{ t('em.blockedHint') }}</p>
+
+        <div v-if="blockedClients.length" class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead class="text-left text-gray-500">
+              <tr>
+                <th class="py-2">IP</th>
+                <th class="py-2">{{ t('em.blockedReason') }}</th>
+                <th class="py-2">{{ t('em.blockedUntil') }}</th>
+                <th class="py-2"></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="client in blockedClients" :key="client.ip" class="border-t border-gray-200 dark:border-gray-700">
+                <td class="py-2 font-mono text-xs">{{ client.ip }}</td>
+                <td class="py-2 text-xs">
+                  {{ client.reason }}
+                  <span v-if="client.manual" class="ml-1 text-xs text-gray-500">({{ t('em.blockedManual') }})</span>
+                </td>
+                <td class="py-2 text-xs">{{ formatQueueTime(client.until) }}</td>
+                <td class="py-2 text-right">
+                  <BaseButton :label="t('em.unblock')" color="info" small @click="unblockClient(client.ip)" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <p v-else class="text-sm text-emerald-600 dark:text-emerald-400">{{ t('em.blockedNone') }}</p>
+      </CardBox>
+
       <CardBox>
         <h3 class="text-lg font-semibold mb-1">{{ t('em.cleanupTitle') }}</h3>
         <p class="text-sm text-gray-500 mb-4">{{ t('em.cleanupHint') }}</p>
@@ -2953,6 +3174,10 @@ onMounted(() => {
           :rows="8"
         />
       </FormField>
+
+      <div class="flex justify-end">
+        <BaseButton :icon="mdiContentSave" :label="t('em.saveDraft')" color="light" small @click="saveDraft" />
+      </div>
     </CardBoxModal>
 
     <!-- Update Password Modal -->

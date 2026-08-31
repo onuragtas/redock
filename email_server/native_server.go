@@ -26,6 +26,7 @@ type NativeServer struct {
 	startedAt  time.Time
 	listeners  []*mailListener
 	certs      *certManager
+	guard      *connectionGuard
 	stop       chan struct{}
 	store      *MaildirStore
 	queue      *OutboundQueue
@@ -149,6 +150,15 @@ func applyNativeDefaults(cfg *EmailServerConfig) {
 	if cfg.MaxRecipients <= 0 {
 		cfg.MaxRecipients = 50
 	}
+	if cfg.MaxAuthFailures <= 0 {
+		cfg.MaxAuthFailures = 10
+	}
+	if cfg.MaxConnectionsPerMinute <= 0 {
+		cfg.MaxConnectionsPerMinute = 60
+	}
+	if cfg.BlockMinutes <= 0 {
+		cfg.BlockMinutes = 30
+	}
 	if cfg.QueueMaxAttempts <= 0 {
 		cfg.QueueMaxAttempts = defaultMaxAttempts
 	}
@@ -172,6 +182,7 @@ func EnableAllNativeServices(cfg *EmailServerConfig) {
 	cfg.POP3Enabled = true
 	cfg.POP3sEnabled = true
 	cfg.LogConnections = true
+	cfg.GuardEnabled = true
 	cfg.CheckSPF = true
 	cfg.CheckDKIM = true
 	cfg.CheckDMARC = true
@@ -294,8 +305,10 @@ func (n *NativeServer) Start() error {
 	n.stop = stop
 	n.mu.Unlock()
 
-	// Keep the certificate current for as long as the server runs.
+	// Keep the certificate and the usage figures current while the server runs.
 	go n.startCertificateRenewal(stop)
+	go n.startUsageRefresh(stop)
+	go n.startGuardSweep(stop)
 
 	ports := make([]string, 0, len(listeners))
 	for _, l := range listeners {

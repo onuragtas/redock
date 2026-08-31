@@ -91,6 +91,7 @@ func (s *smtpSession) Auth(mech string) (sasl.Server, error) {
 				Detail:    err.Error(),
 			})
 			s.trace("AUTH failed for %s: %s", username, err.Error())
+			s.backend.manager.noteAuthFailure("smtp", s.remoteIP(), username)
 			return smtp.ErrAuthFailed
 		}
 		if !account.Mailbox.SMTPEnabled && account.Mailbox.ID != 0 {
@@ -259,24 +260,36 @@ func (s *smtpSession) handleInbound(cfg EmailServerConfig, raw []byte, subject s
 	}
 
 	var firstErr error
+	overQuota := false
 	for _, rcpt := range s.recipients {
 		account := s.backend.manager.LookupAccount(rcpt)
 		if account == nil {
 			continue
 		}
-		if err := s.backend.manager.deliverLocal(account, folder, stamped, nil); err != nil {
+		// Quota, forwarding and auto-reply are the mailbox owner's settings; they
+		// decide whether this copy is stored at all.
+		store, err := s.backend.manager.applyDeliveryRules(account, stamped, s.from)
+		if err != nil {
+			overQuota = overQuota || err == ErrOverQuota
 			firstErr = err
-			s.backend.manager.logMailEvent(mailEvent{
-				Direction: "in",
-				Status:    "error",
-				From:      s.from,
-				To:        rcpt,
-				Subject:   subject,
-				RemoteIP:  s.remoteIP(),
-				Service:   "smtp",
-				Detail:    err.Error(),
-			})
 			continue
+		}
+
+		if store {
+			if err := s.backend.manager.deliverLocal(account, folder, stamped, nil); err != nil {
+				firstErr = err
+				s.backend.manager.logMailEvent(mailEvent{
+					Direction: "in",
+					Status:    "error",
+					From:      s.from,
+					To:        rcpt,
+					Subject:   subject,
+					RemoteIP:  s.remoteIP(),
+					Service:   "smtp",
+					Detail:    err.Error(),
+				})
+				continue
+			}
 		}
 
 		s.backend.manager.logMailEvent(mailEvent{
@@ -293,6 +306,11 @@ func (s *smtpSession) handleInbound(cfg EmailServerConfig, raw []byte, subject s
 		})
 	}
 
+	if overQuota {
+		// 452 asks the sender to try again later rather than giving up, which is
+		// the right answer while the owner clears space.
+		return &smtp.SMTPError{Code: 452, EnhancedCode: smtp.EnhancedCode{4, 2, 2}, Message: "Mailbox is over quota"}
+	}
 	if firstErr != nil {
 		return &smtp.SMTPError{Code: 451, EnhancedCode: smtp.EnhancedCode{4, 3, 0}, Message: "Temporary storage failure"}
 	}
