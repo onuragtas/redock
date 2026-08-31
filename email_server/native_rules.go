@@ -482,8 +482,12 @@ func (m *EmailManager) DeleteAlias(id uint) error {
 // EnsurePostmaster creates the postmaster mailbox for a domain if it is
 // missing. DMARC reports and delivery notifications are addressed there by
 // convention, and a domain without one rejects them silently.
+// postmasterUser is the local part of the mailbox every domain gets. Named
+// once so the delete path can recognise what the add path created.
+const postmasterUser = "postmaster"
+
 func (m *EmailManager) EnsurePostmaster(domain *EmailDomain) error {
-	address := "postmaster@" + domain.Domain
+	address := postmasterUser + "@" + domain.Domain
 	if account := m.LookupAccount(address); account != nil {
 		return nil
 	}
@@ -493,7 +497,7 @@ func (m *EmailManager) EnsurePostmaster(domain *EmailDomain) error {
 		return err
 	}
 
-	mailbox, err := m.AddMailbox(domain.ID, "postmaster", password, "Postmaster")
+	mailbox, err := m.AddMailbox(domain.ID, postmasterUser, password, "Postmaster")
 	if err != nil {
 		return fmt.Errorf("could not create %s: %w", address, err)
 	}

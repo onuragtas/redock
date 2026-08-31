@@ -86,12 +86,36 @@ func (m *EmailManager) DeleteDomain(domainID uint) error {
 		return fmt.Errorf("domain not found: %w", err)
 	}
 
-	mailboxes := memory.Filter[*EmailMailbox](m.db, "email_mailboxes", func(mb *EmailMailbox) bool {
-		return mb.DomainID == domainID
-	})
+	// Adding a domain creates its postmaster mailbox, so refusing to delete a
+	// domain that has mailboxes would refuse every domain ever added — the
+	// obstacle is one this code put there. It goes with the domain; anything a
+	// person created stays their decision.
+	var owned []*EmailMailbox
+	for _, mb := range memory.Filter[*EmailMailbox](m.db, "email_mailboxes", func(mb *EmailMailbox) bool {
+		return mb != nil && mb.DomainID == domainID
+	}) {
+		if mb.Username == postmasterUser {
+			continue
+		}
+		owned = append(owned, mb)
+	}
 
-	if len(mailboxes) > 0 {
-		return fmt.Errorf("cannot delete domain with existing mailboxes (found %d mailboxes)", len(mailboxes))
+	if len(owned) > 0 {
+		addresses := make([]string, 0, len(owned))
+		for _, mb := range owned {
+			addresses = append(addresses, mb.Email)
+		}
+		return fmt.Errorf("delete these mailboxes first: %s", strings.Join(addresses, ", "))
+	}
+
+	// Take the postmaster mailbox down with the domain, so its maildir and
+	// cached password go too rather than being left behind.
+	for _, mb := range memory.Filter[*EmailMailbox](m.db, "email_mailboxes", func(mb *EmailMailbox) bool {
+		return mb != nil && mb.DomainID == domainID
+	}) {
+		if err := m.DeleteMailbox(mb.ID); err != nil {
+			return fmt.Errorf("could not remove %s: %w", mb.Email, err)
+		}
 	}
 
 	if err := memory.Delete[*EmailDomain](m.db, "email_domains", domainID); err != nil {

@@ -1592,7 +1592,7 @@
     "checkingCloudflare": "☁️ Otomatik DNS kurulumu için Cloudflare kontrol ediliyor...",
     "domainUpdated": "✅ Alan adı başarıyla güncellendi",
     "dnsQueued": "☁️ DNS kayıtları güncelleme için sıraya alındı...",
-    "confirmDeleteDomain": "Bu alan adını silmek istediğinizden emin misiniz? Önce ilişkili tüm posta kutuları silinmelidir.",
+    "confirmDeleteDomain": "Bu alan adı silinsin mi? Postmaster hesabı ve mail dizini de silinir. Başka hesap varsa önce onları silmeniz gerekir.",
     "domainDeleted": "✅ Alan adı başarıyla silindi",
     "addDomainFirst": "❌ Posta kutusu oluşturmadan önce lütfen bir alan adı ekleyin",
     "selectDomainErr": "❌ Lütfen bir alan adı seçin",
@@ -1894,7 +1894,9 @@
     "dnsblHint": "Birden fazlasını virgülle ayırın. Gelen her adres bu listelere sorulur, yani mail trafiğinizi görürler. Kapalıyken listedeki gönderen reddedilmez, Junk klasörüne düşer.",
     "pwdBrokenTitle": "{n} hesabın kullanılabilir şifresi yok",
     "pwdBrokenHint": "Yeni şifre atanana kadar bu hesaplara giriş yapılamaz.",
-    "pwdRepairable": "{n} hesabın şifre özeti eksik, sonraki başlatmada onarılacak."
+    "pwdRepairable": "{n} hesabın şifre özeti eksik, sonraki başlatmada onarılacak.",
+    "domainMailboxCount": "{n} hesap",
+    "addMailboxHere": "Hesap ekle"
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

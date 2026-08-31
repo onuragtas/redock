@@ -14,11 +14,18 @@ darkModeStore.set(true)
 
 const router = useRouter()
 
-document.documentElement.classList.forEach((token) => {
-      document.documentElement.classList.replace(token, `style-white`)
+// Swapping the style means replacing whatever style-* class is on the root.
+const handleStyleChange = (style) => {
+  document.documentElement.classList.forEach((token) => {
+    if (token.startsWith('style-')) {
+      document.documentElement.classList.replace(token, `style-${style}`)
+    }
   })
+}
 
-  router.push('/dashboard')
+handleStyleChange('white')
+
+router.push('/dashboard')
 </script>
 
 <template>

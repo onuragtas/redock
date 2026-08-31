@@ -1592,7 +1592,7 @@
     "checkingCloudflare": "☁️ Checking Cloudflare for automatic DNS setup...",
     "domainUpdated": "✅ Domain updated successfully",
     "dnsQueued": "☁️ DNS records queued for update...",
-    "confirmDeleteDomain": "Are you sure you want to delete this domain? All associated mailboxes must be deleted first.",
+    "confirmDeleteDomain": "Delete this domain? Its postmaster mailbox and mail directory go with it. Any other mailbox has to be deleted first.",
     "domainDeleted": "✅ Domain deleted successfully",
     "addDomainFirst": "❌ Please add a domain first before creating mailboxes",
     "selectDomainErr": "❌ Please select a domain",
@@ -1894,7 +1894,9 @@
     "dnsblHint": "Separate several with commas. Every inbound address is sent to these lists, so they see your mail traffic. Left off, a listed sender is filed in Junk rather than refused.",
     "pwdBrokenTitle": "{n} mailbox(es) have no usable password",
     "pwdBrokenHint": "Nobody can log in to these until a new password is set.",
-    "pwdRepairable": "{n} mailbox(es) are missing their password hash and will be repaired on the next start."
+    "pwdRepairable": "{n} mailbox(es) are missing their password hash and will be repaired on the next start.",
+    "domainMailboxCount": "{n} mailbox(es)",
+    "addMailboxHere": "Add mailbox"
   },
   "ta": {
     "title": "Sign in to tunnel server",

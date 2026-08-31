@@ -255,6 +255,28 @@ const openAddMailboxModal = () => {
   isAddMailboxModalActive.value = true;
 };
 
+// Opening the account form from a domain row: the domain is already known, so
+// it arrives filled in rather than as one more thing to pick.
+const openAddMailboxForDomain = (domain) => {
+  newMailbox.value = { domain_id: domain.id, username: '', password: '', name: '' };
+  isAddMailboxModalActive.value = true;
+};
+
+// Every domain gets a postmaster mailbox it did not ask for, so counting it
+// would tell someone they have an account when they have none.
+// Initials for a mailbox avatar. Kept here rather than imported from the
+// webmail panel: this is the one place left that needs it.
+const getInitials = (value) => {
+  if (!value) return '?';
+  const parts = String(value).split(/[\s._@-]+/).filter(Boolean);
+  if (!parts.length) return '?';
+  const letters = parts.length === 1 ? parts[0].slice(0, 2) : parts[0][0] + parts[1][0];
+  return letters.toUpperCase();
+};
+
+const mailboxCount = (domainID) =>
+  mailboxes.value.filter((mb) => mb.domain_id === domainID && mb.username !== 'postmaster').length;
+
 const addMailbox = async () => {
   try {
     if (!newMailbox.value.domain_id) {
@@ -1325,6 +1347,9 @@ onMounted(() => {
               <div class="flex-1">
                 <h4 class="text-lg font-semibold">{{ domain.domain }}</h4>
                 <p v-if="domain.description" class="text-sm text-gray-500">{{ domain.description }}</p>
+                <p class="text-sm text-gray-500">
+                  {{ t('em.domainMailboxCount', { n: mailboxCount(domain.id) }) }}
+                </p>
               </div>
               <div class="flex items-center gap-3">
                 <span
@@ -1347,6 +1372,13 @@ onMounted(() => {
                   :label="t('em.dnsSync')"
                   :disabled="dnsSyncing"
                   @click="syncDns(domain.id)"
+                />
+                <BaseButton
+                  :icon="mdiEmailPlus"
+                  color="success"
+                  small
+                  :label="t('em.addMailboxHere')"
+                  @click="openAddMailboxForDomain(domain)"
                 />
                 <BaseButton
                   :icon="mdiPencil"
