@@ -1803,7 +1803,18 @@
     "optBlockMinutes": "Block duration (minutes)",
     "saveDraft": "Save draft",
     "draftSaved": "Draft saved",
-    "draftFailed": "The draft could not be saved"
+    "draftFailed": "The draft could not be saved",
+    "dnsPreviewTitle": "Zone check",
+    "dnsCheck": "Check again",
+    "dnsPreviewFailed": "The zone could not be read",
+    "dnsPublishMissing": "Publish what is missing",
+    "dnsCurrently": "currently",
+    "dnsAction_unchanged": "already correct",
+    "dnsAction_missing": "missing",
+    "dnsAction_differs": "differs",
+    "dnsAction_created": "created",
+    "dnsAction_updated": "updated",
+    "dnsAction_failed": "failed"
   },
   "ta": {
     "title": "Sign in to tunnel server",

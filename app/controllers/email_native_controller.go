@@ -375,3 +375,32 @@ func CheckEmailDeliverability(c *fiber.Ctx) error {
 	}
 	return c.JSON(fiber.Map{"error": false, "data": manager.CheckDeliverability()})
 }
+
+// PreviewEmailDNS reports what a Cloudflare sync would change, without
+// touching the zone. Checking first is the safe way to see which records are
+// already correct and which are still missing.
+// @Summary preview the mail DNS sync
+// @Tags Email
+// @Security ApiKeyAuth
+// @Produce json
+// @Router /email/dns-records/preview [get]
+func PreviewEmailDNS(c *fiber.Ctx) error {
+	manager := email_server.GetEmailManager()
+	if manager == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true, "msg": "Email server not initialized",
+		})
+	}
+
+	db := manager.GetDB()
+	domains := memory.FindAll[*email_server.EmailDomain](db, "email_domains")
+
+	results := make([]email_server.DNSSyncResult, 0, len(domains))
+	for _, domain := range domains {
+		if domain == nil || domain.IsDeleted() || !domain.Enabled {
+			continue
+		}
+		results = append(results, manager.PreviewDomainDNS(domain))
+	}
+	return c.JSON(fiber.Map{"error": false, "data": results})
+}

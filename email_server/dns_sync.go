@@ -15,10 +15,11 @@ type DNSSyncResult struct {
 	Domain string `json:"domain"`
 	Synced bool   `json:"synced"`
 	ZoneID string `json:"zone_id,omitempty"`
-	// Records lists what was published, so the operator can see that the MX
-	// actually went out rather than having to check the zone by hand.
-	Records []string `json:"records,omitempty"`
-	Message string   `json:"message"`
+	// Records is the per-record outcome: what was created, updated, already
+	// correct or failed. The operator can see the MX actually went out rather
+	// than having to open the zone by hand.
+	Records []cloudflare.DNSRecordOutcome `json:"records,omitempty"`
+	Message string                        `json:"message"`
 }
 
 // SyncDomainDNS publishes a domain's MX, SPF, DKIM and DMARC records to
@@ -47,17 +48,10 @@ func (m *EmailManager) SyncDomainDNS(domain *EmailDomain) DNSSyncResult {
 		return result
 	}
 
-	cfg := m.nativeConfig()
-	params := cloudflare.EmailDNSParams{
-		MXRecord:     m.mxHostFor(domain),
-		SPFRecord:    domain.SPFRecord,
-		DKIMSelector: domain.DKIMSelector,
-		DKIMRecord:   domain.DKIMPublicKey,
-		DMARCRecord:  domain.DMARCRecord,
-		MailServerIP: cfg.IPAddress,
-	}
+	params := m.emailDNSParams(domain)
 
-	if err := cfManager.CreateEmailDNSRecords(zone.ZoneID, params); err != nil {
+	outcomes, err := cfManager.SyncEmailDNSRecords(zone.ZoneID, params)
+	if err != nil {
 		result.Message = "Cloudflare rejected the records: " + err.Error()
 		m.logMailEvent(mailEvent{
 			Direction: "system",
@@ -67,15 +61,23 @@ func (m *EmailManager) SyncDomainDNS(domain *EmailDomain) DNSSyncResult {
 		})
 		return result
 	}
+	result.Records = outcomes
 
-	result.Records = []string{
-		fmt.Sprintf("MX %s → %s", domain.Domain, params.MXRecord),
-		fmt.Sprintf("TXT %s (SPF)", domain.Domain),
-		fmt.Sprintf("TXT %s._domainkey.%s (DKIM)", params.DKIMSelector, domain.Domain),
-		fmt.Sprintf("TXT _dmarc.%s (DMARC)", domain.Domain),
+	// A record the API refused leaves the domain half-published; say so rather
+	// than reporting success.
+	failed := make([]string, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		if !outcome.OK() {
+			failed = append(failed, outcome.Kind+": "+outcome.Detail)
+		}
 	}
-	if cfg.IPAddress != "" {
-		result.Records = append(result.Records, fmt.Sprintf("A mail.%s → %s", domain.Domain, cfg.IPAddress))
+	if len(failed) > 0 {
+		result.Message = "some records could not be published — " + strings.Join(failed, "; ")
+		m.logMailEvent(mailEvent{
+			Direction: "system", Status: "dns-failed", Service: "dns",
+			Detail: "Cloudflare sync for " + domain.Domain + ": " + strings.Join(failed, "; "),
+		})
+		return result
 	}
 
 	domain.DNSConfigured = true
@@ -92,7 +94,7 @@ func (m *EmailManager) SyncDomainDNS(domain *EmailDomain) DNSSyncResult {
 		Direction: "system",
 		Status:    "dns-synced",
 		Service:   "dns",
-		Detail:    "Cloudflare records published for " + domain.Domain + ": " + strings.Join(result.Records, "; "),
+		Detail:    "Cloudflare records for " + domain.Domain + ": " + summariseOutcomes(outcomes),
 	})
 	return result
 }
@@ -185,4 +187,67 @@ func (m *EmailManager) mxHostFor(domain *EmailDomain) string {
 		return hostname
 	}
 	return defaultMXHost(domain)
+}
+
+// summariseOutcomes turns the per-record results into one readable line.
+func summariseOutcomes(outcomes []cloudflare.DNSRecordOutcome) string {
+	parts := make([]string, 0, len(outcomes))
+	for _, outcome := range outcomes {
+		parts = append(parts, outcome.Kind+" "+outcome.Action)
+	}
+	return strings.Join(parts, ", ")
+}
+
+// PreviewDomainDNS reports what a sync would change without touching the zone.
+// Checking before writing is the safe way to see which records are already
+// correct and which are still missing.
+func (m *EmailManager) PreviewDomainDNS(domain *EmailDomain) DNSSyncResult {
+	result := DNSSyncResult{Domain: domain.Domain}
+
+	cfManager := cloudflare.GetManager()
+	if cfManager == nil {
+		result.Message = "Cloudflare is not configured"
+		return result
+	}
+
+	zone := m.findCloudflareZone(domain.Domain)
+	if zone == nil {
+		result.Message = fmt.Sprintf("%s is not a zone on any connected Cloudflare account", domain.Domain)
+		return result
+	}
+	result.ZoneID = zone.ZoneID
+
+	outcomes, err := cfManager.PlanEmailDNSRecords(zone.ZoneID, m.emailDNSParams(domain))
+	if err != nil {
+		result.Message = "could not read the zone: " + err.Error()
+		return result
+	}
+
+	result.Records = outcomes
+	pending := 0
+	for _, outcome := range outcomes {
+		if outcome.Action != cloudflare.ActionUnchanged {
+			pending++
+		}
+	}
+	result.Synced = pending == 0
+	if pending == 0 {
+		result.Message = "every record is already correct"
+	} else {
+		result.Message = fmt.Sprintf("%d record(s) need publishing", pending)
+	}
+	return result
+}
+
+// emailDNSParams is the desired mail DNS for a domain.
+func (m *EmailManager) emailDNSParams(domain *EmailDomain) cloudflare.EmailDNSParams {
+	cfg := m.nativeConfig()
+	return cloudflare.EmailDNSParams{
+		MXRecord:     m.mxHostFor(domain),
+		SPFRecord:    domain.SPFRecord,
+		DKIMSelector: domain.DKIMSelector,
+		DKIMRecord:   domain.DKIMPublicKey,
+		DMARCRecord:  domain.DMARCRecord,
+		MailServerIP: cfg.IPAddress,
+	}
 }

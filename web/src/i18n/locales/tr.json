@@ -1803,7 +1803,18 @@
     "optBlockMinutes": "Engel süresi (dakika)",
     "saveDraft": "Taslak kaydet",
     "draftSaved": "Taslak kaydedildi",
-    "draftFailed": "Taslak kaydedilemedi"
+    "draftFailed": "Taslak kaydedilemedi",
+    "dnsPreviewTitle": "Zone kontrolü",
+    "dnsCheck": "Tekrar kontrol et",
+    "dnsPreviewFailed": "Zone okunamadı",
+    "dnsPublishMissing": "Eksikleri yayınla",
+    "dnsCurrently": "şu an",
+    "dnsAction_unchanged": "zaten doğru",
+    "dnsAction_missing": "eksik",
+    "dnsAction_differs": "farklı",
+    "dnsAction_created": "oluşturuldu",
+    "dnsAction_updated": "güncellendi",
+    "dnsAction_failed": "başarısız"
   },
   "ta": {
     "title": "Tünel sunucusuna giriş yap",

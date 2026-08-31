@@ -35,6 +35,7 @@ func EmailRoutes(app *fiber.App) {
 	email.Post("/certificate/request", controllers.RequestEmailCertificate)
 	email.Get("/deliverability", controllers.CheckEmailDeliverability)
 	email.Get("/dns-records", controllers.GetEmailDNSRecords)
+	email.Get("/dns-records/preview", controllers.PreviewEmailDNS)
 	email.Post("/dns-records/sync", controllers.SyncEmailDNS)
 	email.Get("/legacy", controllers.GetEmailLegacyArtifacts)
 	email.Delete("/legacy", controllers.CleanupEmailLegacyArtifacts)

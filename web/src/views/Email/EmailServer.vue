@@ -1048,6 +1048,37 @@ const selfTest = ref([]);
 const queueItems = ref([]);
 const dnsRecords = ref([]);
 const dnsSyncing = ref(false);
+const dnsPreview = ref([]);
+const dnsChecking = ref(false);
+
+// Reading the zone before writing to it shows which records are already
+// correct, which differ and which are missing — without changing anything.
+const previewDns = async () => {
+  dnsChecking.value = true;
+  try {
+    const response = await ApiService.get('/api/email/dns-records/preview');
+    if (!response.data.error) dnsPreview.value = response.data.data || [];
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.dnsPreviewFailed'));
+  } finally {
+    dnsChecking.value = false;
+  }
+};
+
+const dnsActionClass = (action) => {
+  switch (action) {
+    case 'unchanged':
+    case 'created':
+    case 'updated':
+      return 'bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-400';
+    case 'missing':
+      return 'bg-amber-100 dark:bg-amber-900/30 text-amber-700 dark:text-amber-400';
+    case 'differs':
+      return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400';
+    default:
+      return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400';
+  }
+};
 const legacyArtifacts = ref([]);
 const cleaningUp = ref(false);
 
@@ -1101,6 +1132,12 @@ const controlServer = async (action) => {
 };
 
 // syncDns publishes MX/SPF/DKIM/DMARC to Cloudflare for one domain or all.
+// syncDomainByName is what the preview's per-domain button calls.
+const syncDomainByName = (name) => {
+  const domain = domains.value.find((d) => d.domain === name);
+  return syncDns(domain?.id || 0);
+};
+
 const syncDns = async (domainId) => {
   dnsSyncing.value = true;
   try {
@@ -1112,13 +1149,13 @@ const syncDns = async (domainId) => {
       if (ok > 0) {
         toast.success(t('em.dnsSynced', { count: ok }));
         // Show what went out; a missing MX is the usual reason mail vanishes.
-        const published = results.flatMap((r) => r.records || []);
+        const published = results.flatMap((r) => (r.records || []).map((rec) => `${rec.kind} ${rec.action}`));
         if (published.length) toast.info(published.join(' · '), { timeout: 8000 });
       } else {
         toast.warning(results[0]?.message || t('em.dnsSyncSkipped'));
       }
       await runDeliverabilityCheck();
-      await Promise.all([loadEngine(), loadDomains()]);
+      await Promise.all([loadEngine(), loadDomains(), previewDns()]);
     } else {
       toast.error(response.data.msg || t('em.dnsSyncFailed'));
     }
@@ -1221,6 +1258,7 @@ watch(
   (tab) => {
       if (['overview', 'listeners', 'queue', 'dns', 'cleanup'].includes(tab)) loadEngine();
     if (tab === 'dns' && !deliverability.value) runDeliverabilityCheck();
+    if (tab === 'dns' && !dnsPreview.value.length) previewDns();
     if (['domains', 'mailboxes'].includes(tab)) loadAliases();
     if (tab === 'cleanup') loadBlockedClients();
   },
@@ -2966,6 +3004,52 @@ onMounted(() => {
             :disabled="dnsSyncing || !dnsRecords.length"
             @click="syncDns(0)"
           />
+        </div>
+
+        <!-- What the zone holds today, checked without changing anything -->
+        <div v-if="dnsPreview.length" class="mb-6 space-y-3">
+          <div class="flex items-center justify-between">
+            <p class="text-sm font-medium">{{ t('em.dnsPreviewTitle') }}</p>
+            <BaseButton
+              :icon="mdiRefresh"
+              :label="t('em.dnsCheck')"
+              color="info"
+              small
+              :disabled="dnsChecking"
+              @click="previewDns"
+            />
+          </div>
+
+          <div v-for="entry in dnsPreview" :key="'preview-' + entry.domain" class="rounded-lg border border-gray-200 dark:border-gray-700 p-3">
+            <div class="flex flex-wrap items-center gap-2 mb-2">
+              <span class="font-semibold">{{ entry.domain }}</span>
+              <span class="text-xs text-gray-500">{{ entry.message }}</span>
+              <BaseButton
+                v-if="!entry.synced"
+                :icon="mdiCloudUpload"
+                :label="t('em.dnsPublishMissing')"
+                color="success"
+                small
+                :disabled="dnsSyncing"
+                class="ml-auto"
+                @click="syncDomainByName(entry.domain)"
+              />
+            </div>
+
+            <div v-if="entry.records?.length" class="space-y-1">
+              <div v-for="(record, i) in entry.records" :key="i" class="flex flex-wrap items-start gap-2 text-xs">
+                <span class="px-2 py-0.5 rounded-full font-medium" :class="dnsActionClass(record.action)">
+                  {{ t('em.dnsAction_' + record.action) }}
+                </span>
+                <span class="font-mono w-14">{{ record.kind }}</span>
+                <span class="font-mono break-all flex-1">{{ record.content }}</span>
+                <span v-if="record.current && record.action === 'differs'" class="text-gray-500 break-all w-full pl-2">
+                  {{ t('em.dnsCurrently') }}: <span class="font-mono">{{ record.current }}</span>
+                </span>
+                <span v-if="record.detail" class="text-red-500 w-full pl-2">{{ record.detail }}</span>
+              </div>
+            </div>
+          </div>
         </div>
 
         <div v-for="entry in dnsRecords" :key="entry.domain" class="mb-6 last:mb-0">
