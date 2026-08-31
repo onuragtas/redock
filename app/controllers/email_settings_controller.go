@@ -74,21 +74,3 @@ func UpdateServerIP(c *fiber.Ctx) error {
 		"data":  config,
 	})
 }
-
-// GetServerConfig returns the current server configuration
-func GetServerConfig(c *fiber.Ctx) error {
-	manager := email_server.GetEmailManager()
-	if manager == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Email server not initialized",
-		})
-	}
-
-	config := manager.GetConfig()
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"data":  config,
-	})
-}

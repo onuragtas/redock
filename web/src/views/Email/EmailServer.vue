@@ -6,6 +6,7 @@ import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
 import WebmailPanel from "@/components/Email/WebmailPanel.vue";
+import FilterRules from "@/components/Email/FilterRules.vue";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -678,7 +679,7 @@ const legacyArtifacts = ref([]);
 const cleaningUp = ref(false);
 
 // Tabs, in the order an operator works through them.
-const mailTabs = ['overview', 'domains', 'mailboxes', 'webmail', 'logs', 'listeners', 'queue', 'dns', 'cleanup'];
+const mailTabs = ['overview', 'domains', 'mailboxes', 'webmail', 'filters', 'logs', 'listeners', 'queue', 'dns', 'security', 'cleanup'];
 
 const loadEngine = async () => {
   engineLoading.value = true;
@@ -855,7 +856,8 @@ watch(
     if (tab === 'dns' && !deliverability.value) runDeliverabilityCheck();
     if (tab === 'dns' && !dnsPreview.value.length) previewDns();
     if (['domains', 'mailboxes'].includes(tab)) loadAliases();
-    if (tab === 'cleanup') loadBlockedClients();
+    if (tab === 'security') loadBlockedClients();
+    if (tab === 'mailboxes') loadPasswordCheck();
   },
   { immediate: true }
 );
@@ -924,6 +926,56 @@ const loadBlockedClients = async () => {
     if (!response.data.error) blockedClients.value = response.data.data || [];
   } catch (error) {
     console.error('Failed to load blocked clients:', error);
+  }
+};
+
+// The dashboard is the only place a broken password would show before a mail
+// client failed to log in, so the check runs whenever Mailboxes is opened.
+const passwordCheck = ref({ total: 0, unusable: 0, repairable: 0, mailboxes: [] });
+
+const unusableMailboxes = computed(() =>
+  (passwordCheck.value.mailboxes || []).filter((entry) => entry.state === 'unusable')
+);
+
+const loadPasswordCheck = async () => {
+  try {
+    const response = await ApiService.get('/api/email/server/check-passwords');
+    if (!response.data.error) passwordCheck.value = response.data;
+  } catch (error) {
+    console.error('Failed to check mailbox passwords:', error);
+  }
+};
+
+// Blocking by hand. The guard reacts to what an address does here; this is for
+// one that has already earned a block somewhere else.
+const newBlock = ref({ ip: '', reason: '', minutes: 60 });
+const blockBusy = ref(false);
+
+const blockClient = async () => {
+  const ip = newBlock.value.ip.trim();
+  if (!ip) {
+    toast.error(t('em.blockNeedsIP'));
+    return;
+  }
+
+  blockBusy.value = true;
+  try {
+    const response = await ApiService.post('/api/email/blocked', {
+      ip,
+      reason: newBlock.value.reason.trim(),
+      minutes: Number(newBlock.value.minutes) || 0
+    });
+    if (response.data.error) {
+      toast.error(response.data.msg);
+      return;
+    }
+    toast.success(t('em.blockAdded', { ip }));
+    newBlock.value = { ip: '', reason: '', minutes: 60 };
+    await loadBlockedClients();
+  } catch (error) {
+    toast.error(error.response?.data?.msg || t('em.messageActionFailed'));
+  } finally {
+    blockBusy.value = false;
   }
 };
 
@@ -1336,6 +1388,27 @@ onMounted(() => {
           </p>
         </div>
 
+        <!-- A mailbox can lose its password without anyone noticing until a
+             client fails to log in; say so here instead. -->
+        <div
+          v-if="passwordCheck.unusable"
+          class="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3 dark:border-red-800 dark:bg-red-900/20"
+        >
+          <p class="text-sm font-medium text-red-800 dark:text-red-200">
+            {{ t('em.pwdBrokenTitle', { n: passwordCheck.unusable }) }}
+          </p>
+          <p class="mt-1 text-xs text-red-700 dark:text-red-300">{{ t('em.pwdBrokenHint') }}</p>
+          <ul class="mt-2 space-y-0.5 text-xs">
+            <li v-for="entry in unusableMailboxes" :key="entry.id" class="font-mono">{{ entry.email }}</li>
+          </ul>
+        </div>
+        <div
+          v-else-if="passwordCheck.repairable"
+          class="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-800 dark:bg-amber-900/20 dark:text-amber-200"
+        >
+          {{ t('em.pwdRepairable', { n: passwordCheck.repairable }) }}
+        </div>
+
         <div v-if="mailboxes.length === 0" class="text-center py-12 text-gray-500">
           {{ t('em.noMailboxes') }}
         </div>
@@ -1454,6 +1527,11 @@ onMounted(() => {
       <WebmailPanel :mailboxes="mailboxes" />
     </div>
 
+
+    <!-- Filter rules -->
+    <div v-if="activeTab === 'filters'">
+      <FilterRules :mailboxes="mailboxes" />
+    </div>
 
     <!-- Logs Tab - mail traffic in / out -->
     <div v-if="activeTab === 'logs'">
@@ -1981,6 +2059,27 @@ onMounted(() => {
             <input v-model="nativeConfig.guard_enabled" type="checkbox" />
             {{ t('em.optGuard') }}
           </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.dnsbl_enabled" type="checkbox" />
+            {{ t('em.optDNSBL') }}
+          </label>
+          <label class="flex items-center gap-2">
+            <input v-model="nativeConfig.dnsbl_reject" type="checkbox" :disabled="!nativeConfig.dnsbl_enabled" />
+            {{ t('em.optDNSBLReject') }}
+          </label>
+        </div>
+
+        <div v-if="nativeConfig.dnsbl_enabled" class="mb-4">
+          <label class="text-sm">
+            <span class="mb-1 block text-gray-500">{{ t('em.dnsblZones') }}</span>
+            <input
+              v-model="nativeConfig.dnsbl_zones"
+              type="text"
+              placeholder="zen.spamhaus.org, bl.spamcop.net"
+              class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2"
+            />
+          </label>
+          <p class="mt-1 text-xs text-gray-500">{{ t('em.dnsblHint') }}</p>
         </div>
 
         <BaseButton :icon="mdiCog" :label="t('em.engineSave')" color="success" :disabled="engineSaving" @click="saveNativeSettings" />
@@ -2173,7 +2272,8 @@ onMounted(() => {
     </div>
 
     <!-- Cleanup of the retired container setup -->
-    <div v-if="activeTab === 'cleanup'">
+    <!-- Security: who the guard is refusing, and blocking by hand -->
+    <div v-if="activeTab === 'security'">
       <CardBox class="mb-6">
         <div class="flex items-center justify-between mb-1">
           <h3 class="text-lg font-semibold">{{ t('em.blockedTitle') }}</h3>
@@ -2209,6 +2309,47 @@ onMounted(() => {
         <p v-else class="text-sm text-emerald-600 dark:text-emerald-400">{{ t('em.blockedNone') }}</p>
       </CardBox>
 
+      <!-- Blocking by hand: the guard reacts to behaviour, but an address that
+           has already made itself a nuisance elsewhere can be shut out now. -->
+      <CardBox class="mb-6">
+        <h3 class="text-lg font-semibold mb-1">{{ t('em.blockAddTitle') }}</h3>
+        <p class="text-sm text-gray-500 mb-4">{{ t('em.blockAddHint') }}</p>
+
+        <div class="flex flex-wrap items-end gap-3">
+          <label class="text-sm">
+            <span class="mb-1 block text-gray-500">{{ t('em.blockedIP') }}</span>
+            <input
+              v-model="newBlock.ip"
+              type="text"
+              placeholder="203.0.113.5"
+              class="w-48 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2"
+            />
+          </label>
+          <label class="text-sm flex-1 min-w-[12rem]">
+            <span class="mb-1 block text-gray-500">{{ t('em.blockedReason') }}</span>
+            <input
+              v-model="newBlock.reason"
+              type="text"
+              :placeholder="t('em.blockReasonPlaceholder')"
+              class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2"
+            />
+          </label>
+          <label class="text-sm">
+            <span class="mb-1 block text-gray-500">{{ t('em.blockMinutes') }}</span>
+            <input
+              v-model.number="newBlock.minutes"
+              type="number"
+              min="1"
+              class="w-28 rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2"
+            />
+          </label>
+          <BaseButton :label="t('em.blockAdd')" color="danger" :disabled="blockBusy" @click="blockClient" />
+        </div>
+      </CardBox>
+    </div>
+
+    <!-- Cleanup: leftovers from the container-based setup -->
+    <div v-if="activeTab === 'cleanup'">
       <CardBox>
         <h3 class="text-lg font-semibold mb-1">{{ t('em.cleanupTitle') }}</h3>
         <p class="text-sm text-gray-500 mb-4">{{ t('em.cleanupHint') }}</p>

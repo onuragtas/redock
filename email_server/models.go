@@ -224,6 +224,20 @@ type EmailServerConfig struct {
 	// BlockMinutes is how long a block lasts.
 	BlockMinutes int `json:"block_minutes"`
 
+	// DNSBL checks the connecting address against public block lists — the
+	// cheapest spam defence there is, since it decides before a message body is
+	// ever transferred. Off by default: it sends every inbound peer's address to
+	// a third party, which is a choice for the operator to make, not one to
+	// inherit silently.
+	DNSBLEnabled bool `json:"dnsbl_enabled"`
+	// DNSBLZones lists the lists to query, separated by commas or newlines.
+	// Kept as text rather than a slice so the config struct stays comparable,
+	// which is how stored configs are diffed for changes.
+	DNSBLZones string `json:"dnsbl_zones"`
+	// DNSBLReject refuses a listed sender outright. Left off, a listed sender's
+	// mail is filed in Junk instead, which is recoverable when a list is wrong.
+	DNSBLReject bool `json:"dnsbl_reject"`
+
 	// LogConnections records every connection, TLS handshake and protocol error,
 	// not just the messages that made it through. Verbose but complete.
 	LogConnections bool `json:"log_connections"`

@@ -610,50 +610,6 @@ func SendEmail(c *fiber.Ctx) error {
 	})
 }
 
-func StartEmailServer(c *fiber.Ctx) error {
-	manager := email_server.GetEmailManager()
-	if manager == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Email server not initialized",
-		})
-	}
-
-	if err := manager.StartServer(); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to start server: " + err.Error(),
-		})
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"msg":   "Email server started successfully",
-	})
-}
-
-func StopEmailServer(c *fiber.Ctx) error {
-	manager := email_server.GetEmailManager()
-	if manager == nil {
-		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Email server not initialized",
-		})
-	}
-
-	if err := manager.StopServer(); err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": true,
-			"msg":   "Failed to stop server: " + err.Error(),
-		})
-	}
-
-	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error": false,
-		"msg":   "Email server stopped successfully",
-	})
-}
-
 func GetEmailServerStatus(c *fiber.Ctx) error {
 	manager := email_server.GetEmailManager()
 	if manager == nil {
@@ -689,22 +645,54 @@ func CheckMailboxPasswords(c *fiber.Ctx) error {
 	db := manager.GetDB()
 	mailboxes := memory.FindAll[*email_server.EmailMailbox](db, "email_mailboxes")
 
-	var missingPasswords []fiber.Map
+	// Two different failures hide behind "no password", and they need different
+	// answers. A mailbox with no hash but a stored copy repairs itself on the
+	// next start; one with neither cannot be recovered and has to be set again
+	// by hand, which means telling the person who uses it.
+	broken := make([]fiber.Map, 0)
+	repairable := 0
 	for _, mb := range mailboxes {
-		if mb.PlainPassword == "" {
-			missingPasswords = append(missingPasswords, fiber.Map{
-				"id":    mb.ID,
-				"email": mb.Email,
-				"name":  mb.Name,
-				"fix":   fmt.Sprintf("PUT /api/email/mailboxes/%d/password", mb.ID),
-			})
+		if mb == nil || mb.IsDeleted() {
+			continue
+		}
+
+		hasHash := mb.Password != ""
+		hasCopy := mb.PlainPassword != ""
+		if hasHash && hasCopy {
+			continue
+		}
+
+		state := "unusable"
+		switch {
+		case hasHash:
+			// Logins work; only the copy used to show the password is gone.
+			state = "no_stored_copy"
+		case hasCopy:
+			state = "repairable"
+			repairable++
+		}
+
+		broken = append(broken, fiber.Map{
+			"id":    mb.ID,
+			"email": mb.Email,
+			"name":  mb.Name,
+			"state": state,
+			"fix":   fmt.Sprintf("PUT /api/email/mailboxes/%d/password", mb.ID),
+		})
+	}
+
+	unusable := 0
+	for _, entry := range broken {
+		if entry["state"] == "unusable" {
+			unusable++
 		}
 	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
-		"error":             false,
-		"total":             len(mailboxes),
-		"missing_passwords": len(missingPasswords),
-		"mailboxes":         missingPasswords,
+		"error":      false,
+		"total":      len(mailboxes),
+		"unusable":   unusable,
+		"repairable": repairable,
+		"mailboxes":  broken,
 	})
 }

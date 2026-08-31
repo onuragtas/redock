@@ -30,6 +30,8 @@ const (
 	avgGuardEntryBytes = 128
 	// avgAutoReplyEntryBytes is a rough cost per remembered correspondent.
 	avgAutoReplyEntryBytes = 96
+	// avgDNSBLEntryBytes is a rough cost per cached block-list answer.
+	avgDNSBLEntryBytes = 160
 )
 
 // RegisterMemoryRelievers hooks the mail engine into the memory guard. Called
@@ -78,6 +80,23 @@ func RegisterMemoryRelievers(m *EmailManager) {
 			}
 			return int64(dropped) * avgGuardEntryBytes,
 				fmt.Sprintf("%d tracked addresses forgotten, active blocks kept", dropped)
+		},
+	})
+
+	memguard.RegisterReliever(memguard.Reliever{
+		Name:        "mail-dnsbl-cache",
+		Description: "Forgets cached block-list answers",
+		MinLevel:    memguard.LevelCritical,
+		Priority:    40,
+		Release: func(memguard.Level) (int64, string) {
+			// The cost of forgetting is asking the lists again on the next
+			// connection from the same address.
+			dropped := dnsblAnswers.clear()
+			if dropped == 0 {
+				return 0, ""
+			}
+			return int64(dropped) * avgDNSBLEntryBytes,
+				fmt.Sprintf("%d cached block-list answers forgotten", dropped)
 		},
 	})
 

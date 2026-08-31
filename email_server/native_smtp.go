@@ -36,6 +36,9 @@ type smtpSession struct {
 	account    *Account // set once authenticated (submission only)
 	from       string
 	recipients []string
+	// blocklisted is what the DNS block lists said about this peer, checked
+	// once per session at MAIL FROM.
+	blocklisted DNSBLResult
 }
 
 // trace records a protocol step against the connection's trace. Once STARTTLS
@@ -143,6 +146,30 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 	s.from = normalizeAddress(from)
 	s.recipients = nil
 	s.trace("MAIL FROM <%s>", s.from)
+
+	// Ask the block lists here rather than at DATA: refusing now costs the
+	// sender one command, while refusing later means taking the whole message
+	// first. Authenticated submission is never checked — that is our own user.
+	if !s.backend.submission {
+		cfg := s.backend.manager.nativeConfig()
+		s.blocklisted = s.backend.manager.checkDNSBL(net.ParseIP(s.remoteIP()), cfg)
+		if s.blocklisted.Listed {
+			s.trace("client listed on %s: %s", s.blocklisted.Zone, s.blocklisted.Reason)
+
+			if cfg.DNSBLReject {
+				s.backend.manager.logMailEvent(mailEvent{
+					Direction: "in", Status: "rejected", From: s.from,
+					RemoteIP: s.remoteIP(), Service: "smtp", SMTPCode: 554,
+					Detail: fmt.Sprintf("listed on %s: %s", s.blocklisted.Zone, s.blocklisted.Reason),
+				})
+				return &smtp.SMTPError{
+					Code:         554,
+					EnhancedCode: smtp.EnhancedCode{5, 7, 1},
+					Message:      "Rejected: the connecting address is on a block list",
+				}
+			}
+		}
+	}
 	return nil
 }
 
@@ -254,7 +281,7 @@ func (s *smtpSession) handleInbound(cfg EmailServerConfig, raw []byte, subject s
 	// SPF/DMARC failures are not rejected by default, but they do land in Junk
 	// so the user still sees them without them looking legitimate.
 	folder := inboxName
-	suspicious := results.SPF == "fail" || results.DMARC == "fail"
+	suspicious := results.SPF == "fail" || results.DMARC == "fail" || s.blocklisted.Listed
 	if suspicious {
 		folder = "Junk"
 	}
@@ -320,7 +347,7 @@ func (s *smtpSession) handleInbound(cfg EmailServerConfig, raw []byte, subject s
 			RemoteIP:  s.remoteIP(),
 			Service:   "smtp",
 			MailboxID: account.Mailbox.ID,
-			Detail:    fmt.Sprintf("stored in %s (spf=%s dkim=%s dmarc=%s)", rules.Folder, results.SPF, results.DKIM, results.DMARC),
+			Detail:    fmt.Sprintf("stored in %s (spf=%s dkim=%s dmarc=%s%s)", rules.Folder, results.SPF, results.DKIM, results.DMARC, blocklistNote(s.blocklisted)),
 		})
 	}
 
@@ -457,4 +484,13 @@ func headerValue(raw []byte, name string) string {
 		return decodeMIMEHeader(strings.TrimSpace(value))
 	}
 	return ""
+}
+
+// blocklistNote adds the block-list verdict to a log line, and nothing at all
+// when the peer was clean or the check was off.
+func blocklistNote(result DNSBLResult) string {
+	if !result.Listed {
+		return ""
+	}
+	return " dnsbl=" + result.Zone
 }

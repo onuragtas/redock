@@ -3,66 +3,68 @@ package routes
 import (
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"testing"
 
 	"github.com/gofiber/fiber/v2"
-	"github.com/google/uuid"
-	"github.com/joho/godotenv"
-	"github.com/stretchr/testify/assert"
 )
 
-func TestPublicRoutes(t *testing.T) {
-	// Load .env.test file from the root folder
-	if err := godotenv.Load("../../.env.test"); err != nil {
-		panic(err)
-	}
-
-	// Define a structure for specifying input and output data of a single test case.
-	tests := []struct {
-		description   string
-		route         string // input route
-		expectedError bool
-		expectedCode  int
-	}{
-		{
-			description:   "get book by ID",
-			route:         "/api/v1/book/" + uuid.New().String(),
-			expectedError: false,
-			expectedCode:  404,
-		},
-		{
-			description:   "get book by invalid ID (non UUID)",
-			route:         "/api/v1/book/123456",
-			expectedError: false,
-			expectedCode:  500,
-		},
-	}
-
-	// Define Fiber app.
+// Public routes are the ones served without a JWT, so the list is a security
+// boundary: anything that appears here by accident is reachable by anyone who
+// can open the port. Pinning the set means adding to it has to be deliberate.
+func TestPublicRoutesAreOnlyTheExpectedOnes(t *testing.T) {
 	app := fiber.New()
-
-	// Define routes.
 	PublicRoutes(app)
 
-	// Iterate through test single test cases
-	for _, test := range tests {
-		// Create a new http request with the route from the test case.
-		req := httptest.NewRequest("GET", test.route, http.NoBody)
-		req.Header.Set("Content-Type", "application/json")
+	want := []string{
+		"GET /api/v1/auth/setup",
+		"GET /api/v1/tunnel/auth/callback",
+		"POST /api/v1/token/renew",
+		"POST /api/v1/tunnel/auth/login",
+		"POST /api/v1/tunnel/auth/register",
+		"POST /api/v1/user/sign/in",
+		"POST /api/v1/user/sign/up",
+	}
 
-		// Perform the request plain with the app.
-		resp, err := app.Test(req, -1) // the -1 disables request latency
-
-		// Verify, that no error occurred, that is not expected
-		assert.Equalf(t, test.expectedError, err != nil, test.description)
-
-		// As expected errors lead to broken responses,
-		// the next test case needs to be processed.
-		if test.expectedError {
+	seen := make(map[string]bool)
+	var got []string
+	for _, route := range app.GetRoutes() {
+		// Fiber registers a HEAD alongside every GET, and a catch-all for
+		// unmatched paths; neither is a route this file declared.
+		if route.Method == fiber.MethodHead || route.Path == "/" {
 			continue
 		}
+		key := route.Method + " " + route.Path
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		got = append(got, key)
+	}
+	sort.Strings(got)
 
-		// Verify, if the status code is as expected.
-		assert.Equalf(t, test.expectedCode, resp.StatusCode, test.description)
+	if len(got) != len(want) {
+		t.Fatalf("public routes changed:\n got: %v\nwant: %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("public route %d = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+// A path nobody registered must not be answered by the public group.
+func TestUnknownPublicPathIsNotFound(t *testing.T) {
+	app := fiber.New()
+	PublicRoutes(app)
+
+	resp, err := app.Test(httptest.NewRequest(http.MethodGet, "/api/v1/nothing-here", http.NoBody), -1)
+	if err != nil {
+		t.Fatalf("request failed: %v", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != fiber.StatusNotFound {
+		t.Errorf("status = %d, want %d", resp.StatusCode, fiber.StatusNotFound)
 	}
 }
