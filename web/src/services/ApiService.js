@@ -224,9 +224,16 @@ class ApiService {
     return ApiService.vueInstance.axios.patch(url, data, ApiService.mergeOptions(options, skipPrecheck));
   }
 
-  static delete(resource, { data, options = {}, skipPrecheck = false } = {}) {
+  // `params` is accepted here for the same reason get() accepts it: a caller
+  // writing { params: ... } expects a query string, and silently dropping it
+  // on a delete sends the request without the very field that says what to
+  // delete.
+  static delete(resource, { data, params = {}, options = {}, skipPrecheck = false } = {}) {
     let url = window.location.protocol + '//' + window.location.hostname + (window.location.port == '5173' ? ':6001' : (window.location.port !== '' ? ':' + window.location.port : '')) + resource;
     const config = ApiService.mergeOptions(options, skipPrecheck);
+    // Merge rather than replace, so a caller that put params inside options
+    // does not lose them.
+    config.params = { ...(config.params || {}), ...params };
     if (data !== undefined) config.data = data;
     return ApiService.vueInstance.axios.delete(url, config);
   }

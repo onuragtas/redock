@@ -3,6 +3,7 @@ package controllers
 import (
 	"fmt"
 	"strconv"
+	"strings"
 
 	"redock/email_server"
 
@@ -96,7 +97,19 @@ func MoveMessage(c *fiber.Ctx) error {
 // @Produce json
 // @Router /email/mailboxes/{mailbox_id}/messages/{uid} [delete]
 func DeleteMessage(c *fiber.Ctx) error {
-	manager, mailboxID, folder, uid, err := messageTarget(c)
+	// Deleting is the one action that must not fall back to a default folder.
+	// UIDs are per-folder, so a request that forgets to say where it means
+	// would delete whatever happens to hold that number in the inbox — a
+	// message the caller never named. Check this before anything else: it is a
+	// property of the request, true or false whether or not the server is up.
+	folder := strings.TrimSpace(c.Query("folder"))
+	if folder == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true, "msg": "folder is required when deleting a message",
+		})
+	}
+
+	manager, mailboxID, _, uid, err := messageTarget(c)
 	if err != nil {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": true, "msg": err.Error()})
 	}
