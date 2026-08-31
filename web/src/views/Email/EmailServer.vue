@@ -7,6 +7,7 @@ import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
 import WebmailPanel from "@/components/Email/WebmailPanel.vue";
 import FilterRules from "@/components/Email/FilterRules.vue";
+import ConnectionSettings from "@/components/Email/ConnectionSettings.vue";
 
 import ApiService from "@/services/ApiService";
 import {
@@ -289,6 +290,17 @@ const mailboxCount = (domainID) =>
 // check says about it. Refreshing only the list left the warning standing
 // after the password behind it had been set, and the only way out was to
 // leave the tab and come back.
+// Connection settings are read from the running listeners, which live in the
+// engine payload — the Mailboxes tab did not need it before.
+const isConnectionModalActive = ref(false);
+const connectionMailbox = ref(null);
+
+const openConnectionSettings = async (mailbox) => {
+  connectionMailbox.value = mailbox;
+  isConnectionModalActive.value = true;
+  if (!nativeStatus.value?.listeners?.length) await loadEngine();
+};
+
 const refreshMailboxes = async () => {
   await Promise.all([loadMailboxes(), loadPasswordCheck()]);
 };
@@ -1480,6 +1492,13 @@ onMounted(() => {
               </div>
               <div class="flex gap-2">
                 <BaseButton
+                  :icon="mdiCog"
+                  color="light"
+                  small
+                  :title="t('em.connTitle')"
+                  @click="openConnectionSettings(mailbox)"
+                />
+                <BaseButton
                   :icon="mdiPencil"
                   color="info"
                   small
@@ -2485,6 +2504,22 @@ onMounted(() => {
       <FormField :label="t('em.displayName')">
         <FormControl v-model="newMailbox.name" placeholder="John Doe" />
       </FormField>
+    </CardBoxModal>
+
+    <!-- What to type into a mail client for this mailbox -->
+    <CardBoxModal
+      v-model="isConnectionModalActive"
+      :title="t('em.connTitle')"
+      :button-label="t('common.close')"
+      @confirm="isConnectionModalActive = false"
+    >
+      <ConnectionSettings
+        v-if="connectionMailbox"
+        :mailbox="connectionMailbox"
+        :listeners="nativeStatus.listeners || []"
+        :hostname="nativeConfig?.hostname || ''"
+        :ip-address="nativeConfig?.ip_address || ''"
+      />
     </CardBoxModal>
 
     <!-- Update Password Modal -->
