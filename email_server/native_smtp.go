@@ -362,6 +362,7 @@ func (s *smtpSession) handleSubmission(cfg EmailServerConfig, raw []byte, subjec
 	}
 
 	if len(remote) == 0 {
+		s.backend.manager.saveToSent(s.account, stamped)
 		return nil
 	}
 
@@ -395,6 +396,8 @@ func (s *smtpSession) handleSubmission(cfg EmailServerConfig, raw []byte, subjec
 			Detail:    "accepted for delivery",
 		})
 	}
+
+	s.backend.manager.saveToSent(s.account, stamped)
 	return nil
 }
 

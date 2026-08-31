@@ -404,6 +404,15 @@ func (mbox *imapMailbox) CreateMessage(flags []string, date time.Time, body imap
 	if date.IsZero() {
 		date = time.Now()
 	}
+
+	// A client saving its own copy of a message it has just submitted would
+	// otherwise leave two: the server files one as the message is accepted.
+	// Report success either way — from the client's side the copy is saved.
+	if strings.EqualFold(mbox.name, sentName) &&
+		mbox.user.manager.sentHasMessageID(mbox.user.account, messageIDOf(raw)) {
+		return nil
+	}
+
 	_, err = mbox.store().Deliver(mbox.base(), mbox.name, raw, stripFlag(flags, imap.RecentFlag), date)
 	return err
 }

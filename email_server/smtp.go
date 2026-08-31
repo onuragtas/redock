@@ -119,11 +119,14 @@ func (c *SMTPClient) sendNative(mailboxID uint, mailbox *EmailMailbox, msg *Emai
 		}
 	}
 
-	go func(mbxID uint, message *EmailMessage, mime []byte) {
-		if err := c.saveToSent(mbxID, message, mime); err != nil {
-			log.Printf("⚠️  Failed to save to Sent folder: %v", err)
+	go func(mbxID uint, mime []byte) {
+		account, err := c.manager.accountForID(mbxID)
+		if err != nil {
+			log.Printf("mail: could not file the Sent copy: %v", err)
+			return
 		}
-	}(mailboxID, msg, mimeMsg)
+		c.manager.saveToSent(account, mime)
+	}(mailboxID, mimeMsg)
 
 	return nil
 }
@@ -200,27 +203,6 @@ func (c *SMTPClient) buildMIMEMessage(msg *EmailMessage) ([]byte, error) {
 	}
 
 	return buf.Bytes(), nil
-}
-
-// saveToSent files a copy of an outgoing message in the sender's Sent folder.
-func (c *SMTPClient) saveToSent(mailboxID uint, msg *EmailMessage, mimeMsg []byte) error {
-	mailbox, err := memory.FindByID[*EmailMailbox](c.manager.db, "email_mailboxes", mailboxID)
-	if err != nil {
-		return fmt.Errorf("mailbox not found: %w", err)
-	}
-
-	domain, err := memory.FindByID[*EmailDomain](c.manager.db, "email_domains", mailbox.DomainID)
-	if err != nil {
-		return fmt.Errorf("domain not found: %w", err)
-	}
-
-	if err := c.manager.store().EnsureMailbox(domain.Domain, mailbox.Username); err != nil {
-		return err
-	}
-
-	base := c.manager.store().MailboxPath(domain.Domain, mailbox.Username)
-	_, err = c.manager.store().Deliver(base, "Sent", mimeMsg, []string{imapFlagSeen}, time.Now())
-	return err
 }
 
 func (c *SMTPClient) logSentEmail(mailboxID uint, msg *EmailMessage) {
