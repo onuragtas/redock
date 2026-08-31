@@ -118,6 +118,17 @@ func (m *EmailManager) DeleteDomain(domainID uint) error {
 		}
 	}
 
+	// Aliases belong to the domain. Left behind they would name an address in
+	// a domain this server no longer knows, and go on showing in the alias
+	// list with nothing to point at.
+	for _, alias := range memory.Filter[*EmailAlias](m.db, "email_aliases", func(a *EmailAlias) bool {
+		return a != nil && a.DomainID == domainID
+	}) {
+		if err := memory.Delete[*EmailAlias](m.db, "email_aliases", alias.ID); err != nil {
+			return fmt.Errorf("could not remove the alias %s: %w", alias.Alias, err)
+		}
+	}
+
 	if err := memory.Delete[*EmailDomain](m.db, "email_domains", domainID); err != nil {
 		return fmt.Errorf("failed to delete domain: %w", err)
 	}
@@ -296,6 +307,23 @@ func (m *EmailManager) DeleteMailbox(mailboxID uint) error {
 	})
 	for _, folder := range folders {
 		memory.Delete[*EmailFolder](m.db, "email_folders", folder.ID)
+	}
+
+	// A rule belongs to the mailbox it sorts for; with the mailbox gone there
+	// is nothing left for it to run against.
+	for _, filter := range memory.Filter[*EmailFilter](m.db, "email_filters", func(f *EmailFilter) bool {
+		return f != nil && f.MailboxID == mailboxID
+	}) {
+		memory.Delete[*EmailFilter](m.db, "email_filters", filter.ID)
+	}
+
+	// An alias that delivered here now delivers nowhere, so it goes too rather
+	// than silently swallowing mail addressed to it.
+	for _, alias := range memory.Filter[*EmailAlias](m.db, "email_aliases", func(a *EmailAlias) bool {
+		return a != nil && (a.DestinationID == mailboxID ||
+			(a.DestinationID == 0 && strings.EqualFold(a.Destination, mailbox.Email)))
+	}) {
+		memory.Delete[*EmailAlias](m.db, "email_aliases", alias.ID)
 	}
 
 	domain, _ := memory.FindByID[*EmailDomain](m.db, "email_domains", mailbox.DomainID)

@@ -187,13 +187,21 @@ const updateServerIP = async () => {
   }
 };
 
+// Adding a domain creates its postmaster mailbox and deleting one takes that
+// mailbox and the domain's aliases away, so a domain change is never only a
+// change to the domain list. Reloading just that list left the Accounts tab
+// showing a postmaster whose domain was gone.
+const refreshDomains = async () => {
+  await Promise.all([loadDomains(), loadMailboxes(), loadPasswordCheck(), loadAliases()]);
+};
+
 const addDomain = async () => {
   try {
     const response = await ApiService.post('/api/email/domains', newDomain.value);
     if (!response.data.error) {
       toast.success(t('em.domainAdded'));
       toast.info(t('em.checkingCloudflare'), { timeout: 3000 });
-      await loadDomains();
+      await refreshDomains();
       isAddDomainModalActive.value = false;
       newDomain.value = { domain: '', description: '' };
     } else {
@@ -219,7 +227,7 @@ const editDomain = async () => {
     if (!response.data.error) {
       toast.success(t('em.domainUpdated'));
       toast.info(t('em.dnsQueued'), { timeout: 3000 });
-      await loadDomains();
+      await refreshDomains();
       isEditDomainModalActive.value = false;
     } else {
       toast.error('❌ ' + response.data.msg);
@@ -238,7 +246,7 @@ const deleteDomain = async (domainId) => {
     const response = await ApiService.delete(`/api/email/domains/${domainId}`);
     if (!response.data.error) {
       toast.success(t('em.domainDeleted'));
-      await loadDomains();
+      await refreshDomains();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
@@ -277,6 +285,14 @@ const getInitials = (value) => {
 const mailboxCount = (domainID) =>
   mailboxes.value.filter((mb) => mb.domain_id === domainID && mb.username !== 'postmaster').length;
 
+// Anything that changes a mailbox changes both the list and what the password
+// check says about it. Refreshing only the list left the warning standing
+// after the password behind it had been set, and the only way out was to
+// leave the tab and come back.
+const refreshMailboxes = async () => {
+  await Promise.all([loadMailboxes(), loadPasswordCheck()]);
+};
+
 const addMailbox = async () => {
   try {
     if (!newMailbox.value.domain_id) {
@@ -287,7 +303,7 @@ const addMailbox = async () => {
     const response = await ApiService.post('/api/email/mailboxes', newMailbox.value);
     if (!response.data.error) {
       toast.success(t('em.mailboxCreated'));
-      await loadMailboxes();
+      await refreshMailboxes();
       isAddMailboxModalActive.value = false;
       newMailbox.value = { domain_id: '', username: '', password: '', name: '' };
     } else {
@@ -326,7 +342,7 @@ const editMailbox = async () => {
     if (!response.data.error) {
       toast.success(t('em.mailboxUpdated'));
       toast.info(t('em.dnsQueued'), { timeout: 3000 });
-      await loadMailboxes();
+      await refreshMailboxes();
       isEditMailboxModalActive.value = false;
     } else {
       toast.error('❌ ' + response.data.msg);
@@ -371,6 +387,7 @@ const updateMailboxPassword = async () => {
       toast.success(t('em.passwordUpdated'));
       isUpdatePasswordModalActive.value = false;
       updatePasswordForm.value = { password: '', confirmPassword: '' };
+      await refreshMailboxes();
     } else {
       toast.error('❌ ' + response.data.msg);
     }
@@ -388,7 +405,7 @@ const deleteMailbox = async (mailboxId) => {
     const response = await ApiService.delete(`/api/email/mailboxes/${mailboxId}`);
     if (!response.data.error) {
       toast.success(t('em.mailboxDeleted'));
-      await loadMailboxes();
+      await refreshMailboxes();
     } else {
       toast.error('❌ ' + response.data.msg);
     }

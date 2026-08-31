@@ -99,3 +99,67 @@ func TestDeletingADomainRemovesItsMailDirectory(t *testing.T) {
 		t.Errorf("%s survived the deletion", path)
 	}
 }
+
+// Deleting a domain must not leave its aliases behind naming a domain that is
+// no longer served.
+func TestDeletingADomainTakesItsAliases(t *testing.T) {
+	m := newTestManager(t)
+
+	domain, err := m.AddDomain("example.com", "test")
+	if err != nil {
+		t.Fatalf("AddDomain: %v", err)
+	}
+	if _, err := m.AddAlias("info@example.com", "postmaster@example.com", true); err != nil {
+		t.Fatalf("AddAlias: %v", err)
+	}
+
+	if err := m.DeleteDomain(domain.ID); err != nil {
+		t.Fatalf("DeleteDomain: %v", err)
+	}
+
+	left := memory.Filter[*EmailAlias](m.db, "email_aliases", func(a *EmailAlias) bool { return a != nil })
+	if len(left) != 0 {
+		t.Errorf("%d aliases were orphaned: %+v", len(left), left)
+	}
+}
+
+// The same for a single mailbox: its rules and the aliases pointing at it go
+// with it, so mail is never accepted for an address with nowhere to land.
+func TestDeletingAMailboxTakesItsRulesAndAliases(t *testing.T) {
+	m := newTestManager(t)
+
+	domain, err := m.AddDomain("example.com", "test")
+	if err != nil {
+		t.Fatalf("AddDomain: %v", err)
+	}
+	mailbox, err := m.AddMailbox(domain.ID, "ali", "secret-password-1", "Ali")
+	if err != nil {
+		t.Fatalf("AddMailbox: %v", err)
+	}
+
+	if _, err := m.AddFilter(&EmailFilter{
+		MailboxID:  mailbox.ID,
+		Name:       "newsletters",
+		Enabled:    true,
+		Conditions: `[{"field":"from","operator":"contains","value":"news"}]`,
+		Actions:    `[{"type":"move_to","folder":"Archive"}]`,
+	}); err != nil {
+		t.Fatalf("AddFilter: %v", err)
+	}
+	if _, err := m.AddAlias("sales@example.com", "ali@example.com", true); err != nil {
+		t.Fatalf("AddAlias: %v", err)
+	}
+
+	if err := m.DeleteMailbox(mailbox.ID); err != nil {
+		t.Fatalf("DeleteMailbox: %v", err)
+	}
+
+	if rules := m.ListFilters(mailbox.ID); len(rules) != 0 {
+		t.Errorf("%d filter rules were orphaned", len(rules))
+	}
+	for _, alias := range memory.Filter[*EmailAlias](m.db, "email_aliases", func(a *EmailAlias) bool { return a != nil }) {
+		if alias.Alias == "sales@example.com" {
+			t.Errorf("the alias pointing at the deleted mailbox is still there: %+v", alias)
+		}
+	}
+}
