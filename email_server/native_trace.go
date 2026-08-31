@@ -149,6 +149,64 @@ func (s *traceStore) List(limit int) []ConnectionTrace {
 	return out
 }
 
+// trim reduces what the store holds to the newest `keep` connections, and
+// reports how many traces were dropped and how many were emptied.
+//
+// A connection that is still open cannot be dropped — its trace is still being
+// written to, and losing it would lose the conversation happening right now.
+// IMAP clients hold a connection open for hours, so on a busy server most of
+// what is stored can be live; those traces keep their place in the ring but
+// give up the lines they have accumulated, which is where the memory actually
+// sits.
+func (s *traceStore) trim(keep int) (dropped, emptied int) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if keep < 0 {
+		keep = 0
+	}
+	if s.length == 0 {
+		return 0, 0
+	}
+
+	// Walk newest first, the order List reports, and keep that many.
+	kept := make([]*ConnectionTrace, 0, s.length)
+	for i := 0; i < s.length; i++ {
+		idx := (s.pos - 1 - i + maxTracedConnections*2) % maxTracedConnections
+		trace := s.entries[idx]
+		s.entries[idx] = nil
+		if trace == nil {
+			continue
+		}
+
+		if len(kept) < keep {
+			kept = append(kept, trace)
+			continue
+		}
+
+		if _, live := s.live[trace.ID]; live {
+			if len(trace.Lines) > 0 {
+				trace.Lines = nil
+				trace.Truncated = true
+				emptied++
+			}
+			kept = append(kept, trace)
+			continue
+		}
+		dropped++
+	}
+
+	// Rebuild the ring oldest first so pos/length stay consistent with begin().
+	s.pos = 0
+	s.length = 0
+	for i := len(kept) - 1; i >= 0; i-- {
+		s.entries[s.pos] = kept[i]
+		s.pos = (s.pos + 1) % maxTracedConnections
+		s.length++
+	}
+	return dropped, emptied
+}
+
 // tracedListener wraps every accepted connection so the whole conversation is
 // recorded, whichever protocol the listener serves.
 type tracedListener struct {

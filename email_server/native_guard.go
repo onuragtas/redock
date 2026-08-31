@@ -330,6 +330,34 @@ func (m *EmailManager) UnblockClient(ip string) error {
 	return nil
 }
 
+// clientGuard returns the running guard, or nil when the server has never
+// started and there is nothing tracked yet.
+func (n *NativeServer) clientGuard() *connectionGuard {
+	if n == nil {
+		return nil
+	}
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.guard
+}
+
+// clearCounters forgets the per-address rate and failure history, reporting how
+// many addresses were being tracked. Active blocks are deliberately left in
+// place: they are a decision already made about a client, and re-earning one
+// takes another round of failures the counters no longer remember.
+func (g *connectionGuard) clearCounters() int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	dropped := len(g.failures) + len(g.connections)
+	if dropped == 0 {
+		return 0
+	}
+	g.failures = make(map[string][]time.Time)
+	g.connections = make(map[string][]time.Time)
+	return dropped
+}
+
 // startGuardSweep clears expired entries while the server runs.
 func (n *NativeServer) startGuardSweep(stop chan struct{}) {
 	ticker := time.NewTicker(guardSweepInterval)

@@ -178,15 +178,48 @@ func (a *autoReplyMemory) shouldReply(mailbox, sender string) bool {
 	}
 	a.sent[key] = time.Now()
 
-	// Keep the map from growing without bound on a busy server.
-	if len(a.sent) > 5000 {
-		for k, when := range a.sent {
-			if time.Since(when) > autoReplyInterval {
-				delete(a.sent, k)
-			}
+	a.pruneLocked()
+	return true
+}
+
+// autoReplyMaxEntries is the hard ceiling on remembered correspondents.
+const autoReplyMaxEntries = 5000
+
+// pruneLocked keeps the map from growing without bound on a busy server.
+func (a *autoReplyMemory) pruneLocked() {
+	if len(a.sent) <= autoReplyMaxEntries {
+		return
+	}
+
+	for k, when := range a.sent {
+		if time.Since(when) > autoReplyInterval {
+			delete(a.sent, k)
 		}
 	}
-	return true
+
+	// Expiring by age alone is not a bound: a flood of new senders puts
+	// thousands of fresh entries in the map at once, and none of them are old
+	// enough to drop. Past the ceiling, forget whatever the map hands back —
+	// the cost is that one of those senders may be answered twice.
+	for k := range a.sent {
+		if len(a.sent) <= autoReplyMaxEntries {
+			break
+		}
+		delete(a.sent, k)
+	}
+}
+
+// clear forgets every record and reports how many there were.
+func (a *autoReplyMemory) clear() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	dropped := len(a.sent)
+	if dropped == 0 {
+		return 0
+	}
+	a.sent = make(map[string]time.Time)
+	return dropped
 }
 
 // sendAutoReply answers a message on the mailbox owner's behalf, following the

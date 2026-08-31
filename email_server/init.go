@@ -21,6 +21,11 @@ func Init(dockerManager *dockermanager.DockerEnvironmentManager) {
 		return
 	}
 
+	// Hook into the memory guard before anything starts producing traces and
+	// counters, so the relievers exist by the time there is something to
+	// reclaim.
+	RegisterMemoryRelievers(manager)
+
 	// The mail servers live in this process, so bring them up here — but only
 	// for an installation that actually serves mail. Binding 25/143/587 on a
 	// machine with no mail domain would just take ports from something else.

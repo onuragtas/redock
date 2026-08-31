@@ -141,8 +141,13 @@ func (m *EmailManager) GetRawMailLog(tail int) ([]string, string, error) {
 		entries = entries[len(entries)-tail:]
 	}
 
+	// Ordered oldest first up to here, because "tail" means the newest N
+	// entries and that is easiest to take off the end. What gets returned is
+	// the reverse: a log is read from the top, and the line worth seeing
+	// without scrolling is the one that just arrived.
 	lines := make([]string, 0, len(entries))
-	for _, e := range entries {
+	for i := len(entries) - 1; i >= 0; i-- {
+		e := entries[i]
 		lines = append(lines, fmt.Sprintf("%s %s[%s] %s -> %s %s",
 			e.Timestamp.Format("Jan _2 15:04:05"),
 			e.Service,
