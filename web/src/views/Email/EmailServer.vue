@@ -144,7 +144,6 @@ const newEmail = ref({
 });
 
 // Cc/Bcc stay folded away until asked for, the way mail clients do it.
-const showCcBcc = ref(false);
 
 // The address a message will be sent from, shown so it is never a surprise.
 const composeFrom = computed(() => {
@@ -652,7 +651,6 @@ const sendEmail = async () => {
       toast.success(t('em.emailSent'));
       isComposeModalActive.value = false;
       newEmail.value = emptyCompose();
-      showCcBcc.value = false;
       loadEmails(selectedMailbox.value, selectedFolder.value);
     } else {
       toast.error('❌ ' + response.data.msg);
@@ -725,13 +723,11 @@ const openReplyCompose = (replyAll = false) => {
   }
 
   newEmail.value = { ...emptyCompose(), to: toAddr, cc: ccAddr, subject: subj, body: quoted };
-  showCcBcc.value = ccAddr !== '';
   isComposeModalActive.value = true;
 };
 
 const openComposeNew = () => {
   newEmail.value = emptyCompose();
-  showCcBcc.value = false;
   isComposeModalActive.value = true;
 };
 
@@ -1282,6 +1278,17 @@ const openMessage = (email) => {
   loadThread(selectedMailbox.value, selectedFolder.value, email.uid);
   loadAttachments(email);
   if (!email.seen) setMessageFlag(email, 'seen', true);
+};
+
+// In Sent and Drafts every message is from the account owner, so the name worth
+// showing in the list is the recipient's.
+const outgoingFolders = ['Sent', 'Drafts'];
+
+const listCorrespondent = (email) => {
+  if (outgoingFolders.includes(selectedFolder.value)) {
+    return email.to || t('em.unknown');
+  }
+  return email.from || t('em.unknown');
 };
 
 // ---- Message actions ----
@@ -2116,7 +2123,7 @@ onMounted(() => {
                   <div class="flex-1 min-w-0">
                     <div class="flex items-center justify-between mb-1">
                       <p :class="['truncate', !email.seen ? 'font-bold text-gray-900 dark:text-white' : 'font-medium text-gray-700 dark:text-gray-300']">
-                        {{ email.from || t('em.unknown') }}
+                        {{ listCorrespondent(email) }}
                       </p>
                       <span class="text-xs text-gray-500 ml-2 shrink-0">{{ formatTime(email.date) }}</span>
                     </div>
@@ -2233,6 +2240,28 @@ onMounted(() => {
                   <BaseIcon :path="mdiArrowLeft" w="w-6" h="h-6" />
                 </button>
               </div>
+              <!-- Who it came from and who it went to; a message detail without
+                   its recipients hides half the story. -->
+              <div class="text-sm space-y-0.5 mb-3">
+                <p>
+                  <span class="text-gray-500 w-12 inline-block">{{ t('em.logFrom') }}:</span>
+                  <span class="font-medium">{{ selectedEmail.from || '-' }}</span>
+                </p>
+                <p v-if="selectedEmail.to">
+                  <span class="text-gray-500 w-12 inline-block">{{ t('em.to') }}:</span>
+                  <span class="break-all">{{ selectedEmail.to }}</span>
+                </p>
+                <p v-if="selectedEmail.cc">
+                  <span class="text-gray-500 w-12 inline-block">Cc:</span>
+                  <span class="break-all">{{ selectedEmail.cc }}</span>
+                </p>
+                <p v-if="selectedEmail.reply_to && selectedEmail.reply_to !== selectedEmail.from">
+                  <span class="text-gray-500 w-12 inline-block">{{ t('em.replyTo') }}:</span>
+                  <span class="break-all">{{ selectedEmail.reply_to }}</span>
+                </p>
+                <p class="text-xs text-gray-500">{{ formatDate(selectedEmail.date) }}</p>
+              </div>
+
               <div class="flex items-center gap-2">
                 <BaseButton :icon="mdiReply" :label="t('em.reply')" color="light" small @click="openReplyCompose(false)" />
                 <BaseButton :icon="mdiReplyAll" :label="t('em.replyAll')" color="light" small @click="openReplyCompose(true)" />
@@ -3224,29 +3253,17 @@ onMounted(() => {
         <span class="font-medium ml-1">{{ composeFrom }}</span>
       </div>
 
-      <FormField :label="t('em.to')">
+      <FormField :label="t('em.to')" :help="t('em.multipleRecipientsHint')">
         <FormControl v-model="newEmail.to" :placeholder="t('em.toPlaceholder')" />
-        <div class="flex items-center justify-between mt-1">
-          <p class="text-xs text-gray-500">{{ t('em.multipleRecipientsHint') }}</p>
-          <button
-            v-if="!showCcBcc"
-            class="text-xs text-blue-600 dark:text-blue-400 hover:underline"
-            @click.prevent="showCcBcc = true"
-          >
-            {{ t('em.addCcBcc') }}
-          </button>
-        </div>
       </FormField>
 
-      <template v-if="showCcBcc">
-        <FormField label="Cc">
-          <FormControl v-model="newEmail.cc" :placeholder="t('em.toPlaceholder')" />
-        </FormField>
-        <FormField label="Bcc">
-          <FormControl v-model="newEmail.bcc" :placeholder="t('em.toPlaceholder')" />
-          <p class="text-xs text-gray-500 mt-1">{{ t('em.bccHint') }}</p>
-        </FormField>
-      </template>
+      <FormField label="Cc">
+        <FormControl v-model="newEmail.cc" :placeholder="t('em.toPlaceholder')" />
+      </FormField>
+
+      <FormField label="Bcc" :help="t('em.bccHint')">
+        <FormControl v-model="newEmail.bcc" :placeholder="t('em.toPlaceholder')" />
+      </FormField>
       <FormField :label="t('em.subject')">
         <FormControl v-model="newEmail.subject" :placeholder="t('em.subject')" />
       </FormField>
