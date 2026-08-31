@@ -1,6 +1,7 @@
 package cloudflare
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -179,5 +180,60 @@ func TestDKIMKeyIsComparedCaseSensitively(t *testing.T) {
 
 	if plan["DKIM"].Action != ActionDiffers {
 		t.Fatalf("a key differing only in case must be republished: %+v", plan["DKIM"])
+	}
+}
+
+// The mail host greets other servers under its own name, which is a separate
+// SPF identity from the domain in the envelope sender. Receivers report
+// "SPF: HELO does not publish an SPF record" when it is missing.
+func TestPlanPublishesSPFForTheMailHost(t *testing.T) {
+	records := buildEmailRecords("example.com", EmailDNSParams{MailServerIP: "203.0.113.10"})
+
+	var helo *desiredRecord
+	for i := range records {
+		if records[i].kind == "SPF-HELO" {
+			helo = &records[i]
+		}
+	}
+	if helo == nil {
+		t.Fatal("no SPF record is planned for the mail host")
+	}
+
+	if helo.params.Name != "mail.example.com" {
+		t.Errorf("name = %q, want the mail host", helo.params.Name)
+	}
+	if helo.params.Type != "TXT" {
+		t.Errorf("type = %q, want TXT", helo.params.Type)
+	}
+	if !strings.HasPrefix(helo.params.Content, "v=spf1") {
+		t.Errorf("content = %q, want an SPF record", helo.params.Content)
+	}
+
+	// It must recognise its own counterpart and nothing else at that name: an
+	// A record or a verification token there is none of its business.
+	if !helo.matches(&CloudflareDNSRecord{Type: "TXT", Name: "mail.example.com", Content: "v=spf1 a -all"}) {
+		t.Error("an existing HELO SPF record is not recognised")
+	}
+	if helo.matches(&CloudflareDNSRecord{Type: "TXT", Name: "mail.example.com", Content: "google-site-verification=abc"}) {
+		t.Error("an unrelated TXT record at the mail host would be overwritten")
+	}
+	if helo.matches(&CloudflareDNSRecord{Type: "A", Name: "mail.example.com", Content: "203.0.113.10"}) {
+		t.Error("the mail host's A record would be overwritten by its SPF record")
+	}
+}
+
+// The apex SPF and the host SPF are different records and must not be
+// mistaken for one another.
+func TestApexAndHostSPFStaySeparate(t *testing.T) {
+	records := buildEmailRecords("example.com", EmailDNSParams{MailServerIP: "203.0.113.10"})
+
+	names := map[string]string{}
+	for _, record := range records {
+		if strings.HasPrefix(record.kind, "SPF") {
+			names[record.kind] = record.params.Name
+		}
+	}
+	if names["SPF"] != "example.com" || names["SPF-HELO"] != "mail.example.com" {
+		t.Errorf("SPF records landed on %v", names)
 	}
 }

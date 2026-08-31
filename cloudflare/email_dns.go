@@ -109,6 +109,23 @@ func buildEmailRecords(domain string, params EmailDNSParams) []desiredRecord {
 		})
 	}
 
+	// The mail host greets other servers under its own name, and that name is
+	// an SPF identity of its own. Without a record here a receiver reports
+	// "HELO does not publish an SPF record" — a small penalty, and one of the
+	// few remaining marks against an otherwise authenticated message.
+	heloHost := params.MXRecord
+	records = append(records, desiredRecord{
+		kind: "SPF-HELO",
+		params: DNSRecordParams{
+			Type: "TXT", Name: heloHost, Content: "v=spf1 a -all", TTL: 1,
+			Comment: "SPF record for the mail host's HELO identity",
+		},
+		matches: func(r *CloudflareDNSRecord) bool {
+			return r.Type == "TXT" && equalName(r.Name, heloHost) &&
+				strings.HasPrefix(strings.ToLower(unquote(r.Content)), "v=spf1")
+		},
+	})
+
 	if params.MailServerIP != "" {
 		mailHost := params.MXRecord
 		proxied := false

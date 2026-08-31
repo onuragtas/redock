@@ -586,7 +586,11 @@ func SendEmail(c *fiber.Ctx) error {
 	}
 
 	msg := &email_server.EmailMessage{
-		From:      mailbox.Email,
+		From: mailbox.Email,
+		// The mailbox already carries the person's name; putting it in the From
+		// header costs nothing and removes a spam-filter penalty for sending
+		// with a bare address.
+		FromName:  mailbox.Name,
 		To:        req.To,
 		CC:        req.CC,
 		BCC:       req.BCC,

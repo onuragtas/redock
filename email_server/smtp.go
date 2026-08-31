@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"mime/multipart"
+	"net/mail"
 	"net/textproto"
 	"redock/platform/memory"
 	"strings"
@@ -16,7 +17,12 @@ type SMTPClient struct {
 }
 
 type EmailMessage struct {
-	From        string
+	From string
+	// FromName is the display name shown beside the address. A From header with
+	// only a bare address is one of the things spam filters count against a
+	// message — SpamAssassin's NO_FM_NAME_IP_HOSTN, worth about 1.5 points,
+	// needs a missing display name to fire.
+	FromName    string
 	To          []string
 	CC          []string
 	BCC         []string
@@ -135,7 +141,7 @@ func (c *SMTPClient) buildMIMEMessage(msg *EmailMessage) ([]byte, error) {
 	var buf bytes.Buffer
 
 	headers := make(textproto.MIMEHeader)
-	headers.Set("From", msg.From)
+	headers.Set("From", formatFrom(msg.FromName, msg.From))
 	headers.Set("To", strings.Join(msg.To, ", "))
 	if len(msg.CC) > 0 {
 		headers.Set("Cc", strings.Join(msg.CC, ", "))
@@ -231,4 +237,15 @@ func generateMessageID(from string) string {
 
 func generateBoundary() string {
 	return fmt.Sprintf("boundary_%d", time.Now().UnixNano())
+}
+
+// formatFrom builds the From header, quoting and encoding the display name the
+// way RFC 5322 and RFC 2047 require — a name with a comma, a quote or a
+// non-ASCII letter breaks the header if it is simply concatenated.
+func formatFrom(name, address string) string {
+	name = strings.TrimSpace(name)
+	if name == "" {
+		return address
+	}
+	return (&mail.Address{Name: name, Address: address}).String()
 }
