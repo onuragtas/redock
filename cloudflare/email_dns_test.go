@@ -237,3 +237,97 @@ func TestApexAndHostSPFStaySeparate(t *testing.T) {
 		t.Errorf("SPF records landed on %v", names)
 	}
 }
+
+func TestDMARCPolicyIsRead(t *testing.T) {
+	tests := map[string]string{
+		"v=DMARC1; p=quarantine; rua=mailto:a@b.com": "quarantine",
+		`"v=DMARC1; p=reject"`:                       "reject",
+		"v=DMARC1;p=none;":                           "none",
+		"v=DMARC1; rua=mailto:a@b.com":               "",
+	}
+	for record, want := range tests {
+		if got := dmarcPolicy(record); got != want {
+			t.Errorf("dmarcPolicy(%q) = %q, want %q", record, got, want)
+		}
+	}
+}
+
+// Publishing must never turn enforcement off. A p=quarantine or p=reject in the
+// zone was switched on deliberately, usually after weeks of reading reports;
+// replacing it with the p=none default would undo that silently.
+func TestSyncKeepsAStricterPublishedDMARCPolicy(t *testing.T) {
+	tests := []struct {
+		name      string
+		published string
+		desired   string
+		want      string
+	}{
+		{
+			"quarantine is kept over the none default",
+			"v=DMARC1; p=quarantine; rua=mailto:dmarc@example.com",
+			"v=DMARC1; p=none; rua=mailto:postmaster@example.com",
+			"v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com",
+		},
+		{
+			"reject is kept too",
+			"v=DMARC1; p=reject; rua=mailto:dmarc@example.com",
+			"v=DMARC1; p=none; rua=mailto:postmaster@example.com",
+			"v=DMARC1; p=reject; rua=mailto:postmaster@example.com",
+		},
+		{
+			// Tightening is the operator's own change and must go through.
+			"a weaker published policy does not hold the new one back",
+			"v=DMARC1; p=none; rua=mailto:dmarc@example.com",
+			"v=DMARC1; p=reject; rua=mailto:postmaster@example.com",
+			"v=DMARC1; p=reject; rua=mailto:postmaster@example.com",
+		},
+		{
+			"an equal policy changes nothing",
+			"v=DMARC1; p=quarantine; rua=mailto:old@example.com",
+			"v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com",
+			"v=DMARC1; p=quarantine; rua=mailto:postmaster@example.com",
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			got := keepStricterDMARCPolicy(&CloudflareDNSRecord{Content: tc.published}, tc.desired)
+			if got != tc.want {
+				t.Errorf("got  %q\nwant %q", got, tc.want)
+			}
+		})
+	}
+}
+
+// The reported outcome has to show what will actually be written, or the
+// preview would promise one thing and the sync do another.
+func TestPlannedContentReflectsTheReconciledPolicy(t *testing.T) {
+	records := buildEmailRecords("example.com", EmailDNSParams{})
+
+	var dmarc *desiredRecord
+	for i := range records {
+		if records[i].kind == "DMARC" {
+			dmarc = &records[i]
+		}
+	}
+	if dmarc == nil {
+		t.Fatal("no DMARC record is planned")
+	}
+
+	outcome := DNSRecordOutcome{Content: dmarc.params.Content}
+	applyReconcile(dmarc, &CloudflareDNSRecord{
+		Type: "TXT", Name: "_dmarc.example.com",
+		Content: "v=DMARC1; p=reject; rua=mailto:dmarc@example.com",
+	}, &outcome)
+
+	if !strings.Contains(outcome.Content, "p=reject") {
+		t.Errorf("the plan reports %q, which is not what would be written", outcome.Content)
+	}
+	if outcome.Content != dmarc.params.Content {
+		t.Errorf("the plan (%q) and what gets written (%q) disagree", outcome.Content, dmarc.params.Content)
+	}
+	// And the report address is still corrected to one that exists.
+	if !strings.Contains(outcome.Content, "postmaster@example.com") {
+		t.Errorf("the report address was not corrected: %q", outcome.Content)
+	}
+}

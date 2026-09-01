@@ -298,13 +298,92 @@ func (m *EmailManager) checkDomain(cfg EmailServerConfig, domain *EmailDomain) [
 			Advice: "Publish the DMARC record shown in the DNS tab, starting at p=none.",
 		})
 	default:
+		record := strings.Join(records, " ")
 		checks = append(checks, DeliverabilityCheck{
 			ID: "dmarc", Domain: name, Title: "DMARC policy", Level: CheckOK,
-			Detail: strings.Join(records, " "),
+			Detail: record,
 		})
+		checks = append(checks, m.checkDMARCReportAddresses(name, record)...)
 	}
 
 	return checks
+}
+
+// checkDMARCReportAddresses makes sure the reports a DMARC record asks for can
+// actually be delivered.
+//
+// The record names an address; nothing guarantees that address exists. Every
+// large receiver then sends its daily report there, this server answers "no
+// such recipient", and the reports are silently lost — which is the one part of
+// DMARC that tells you who is failing your policy.
+func (m *EmailManager) checkDMARCReportAddresses(domain, record string) []DeliverabilityCheck {
+	var checks []DeliverabilityCheck
+
+	for _, tag := range []string{"rua", "ruf"} {
+		for _, address := range dmarcReportAddresses(record, tag) {
+			_, addressDomain := splitAddress(address)
+
+			// An address in somebody else's domain is allowed, but that domain
+			// has to say it accepts reports for ours, or receivers will not
+			// send them.
+			if !strings.EqualFold(addressDomain, domain) {
+				checks = append(checks, DeliverabilityCheck{
+					ID: "dmarc-" + tag, Domain: domain, Title: "DMARC report address", Level: CheckWarn,
+					Detail: address + " is outside " + domain,
+					Advice: "An external report address needs a record at " + domain +
+						"._report._dmarc." + addressDomain + " or receivers will not send reports there.",
+				})
+				continue
+			}
+
+			if m.LookupAccount(address) == nil {
+				checks = append(checks, DeliverabilityCheck{
+					ID: "dmarc-" + tag, Domain: domain, Title: "DMARC report address", Level: CheckFail,
+					Detail: "reports are addressed to " + address + ", which no mailbox or alias here accepts",
+					Advice: "Create a mailbox for " + address + ", or add it as an alias to one that exists. " +
+						"Until then every DMARC report for this domain is refused.",
+				})
+				continue
+			}
+
+			checks = append(checks, DeliverabilityCheck{
+				ID: "dmarc-" + tag, Domain: domain, Title: "DMARC report address", Level: CheckOK,
+				Detail: address + " accepts mail here",
+			})
+		}
+	}
+
+	return checks
+}
+
+// dmarcReportAddresses pulls the mailto addresses out of one DMARC tag.
+//
+// The syntax allows several comma-separated URIs and an optional size limit
+// after an exclamation mark, as in "mailto:reports@example.com!10m".
+func dmarcReportAddresses(record, tag string) []string {
+	var addresses []string
+
+	for _, part := range strings.Split(record, ";") {
+		part = strings.TrimSpace(strings.Trim(part, `"`))
+		if !strings.HasPrefix(strings.ToLower(part), tag+"=") {
+			continue
+		}
+
+		for _, uri := range strings.Split(part[len(tag)+1:], ",") {
+			uri = strings.TrimSpace(uri)
+			if i := strings.Index(uri, "!"); i >= 0 {
+				uri = uri[:i]
+			}
+			if !strings.HasPrefix(strings.ToLower(uri), "mailto:") {
+				continue // only mailto is in practice ever used
+			}
+			if address := normalizeAddress(uri[len("mailto:"):]); address != "" {
+				addresses = append(addresses, address)
+			}
+		}
+	}
+
+	return addresses
 }
 
 // publicKeyMatches compares the p= value of a published DKIM record with the

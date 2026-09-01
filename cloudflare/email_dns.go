@@ -49,6 +49,11 @@ type desiredRecord struct {
 	// existing records. It must be narrow enough to leave unrelated records of
 	// the same type and name alone.
 	matches func(*CloudflareDNSRecord) bool
+	// reconcile adjusts what will be written once the existing record is known.
+	// Publishing is not always a straight overwrite: some of what is already
+	// there is a decision somebody made, and replacing it with a default would
+	// undo that decision without saying so.
+	reconcile func(existing *CloudflareDNSRecord, desired string) string
 }
 
 // buildEmailRecords turns the mail settings into the records the zone needs.
@@ -92,6 +97,11 @@ func buildEmailRecords(domain string, params EmailDNSParams) []desiredRecord {
 				return r.Type == "TXT" && equalName(r.Name, "_dmarc."+domain) &&
 					strings.HasPrefix(strings.ToLower(unquote(r.Content)), "v=dmarc1")
 			},
+			// A published p=quarantine or p=reject is enforcement somebody
+			// turned on deliberately, usually after watching reports for weeks.
+			// Overwriting it with the p=none default would quietly switch that
+			// enforcement off, so the stricter of the two policies wins.
+			reconcile: keepStricterDMARCPolicy,
 		},
 	}
 
@@ -192,6 +202,8 @@ func (m *CloudflareManager) PlanEmailDNSRecords(zoneID string, params EmailDNSPa
 		}
 
 		match := findMatch(existing, desired)
+		applyReconcile(&desired, match, &outcome)
+
 		switch {
 		case match == nil:
 			outcome.Action = ActionMissing
@@ -232,6 +244,8 @@ func (m *CloudflareManager) SyncEmailDNSRecords(zoneID string, params EmailDNSPa
 		}
 
 		match := findMatch(existing, desired)
+		applyReconcile(&desired, match, &outcome)
+
 		switch {
 		case match == nil:
 			if _, err := m.CreateDNSRecord(zone.ZoneID, desired.params); err != nil {
@@ -334,4 +348,63 @@ func cleanDKIM(record string) string {
 func equalName(a, b string) bool {
 	return strings.EqualFold(strings.TrimSuffix(strings.TrimSpace(a), "."),
 		strings.TrimSuffix(strings.TrimSpace(b), "."))
+}
+
+// applyReconcile lets a record adjust itself to what is already published,
+// keeping the reported content in step with what will actually be written.
+func applyReconcile(desired *desiredRecord, existing *CloudflareDNSRecord, outcome *DNSRecordOutcome) {
+	if desired.reconcile == nil || existing == nil {
+		return
+	}
+
+	adjusted := desired.reconcile(existing, desired.params.Content)
+	if adjusted == desired.params.Content {
+		return
+	}
+	desired.params.Content = adjusted
+	outcome.Content = adjusted
+}
+
+// dmarcPolicyRank orders the policies by how much they ask a receiver to do.
+func dmarcPolicyRank(policy string) int {
+	switch strings.ToLower(strings.TrimSpace(policy)) {
+	case "reject":
+		return 2
+	case "quarantine":
+		return 1
+	default:
+		return 0
+	}
+}
+
+// dmarcPolicy reads the p= tag out of a DMARC record.
+func dmarcPolicy(record string) string {
+	for _, part := range strings.Split(unquote(record), ";") {
+		part = strings.TrimSpace(part)
+		if strings.HasPrefix(strings.ToLower(part), "p=") {
+			return strings.TrimSpace(part[2:])
+		}
+	}
+	return ""
+}
+
+// keepStricterDMARCPolicy returns the record to publish, carrying over an
+// already-published policy when it asks for more than the one we would write.
+func keepStricterDMARCPolicy(existing *CloudflareDNSRecord, desired string) string {
+	published := dmarcPolicy(existing.Content)
+	if dmarcPolicyRank(published) <= dmarcPolicyRank(dmarcPolicy(desired)) {
+		return desired
+	}
+
+	parts := strings.Split(desired, ";")
+	for i, part := range parts {
+		trimmed := strings.TrimSpace(part)
+		if !strings.HasPrefix(strings.ToLower(trimmed), "p=") {
+			continue
+		}
+		leading := part[:len(part)-len(strings.TrimLeft(part, " "))]
+		parts[i] = leading + "p=" + published
+		return strings.Join(parts, ";")
+	}
+	return desired
 }
