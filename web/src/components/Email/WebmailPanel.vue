@@ -678,7 +678,7 @@ watch(activeFolder, () => {
 
     <div v-else class="flex-1 flex gap-4 min-h-0">
       <!-- Folders -->
-      <aside class="hidden lg:flex w-56 shrink-0 flex-col gap-3">
+      <aside class="hidden lg:flex w-56 shrink-0 flex-col gap-3 min-h-0">
         <BaseButton
           :icon="mdiPencil"
           color="info"
@@ -687,7 +687,7 @@ watch(activeFolder, () => {
           @click="openCompose"
         />
 
-        <nav class="flex-1 space-y-0.5 overflow-y-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-2">
+        <nav class="flex-1 min-h-0 space-y-0.5 overflow-y-auto rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 p-2">
           <button
             v-for="folder in folders"
             :key="folder.value"
@@ -718,7 +718,7 @@ watch(activeFolder, () => {
       <!-- Message list -->
       <section
         :class="[
-          'flex flex-col min-w-0 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 overflow-hidden',
+          'flex flex-col min-w-0 min-h-0 rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900/60 overflow-hidden',
           openEmail ? 'hidden xl:flex xl:w-[24rem] xl:shrink-0' : 'flex-1'
         ]"
       >
@@ -777,7 +777,7 @@ watch(activeFolder, () => {
           </div>
         </div>
 
-        <div v-else class="flex-1 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-800">
+        <div v-else class="flex-1 min-h-0 overflow-y-auto divide-y divide-gray-100 dark:divide-slate-800">
           <template v-for="thread in visibleThreads" :key="thread.thread_id">
             <!-- The newest message represents the conversation; the rest open
                  underneath it rather than hiding behind a second click. -->
@@ -863,14 +863,18 @@ watch(activeFolder, () => {
       <!-- Reader -->
       <section
         v-if="openEmail"
-        class="flex flex-1 min-w-0 flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900/60"
+        class="flex flex-1 min-w-0 min-h-0 flex-col overflow-hidden rounded-xl border border-gray-200 dark:border-slate-700 bg-white dark:bg-slate-900/60"
       >
-        <header class="border-b border-gray-200 dark:border-slate-700 px-5 py-4">
+        <!-- Only the subject and the actions are pinned. Everything that grows
+             with the message — a long recipient list, the body — belongs in the
+             scrolling area below, or a message addressed to thirty people
+             pushes its own text out of the pane. -->
+        <header class="shrink-0 border-b border-gray-200 dark:border-slate-700 px-5 py-3">
           <div class="mb-3 flex items-start gap-3">
             <button class="xl:hidden rounded p-1 text-gray-400 hover:text-gray-600" @click="closeReader">
               <BaseIcon :path="mdiArrowLeft" w="w-5" h="h-5" />
             </button>
-            <h2 class="flex-1 text-lg font-semibold leading-snug">
+            <h2 class="flex-1 line-clamp-2 text-lg font-semibold leading-snug" :title="openEmail.subject">
               {{ openEmail.subject || t('em.noSubject') }}
             </h2>
             <button class="hidden xl:block rounded p-1 text-gray-400 hover:text-gray-600" @click="closeReader">
@@ -878,7 +882,26 @@ watch(activeFolder, () => {
             </button>
           </div>
 
-          <dl class="mb-3 space-y-0.5 text-sm">
+          <div class="flex flex-wrap gap-1.5">
+            <BaseButton :icon="mdiReply" :label="t('em.reply')" color="light" small @click="openReply(false)" />
+            <BaseButton :icon="mdiReplyAll" :label="t('em.replyAll')" color="light" small @click="openReply(true)" />
+            <BaseButton
+              :icon="openEmail.flagged ? mdiStar : mdiStarOutline"
+              color="light"
+              small
+              :title="t('em.star')"
+              @click="setFlag(openEmail, 'flagged', !openEmail.flagged)"
+            />
+            <BaseButton :icon="mdiEmailOutline" color="light" small :title="t('em.markUnread')" @click="setFlag(openEmail, 'seen', false)" />
+            <BaseButton :icon="mdiArchive" color="light" small :disabled="busy" :title="t('em.archive')" @click="archiveMessages([openEmail])" />
+            <BaseButton :icon="mdiDownload" color="light" small :title="t('em.downloadRaw')" @click="downloadRaw" />
+            <BaseButton :icon="mdiTrashCan" color="danger" small :disabled="busy" :title="t('em.moveToTrash')" @click="trashMessages([openEmail])" />
+          </div>
+        </header>
+
+        <!-- One scroll area for everything that can be arbitrarily long. -->
+        <div class="flex-1 min-h-0 space-y-3 overflow-y-auto px-5 py-4">
+          <dl class="space-y-0.5 border-b border-gray-100 pb-3 text-sm dark:border-slate-800">
             <div class="flex gap-2">
               <dt class="w-14 shrink-0 text-gray-500">{{ t('em.logFrom') }}</dt>
               <dd class="min-w-0 break-all font-medium">{{ openEmail.from || '-' }}</dd>
@@ -901,24 +924,7 @@ watch(activeFolder, () => {
             </div>
           </dl>
 
-          <div class="flex flex-wrap gap-1.5">
-            <BaseButton :icon="mdiReply" :label="t('em.reply')" color="light" small @click="openReply(false)" />
-            <BaseButton :icon="mdiReplyAll" :label="t('em.replyAll')" color="light" small @click="openReply(true)" />
-            <BaseButton
-              :icon="openEmail.flagged ? mdiStar : mdiStarOutline"
-              color="light"
-              small
-              :title="t('em.star')"
-              @click="setFlag(openEmail, 'flagged', !openEmail.flagged)"
-            />
-            <BaseButton :icon="mdiEmailOutline" color="light" small :title="t('em.markUnread')" @click="setFlag(openEmail, 'seen', false)" />
-            <BaseButton :icon="mdiArchive" color="light" small :disabled="busy" :title="t('em.archive')" @click="archiveMessages([openEmail])" />
-            <BaseButton :icon="mdiDownload" color="light" small :title="t('em.downloadRaw')" @click="downloadRaw" />
-            <BaseButton :icon="mdiTrashCan" color="danger" small :disabled="busy" :title="t('em.moveToTrash')" @click="trashMessages([openEmail])" />
-          </div>
-        </header>
-
-        <div v-if="attachments.length" class="border-b border-gray-200 dark:border-slate-700 px-5 py-3">
+          <div v-if="attachments.length" class="border-b border-gray-100 pb-3 dark:border-slate-800">
           <p class="mb-2 text-xs font-medium text-gray-500">{{ t('em.attachmentsCount', { n: attachments.length }) }}</p>
           <div class="flex flex-wrap gap-2">
             <button
@@ -934,7 +940,6 @@ watch(activeFolder, () => {
           </div>
         </div>
 
-        <div class="flex-1 space-y-3 overflow-y-auto px-5 py-4">
           <p v-if="threadLoading" class="text-sm text-gray-500">{{ t('common.loading') }}</p>
 
           <article
@@ -962,7 +967,7 @@ watch(activeFolder, () => {
               />
             </button>
 
-            <div v-if="!collapsedMessages.has(message.uid)" class="px-4 py-4 text-sm">
+            <div v-if="!collapsedMessages.has(message.uid)" class="overflow-x-auto px-4 py-4 text-sm">
               <div v-if="message.body_html" class="wm-body prose prose-sm dark:prose-invert max-w-none" v-html="message.body_html"></div>
               <div v-else-if="message.body_plain" class="wm-body prose prose-sm dark:prose-invert max-w-none" v-html="plainToHtml(message.body_plain)"></div>
               <p v-else class="text-gray-500">{{ t('em.noContent') }}</p>
@@ -1049,10 +1054,24 @@ watch(activeFolder, () => {
   color: #94a3b8;
 }
 
-/* Remote HTML must not push the reader sideways. */
+/* Remote HTML must not push the reader sideways. A mail can carry anything:
+   a table laid out for a 900px newsletter, a URL with no break in it, a
+   preformatted block. None of it may widen the pane, because a pane that grows
+   horizontally hides its own content with no way back. */
 .wm-body :deep(img),
 .wm-body :deep(table) {
   max-width: 100%;
   height: auto;
+}
+
+.wm-body {
+  /* Break inside a long unbroken string rather than overflow. */
+  overflow-wrap: anywhere;
+}
+
+.wm-body :deep(pre) {
+  max-width: 100%;
+  overflow-x: auto;
+  white-space: pre-wrap;
 }
 </style>
