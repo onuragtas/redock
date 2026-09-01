@@ -1767,6 +1767,25 @@ onMounted(() => {
                 </tr>
                 <tr v-if="expandedLogIds.has(entry.id)" class="bg-gray-50 dark:bg-slate-900/60">
                   <td colspan="6" class="p-4">
+                    <!-- The row above has to truncate the detail to keep the
+                         table readable, which is exactly what a rejection
+                         reason or a remote server's answer does not survive.
+                         Here it is in full, wrapped and selectable. -->
+                    <div v-if="entry.detail" class="mb-3">
+                      <span class="text-gray-500 block text-xs mb-1">{{ t('em.logDetail') }}</span>
+                      <p class="whitespace-pre-wrap break-words rounded bg-white p-3 font-mono text-xs dark:bg-slate-950">{{ entry.detail }}</p>
+                    </div>
+
+                    <div v-if="entry.subject" class="mb-3">
+                      <span class="text-gray-500 block text-xs mb-1">{{ t('em.subject') }}</span>
+                      <p class="break-words text-sm">{{ entry.subject }}</p>
+                    </div>
+
+                    <div v-if="(entry.to || []).length" class="mb-3">
+                      <span class="text-gray-500 block text-xs mb-1">{{ t('em.to') }}</span>
+                      <p class="break-all font-mono text-xs">{{ (entry.to || []).join(', ') }}</p>
+                    </div>
+
                     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-xs mb-3">
                       <div>
                         <span class="text-gray-500 block">{{ t('em.logService') }}</span>
