@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 	"redock/dns_server"
 	"redock/email_server"
 	localproxy "redock/local_proxy"
+	"redock/notify"
 	"redock/onion_proxy"
 	"redock/php_debug_adapter"
 	"redock/pkg/network"
@@ -110,6 +112,53 @@ func initialize() {
 	traffic_inspector.Init(db)
 	cloudflare.Init()
 	email_server.Init(dockerEnvironmentManager)
+	// Alerts are sent through this server's own mail, so this comes after the
+	// mail server: the sources it watches have to exist before it reads them.
+	notify.Init(db, notify.Sources{
+		CertificateDaysLeft: func() (int, bool) {
+			manager := email_server.GetEmailManager()
+			if manager == nil {
+				return 0, false
+			}
+			status := manager.CertificateStatus()
+			if status.NotAfter == nil {
+				return 0, false
+			}
+			return status.DaysLeft, true
+		},
+		QueueStuck: func() int {
+			manager := email_server.GetEmailManager()
+			if manager == nil {
+				return 0
+			}
+			// A message that has never been tried is not stuck; one that has
+			// failed at least once is what an operator wants to hear about.
+			stuck := 0
+			for _, item := range manager.QueueItems() {
+				if item.Attempts > 0 {
+					stuck++
+				}
+			}
+			return stuck
+		},
+		MemoryLevel: func() string { return memguard.Get().Snapshot().Level.String() },
+		BlockedClients: func() int {
+			manager := email_server.GetEmailManager()
+			if manager == nil {
+				return 0
+			}
+			return len(manager.BlockedClients())
+		},
+	}, func(mailboxID uint, to, subject, body string) error {
+		manager := email_server.GetEmailManager()
+		if manager == nil {
+			return fmt.Errorf("the mail server is not running")
+		}
+		return email_server.NewSMTPClient(manager).SendEmail(mailboxID, &email_server.EmailMessage{
+			To: []string{to}, Subject: subject, BodyPlain: body,
+		})
+	})
+
 	go deployment.GetDeployment().Run()
 	localproxy.GetLocalProxyManager().StartAll()
 	api_gateway.GetGateway().StartAll()
@@ -212,6 +261,7 @@ func registerEntities(db *memory.Database) error {
 		}},
 		{"jwt_secrets", func() error { return memory.Register[*jwtsecrets.JWTSecretsEntity](db, jwtsecrets.TableName) }},
 		{"memguard_config", func() error { return memory.Register[*memguard.ConfigEntity](db, memguard.TableName) }},
+		{"notify_settings", func() error { return memory.Register[*notify.Settings](db, notify.TableName) }},
 		{"vpn_ca", func() error { return memory.Register[*traffic_inspector.CAEntity](db, traffic_inspector.CATableName) }},
 		// Tunnel server
 		{"tunnel_server_config", func() error { return memory.Register[*tunnel_server.TunnelServerConfig](db, "tunnel_server_config") }},

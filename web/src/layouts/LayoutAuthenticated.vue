@@ -3,7 +3,7 @@ import BaseIcon from '@/components/BaseIcon.vue'
 import CardBoxModal from '@/components/CardBoxModal.vue'
 import FormCheckRadio from '@/components/FormCheckRadio.vue'
 import LanguageSwitcher from '@/components/LanguageSwitcher.vue'
-import menuIconMap from '@/menuIcons.js'
+import { menuIcon } from '@/menuIcons.js'
 import ApiService from '@/services/ApiService'
 import { useAuthStore } from '@/stores/authStore'
 import { useLayoutStore } from '@/stores/layout'
@@ -586,7 +586,7 @@ onMounted(() => {
           ]"
           :title="layoutStore.sidebarCollapsed ? menuLabel(item) : undefined"
         >
-          <BaseIcon :path="menuIconMap[item.icon] || item.icon" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
+          <BaseIcon :path="menuIcon(item.icon)" size="20" :class="layoutStore.sidebarCollapsed ? '' : 'mr-3 shrink-0'" />
           <span v-show="!layoutStore.sidebarCollapsed" class="flex-1 truncate">{{ menuLabel(item) }}</span>
         </router-link>
       </nav>

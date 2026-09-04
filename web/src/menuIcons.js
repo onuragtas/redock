@@ -5,6 +5,7 @@
 import {
   mdiAccountGroup,
   mdiArchive,
+  mdiBellOutline,
   mdiBugCheck,
   mdiCloud,
   mdiConsole,
@@ -49,7 +50,18 @@ export const menuIconMap = {
   mdiDownload,
   mdiAccountGroup,
   mdiArchive,
+  mdiBellOutline,
   mdiMemory
+}
+
+/**
+ * An icon name the map does not know used to be handed to <path d> as-is, which
+ * the browser reports as "Expected number" and draws as nothing. Falling back to
+ * a real icon keeps the menu usable and the console quiet while the missing
+ * entry is added.
+ */
+export function menuIcon(name) {
+  return menuIconMap[name] || mdiCubeOutline
 }
 
 export default menuIconMap

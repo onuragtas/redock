@@ -341,6 +341,14 @@ const routes = [
       },
       {
         meta: {
+          title: 'Notifications'
+        },
+        path: 'notifications',
+        name: 'notifications',
+        component: () => import('@/views/NotificationCenter.vue')
+      },
+      {
+        meta: {
           title: 'Users',
           requiresAdmin: true
         },

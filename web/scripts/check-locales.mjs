@@ -20,6 +20,15 @@ const sampleParams = new Proxy({}, { get: () => 'x' })
 
 let failures = 0
 
+// vue-i18n does not always throw on a bad message: for some errors it writes to
+// the console and falls back, which a try/catch never sees. Watching the console
+// is what makes this check reliable rather than merely reassuring.
+const consoleErrors = []
+const realConsoleError = console.error
+console.error = (...args) => {
+  consoleErrors.push(args.join(' '))
+}
+
 for (const file of readdirSync(localeDir).filter((name) => name.endsWith('.json'))) {
   const locale = file.replace(/\.json$/, '')
   const messages = JSON.parse(readFileSync(join(localeDir, file), 'utf8'))
@@ -37,12 +46,16 @@ for (const file of readdirSync(localeDir).filter((name) => name.endsWith('.json'
       if (typeof value !== 'string') continue
 
       try {
+        consoleErrors.length = 0
         i18n.global.t(path, sampleParams)
+        if (consoleErrors.length) {
+          throw new Error(consoleErrors.join(' | '))
+        }
       } catch (error) {
         failures++
-        console.error(`✖ ${locale}: ${path}\n  ${value}\n  ${error.message}`)
+        realConsoleError(`✖ ${locale}: ${path}\n  ${value}\n  ${error.message}`)
         if (value.includes('@') && !value.includes("{'@'}")) {
-          console.error("  hint: write a literal @ as {'@'}")
+          realConsoleError("  hint: write a literal @ as {'@'}")
         }
       }
     }
@@ -50,6 +63,8 @@ for (const file of readdirSync(localeDir).filter((name) => name.endsWith('.json'
 
   walk(messages, '')
 }
+
+console.error = realConsoleError
 
 if (failures > 0) {
   console.error(`\n${failures} translation message(s) will fail at runtime.`)

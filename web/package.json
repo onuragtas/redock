@@ -3,12 +3,13 @@
   "version": "3.3.0",
   "scripts": {
     "dev": "vite",
-    "build": "node scripts/check-locales.mjs && node scripts/check-templates.mjs && vite build",
+    "build": "node scripts/check-locales.mjs && node scripts/check-templates.mjs && node scripts/check-layouts.mjs && vite build",
     "preview": "vite preview --port 4173",
     "lint": "eslint . --ext .vue,.js,.jsx,.cjs,.mjs --fix --ignore-path .gitignore",
     "format": "prettier --write src/",
     "check:locales": "node scripts/check-locales.mjs",
-    "check:templates": "node scripts/check-templates.mjs"
+    "check:templates": "node scripts/check-templates.mjs",
+    "check:layouts": "node scripts/check-layouts.mjs"
   },
   "dependencies": {
     "@mdi/js": "^7.0.96",

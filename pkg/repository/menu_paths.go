@@ -31,16 +31,22 @@ var AllMenuItems = []MenuItem{
 	{Path: "/users", Name: "Users", Icon: "mdiAccountGroup"},
 	{Path: "/backups", Name: "Backups", Icon: "mdiArchive"},
 	{Path: "/memory", Name: "Memory", Icon: "mdiMemory"},
+	{Path: "/notifications", Name: "Notifications", Icon: "mdiBellOutline"},
 	{Path: "/updates", Name: "Updates", Icon: "mdiDownload"},
 }
 
-// AllMenuPaths path listesi (mevcut kullanım için).
-var AllMenuPaths = []string{
-	"/", "/deployment", "/devenv", "/container_settings", "/stacks",
-	"/api-gateway", "/onion-services", "/dns-server", "/vpn-server", "/email-server", "/cloudflare",
-	"/local-proxy", "/exec", "/tunnel-proxy-server", "/tunnel-proxy-client",
-	"/virtual-hosts", "/saved-commands", "/php-xdebug-adapter", "/updates",
-	"/users", "/ip_alias", "/backups", "/memory",
+// AllMenuPaths, AllMenuItems'ten türetilir. İki listeyi elle paralel tutmak,
+// menüye eklenen bir sayfanın hiç görünmemesine yol açıyordu: öğe eklenip yol
+// eklenmeyince filtre onu eliyordu ve ortada hata da yoktu.
+var AllMenuPaths = menuPaths(AllMenuItems)
+
+// menuPaths bir menü listesinin yollarını çıkarır.
+func menuPaths(items []MenuItem) []string {
+	paths := make([]string, 0, len(items))
+	for _, item := range items {
+		paths = append(paths, item.Path)
+	}
+	return paths
 }
 
 // DefaultUserMenuPaths user rolü için varsayılan menüler (AllowedMenus boşsa).
