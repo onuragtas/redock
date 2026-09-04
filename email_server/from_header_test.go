@@ -68,3 +68,85 @@ func TestBuiltMessageHasANamedFrom(t *testing.T) {
 		t.Error("From is still a bare address; the display name was dropped")
 	}
 }
+
+// Gmail refuses a message with no From header outright:
+//
+//	550 5.7.1 Messages missing a valid address in From: header, or having no
+//	From: header, are not accepted.
+//
+// The send itself looked fine — the message was queued and the bounce arrived
+// from Google minutes later. SendEmail already knows which mailbox it is
+// sending through, so a caller that does not set a sender gets one.
+func TestSendEmailFillsInTheSenderFromTheMailbox(t *testing.T) {
+	m := newTestManager(t)
+	domain, err := m.AddDomain("example.com", "test")
+	if err != nil {
+		t.Fatalf("AddDomain: %v", err)
+	}
+	mailbox, err := m.AddMailbox(domain.ID, "alerts", "secret-password-1", "Redock Alerts")
+	if err != nil {
+		t.Fatalf("AddMailbox: %v", err)
+	}
+	// A local recipient, so the message lands on disk here and the header it
+	// was actually sent with can be read back.
+	if _, err := m.AddMailbox(domain.ID, "someone", "secret-password-2", "Someone"); err != nil {
+		t.Fatalf("AddMailbox: %v", err)
+	}
+
+	// A caller that only says what to send and to whom — which is how the
+	// notification sender was written.
+	msg := &EmailMessage{
+		To:        []string{"someone@example.com"},
+		Subject:   "alert",
+		BodyPlain: "something needs attention",
+	}
+	if err := NewSMTPClient(m).SendEmail(mailbox.ID, msg); err != nil {
+		t.Fatalf("SendEmail: %v", err)
+	}
+
+	if msg.From != "alerts@example.com" {
+		t.Errorf("From = %q, want the mailbox address", msg.From)
+	}
+	if msg.FromName != "Redock Alerts" {
+		t.Errorf("FromName = %q, want the mailbox name", msg.FromName)
+	}
+
+	// And the message that was actually delivered carries the header.
+	account := m.LookupAccount("someone@example.com")
+	if account == nil {
+		t.Fatal("the recipient mailbox is missing")
+	}
+	messages, err := m.store().List(account.Base, inboxName)
+	if err != nil || len(messages) != 1 {
+		t.Fatalf("expected one delivered message, got %d (%v)", len(messages), err)
+	}
+	raw, err := m.store().Read(account.Base, inboxName, messages[0])
+	if err != nil {
+		t.Fatalf("read the message: %v", err)
+	}
+	from := headerValue(raw, "From")
+	if !strings.Contains(from, "alerts@example.com") {
+		t.Errorf("the delivered message has From: %q", from)
+	}
+}
+
+// An explicit sender is left alone.
+func TestSendEmailKeepsAnExplicitSender(t *testing.T) {
+	m := newTestManager(t)
+	domain, _ := m.AddDomain("example.com", "test")
+	mailbox, err := m.AddMailbox(domain.ID, "alerts", "secret-password-1", "Redock Alerts")
+	if err != nil {
+		t.Fatalf("AddMailbox: %v", err)
+	}
+
+	msg := &EmailMessage{
+		From: "alerts@example.com", FromName: "Chosen Name",
+		To: []string{"someone@example.com"}, Subject: "alert", BodyPlain: "body",
+	}
+	if err := NewSMTPClient(m).SendEmail(mailbox.ID, msg); err != nil {
+		t.Fatalf("SendEmail: %v", err)
+	}
+	if msg.FromName != "Chosen Name" {
+		t.Errorf("FromName = %q, want the caller's choice", msg.FromName)
+	}
+}

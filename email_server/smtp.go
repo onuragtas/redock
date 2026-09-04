@@ -54,6 +54,22 @@ func (c *SMTPClient) SendEmail(mailboxID uint, msg *EmailMessage) error {
 		return fmt.Errorf("mailbox not found: %w", err)
 	}
 
+	// Fill the sender in from the mailbox this is being sent through. A caller
+	// that forgets used to produce a message with no From header at all, which
+	// every large receiver refuses — Gmail answers "550 5.7.1 Messages missing
+	// a valid address in From: header". The bounce arrives from a remote server
+	// long after the send looked successful, so the mistake is worth making
+	// impossible rather than merely documenting.
+	if strings.TrimSpace(msg.From) == "" {
+		msg.From = mailbox.Email
+	}
+	if strings.TrimSpace(msg.FromName) == "" {
+		msg.FromName = mailbox.Name
+	}
+	if strings.TrimSpace(msg.From) == "" {
+		return fmt.Errorf("the mailbox has no address to send from")
+	}
+
 	mimeMsg, err := c.buildMIMEMessage(msg)
 	if err != nil {
 		return fmt.Errorf("failed to build MIME message: %w", err)

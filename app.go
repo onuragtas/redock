@@ -65,9 +65,13 @@ func app() {
 
 	defer recoverFunction()
 
-	os.Setenv("REDOCK_HOST", "0.0.0.0")
-	os.Setenv("REDOCK_PORT", "6001")
-	os.Setenv("SERVER_READ_TIMEOUT", "60")
+	// Defaults, not overrides. These were being set unconditionally, which made
+	// the three documented environment variables dead: the dashboard could not
+	// be bound to localhost, and a second instance could not be started on
+	// another port to test against.
+	setDefaultEnv("REDOCK_HOST", "0.0.0.0")
+	setDefaultEnv("REDOCK_PORT", "6001")
+	setDefaultEnv("SERVER_READ_TIMEOUT", "60")
 
 	// Set current version for update controller
 	controllers.SetCurrentVersion(version)
@@ -252,4 +256,12 @@ func staticCacheHeaders(c *fiber.Ctx) error {
 		c.Set(fiber.HeaderCacheControl, "no-cache")
 	}
 	return c.Next()
+}
+
+// setDefaultEnv fills in a value only when the environment does not already
+// carry one, so an operator's choice survives.
+func setDefaultEnv(key, value string) {
+	if _, set := os.LookupEnv(key); !set {
+		os.Setenv(key, value)
+	}
 }
