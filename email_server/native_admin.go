@@ -52,6 +52,7 @@ func (m *EmailManager) UpdateNativeSettings(updated EmailServerConfig) (*EmailSe
 	current.DNSBLEnabled = updated.DNSBLEnabled
 	current.DNSBLZones = updated.DNSBLZones
 	current.DNSBLReject = updated.DNSBLReject
+	current.BlockedSenderDomains = normalizeBlockedSenders(updated.BlockedSenderDomains)
 	current.MaxMessageSize = updated.MaxMessageSize
 	current.MaxRecipients = updated.MaxRecipients
 	current.QueueMaxAttempts = updated.QueueMaxAttempts

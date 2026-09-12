@@ -829,6 +829,13 @@ const cleanupLegacy = async () => {
   }
 };
 
+// How many sender rules are actually in effect, counted the way the server
+// counts them: blank lines and stray separators are not entries.
+const blockedSenderCount = computed(() => {
+  const configured = nativeConfig.value?.blocked_sender_domains || '';
+  return configured.split(/[\n,;]+/).map((entry) => entry.trim()).filter(Boolean).length;
+});
+
 const saveNativeSettings = async () => {
   if (!nativeConfig.value) return;
   engineSaving.value = true;
@@ -903,7 +910,7 @@ const formatQueueTime = (value) => {
 watch(
   activeTab,
   (tab) => {
-      if (['overview', 'listeners', 'queue', 'dns', 'cleanup'].includes(tab)) loadEngine();
+      if (['overview', 'listeners', 'queue', 'dns', 'cleanup', 'security'].includes(tab)) loadEngine();
     if (tab === 'dns' && !deliverability.value) runDeliverabilityCheck();
     if (tab === 'dns' && !dnsPreview.value.length) previewDns();
     if (['domains', 'mailboxes'].includes(tab)) loadAliases();
@@ -2436,6 +2443,39 @@ onMounted(() => {
           </label>
           <BaseButton :label="t('em.blockAdd')" color="danger" :disabled="blockBusy" @click="blockClient" />
         </div>
+      </CardBox>
+
+      <!-- Blocking by sender rather than by address: a domain that rotates its
+           machines is invisible to the guard and to the block lists. -->
+      <CardBox v-if="nativeConfig">
+        <div class="flex items-center justify-between mb-1">
+          <h3 class="text-lg font-semibold">{{ t('em.senderBlockTitle') }}</h3>
+          <span v-if="blockedSenderCount" class="text-xs text-gray-500">
+            {{ t('em.senderBlockCount', { count: blockedSenderCount }) }}
+          </span>
+          <span v-else class="text-xs text-gray-500">{{ t('em.senderBlockNone') }}</span>
+        </div>
+        <p class="text-sm text-gray-500 mb-4">{{ t('em.senderBlockHint') }}</p>
+
+        <label class="text-sm block mb-2">
+          <span class="mb-1 block text-gray-500">{{ t('em.senderBlockLabel') }}</span>
+          <textarea
+            v-model="nativeConfig.blocked_sender_domains"
+            rows="5"
+            spellcheck="false"
+            :placeholder="t('em.senderBlockPlaceholder')"
+            class="w-full rounded-lg border border-gray-300 dark:border-gray-700 bg-white dark:bg-slate-800 px-3 py-2 font-mono text-xs"
+          ></textarea>
+        </label>
+        <p class="mb-4 text-xs text-gray-500">{{ t('em.senderBlockRules') }}</p>
+
+        <BaseButton
+          :icon="mdiCog"
+          :label="t('em.engineSave')"
+          color="success"
+          :disabled="engineSaving"
+          @click="saveNativeSettings"
+        />
       </CardBox>
     </div>
 

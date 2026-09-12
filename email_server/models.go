@@ -243,6 +243,13 @@ type EmailServerConfig struct {
 	// mail is filed in Junk instead, which is recoverable when a list is wrong.
 	DNSBLReject bool `json:"dnsbl_reject"`
 
+	// BlockedSenderDomains refuses inbound mail by envelope sender, one entry
+	// per line or separated by commas. An entry is a domain ("spam.example"),
+	// which also covers its subdomains, a wildcard ("*.example.com"), or a
+	// single address ("noreply@example.com"). Kept as text rather than a slice
+	// for the same reason DNSBLZones is: the config struct stays comparable.
+	BlockedSenderDomains string `json:"blocked_sender_domains"`
+
 	// LogConnections records every connection, TLS handshake and protocol error,
 	// not just the messages that made it through. Verbose but complete.
 	LogConnections bool `json:"log_connections"`

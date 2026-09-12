@@ -152,6 +152,23 @@ func (s *smtpSession) Mail(from string, _ *smtp.MailOptions) error {
 	// first. Authenticated submission is never checked — that is our own user.
 	if !s.backend.submission {
 		cfg := s.backend.manager.nativeConfig()
+
+		// The operator's own list comes first: it costs a string comparison,
+		// while the block lists cost a DNS round trip.
+		if entry, blocked := blockedSender(s.from, s.backend.manager.blockedSenderRules(cfg)); blocked {
+			s.trace("MAIL FROM <%s> rejected: sender matches blocked entry %q", s.from, entry)
+			s.backend.manager.logMailEvent(mailEvent{
+				Direction: "in", Status: "rejected", From: s.from,
+				RemoteIP: s.remoteIP(), Service: "smtp", SMTPCode: 550,
+				Detail: fmt.Sprintf("sender blocked by rule %q", entry),
+			})
+			return &smtp.SMTPError{
+				Code:         550,
+				EnhancedCode: smtp.EnhancedCode{5, 7, 1},
+				Message:      "Rejected: sender domain is blocked on this server",
+			}
+		}
+
 		s.blocklisted = s.backend.manager.checkDNSBL(net.ParseIP(s.remoteIP()), cfg)
 		if s.blocklisted.Listed {
 			s.trace("client listed on %s: %s", s.blocklisted.Zone, s.blocklisted.Reason)
