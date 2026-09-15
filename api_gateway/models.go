@@ -14,7 +14,7 @@ type Service struct {
 	Name        string            `json:"name"`
 	Host        string            `json:"host"`
 	Port        int               `json:"port"`
-	Protocol    string            `json:"protocol"` // http, https, grpc
+	Protocol    string            `json:"protocol"` // http, https, grpc (h2c), grpcs (h2 over TLS)
 	Path        string            `json:"path"`     // base path for the service
 	Retries     int               `json:"retries"`
 	Timeout     int               `json:"timeout"` // overall upstream request timeout in seconds; 0 = inherit from global
@@ -410,6 +410,10 @@ type Gateway struct {
 	persistentBlocks  map[string]BlockedClient
 	blockListMu       sync.Mutex
 	certReissuing     int32 // atomic guard so only one auto re-issue runs at a time
+	transports        map[string]*http.Transport // shared upstream transports keyed by wire protocol
+	transportMu       sync.Mutex
+	routeLimiters     map[string]*rateLimiter // per-route rate limiters keyed by route ID
+	routeLimiterMu    sync.Mutex
 }
 
 // gatewayStatsTracker tracks gateway statistics

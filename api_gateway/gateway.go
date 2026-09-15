@@ -114,6 +114,8 @@ func (g *Gateway) buildHTTPClient() {
 	if clientTimeout <= 0 {
 		clientTimeout = to.upstreamDial
 	}
+	// Timeouts may have changed; pooled upstream transports are rebuilt lazily.
+	g.resetTransports()
 	g.httpClient = &http.Client{
 		Timeout: clientTimeout,
 		Transport: &http.Transport{
@@ -695,6 +697,7 @@ func (g *Gateway) refreshServicesAndRoutes() {
 	g.rateLimiter = &rateLimiter{
 		clients: make(map[string]*clientRateLimit),
 	}
+	g.resetRouteRateLimiters()
 
 	g.clearRouteCache()
 }
@@ -790,12 +793,7 @@ func (g *Gateway) startLocked() error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", g.handleRequest)
 
-	g.httpServer = &http.Server{
-		Handler:      mux,
-		ReadTimeout:  to.serverRead,
-		WriteTimeout: to.serverWrite,
-		IdleTimeout:  to.serverIdle,
-	}
+	g.httpServer = newGatewayServer(mux, to, nil)
 
 	// Start HTTP listener
 	httpAddr := fmt.Sprintf(":%d", g.config.HTTPPort)
@@ -817,32 +815,23 @@ func (g *Gateway) startLocked() error {
 
 	// Start HTTPS if enabled. Use GetCertificate so renewed certs are picked up without restart.
 	if g.config.HTTPSEnabled && g.config.TLSCertFile != "" && g.config.TLSKeyFile != "" {
-		g.tlsConfig = &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			GetCertificate: func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
-				g.mu.RLock()
-				certFile := g.config.TLSCertFile
-				keyFile := g.config.TLSKeyFile
-				g.mu.RUnlock()
-				if certFile == "" || keyFile == "" {
-					return nil, fmt.Errorf("TLS cert/key not configured")
-				}
-				cert, err := tls.LoadX509KeyPair(certFile, keyFile)
-				if err != nil {
-					log.Printf("API Gateway: TLS certificate load failed (cert=%s): %v", certFile, err)
-					return nil, err
-				}
-				return &cert, nil
-			},
-		}
+		g.tlsConfig = newServerTLSConfig(func(hello *tls.ClientHelloInfo) (*tls.Certificate, error) {
+			g.mu.RLock()
+			certFile := g.config.TLSCertFile
+			keyFile := g.config.TLSKeyFile
+			g.mu.RUnlock()
+			if certFile == "" || keyFile == "" {
+				return nil, fmt.Errorf("TLS cert/key not configured")
+			}
+			cert, err := tls.LoadX509KeyPair(certFile, keyFile)
+			if err != nil {
+				log.Printf("API Gateway: TLS certificate load failed (cert=%s): %v", certFile, err)
+				return nil, err
+			}
+			return &cert, nil
+		})
 
-		g.httpsServer = &http.Server{
-			Handler:      mux,
-			TLSConfig:    g.tlsConfig,
-			ReadTimeout:  to.serverRead,
-			WriteTimeout: to.serverWrite,
-			IdleTimeout:  to.serverIdle,
-		}
+		g.httpsServer = newGatewayServer(mux, to, g.tlsConfig)
 
 		httpsAddr := fmt.Sprintf(":%d", g.config.HTTPSPort)
 		g.httpsListener, err = tls.Listen("tcp", httpsAddr, g.tlsConfig)
@@ -884,6 +873,37 @@ func (g *Gateway) startLocked() error {
 
 	log.Println("API Gateway: Started successfully")
 	return nil
+}
+
+// newGatewayServer builds the public HTTP(S) server. Both accept HTTP/2 so
+// gRPC works: cleartext via h2c prior knowledge, TLS via ALPN (tlsConfig must
+// come from newServerTLSConfig, since the listener is created by tls.Listen and
+// http.Server cannot add "h2" to it).
+func newGatewayServer(handler http.Handler, to resolvedTimeouts, tlsConfig *tls.Config) *http.Server {
+	var protocols http.Protocols
+	protocols.SetHTTP1(true)
+	if tlsConfig != nil {
+		protocols.SetHTTP2(true)
+	} else {
+		protocols.SetUnencryptedHTTP2(true)
+	}
+	return &http.Server{
+		Handler:      handler,
+		TLSConfig:    tlsConfig,
+		Protocols:    &protocols,
+		ReadTimeout:  to.serverRead,
+		WriteTimeout: to.serverWrite,
+		IdleTimeout:  to.serverIdle,
+	}
+}
+
+// newServerTLSConfig returns the gateway's TLS config with ALPN advertising h2.
+func newServerTLSConfig(getCertificate func(*tls.ClientHelloInfo) (*tls.Certificate, error)) *tls.Config {
+	return &tls.Config{
+		MinVersion:     tls.VersionTLS12,
+		NextProtos:     []string{"h2", "http/1.1"},
+		GetCertificate: getCertificate,
+	}
 }
 
 // Stop stops the API Gateway servers
@@ -940,22 +960,42 @@ func (g *Gateway) IsRunning() bool {
 // handleRequest handles incoming HTTP requests
 func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	startTime := time.Now()
+	grpcReq := isGRPCRequest(r)
 
 	// Under memory pressure, stop buffering request/response bodies for the log:
 	// they are the largest per-request allocation and the least essential.
+	// gRPC payloads are binary protobuf, so they are only counted, never buffered.
 	bodyLimit := maxLoggedBodyBytes
-	if memguard.Degraded() {
+	if memguard.Degraded() || grpcReq {
 		bodyLimit = 0
 	}
 
+	var reqInfo bodyLogInfo
+	var reqCounter *countingReadCloser
+	if grpcReq {
+		// gRPC streams are long-lived and full duplex: the body must flow through
+		// unbuffered, and the server-wide read/write deadlines must not cut the
+		// stream (the call's own deadline comes from grpc-timeout).
+		rc := http.NewResponseController(w)
+		_ = rc.SetReadDeadline(time.Time{})
+		_ = rc.SetWriteDeadline(time.Time{})
+		if r.Body != nil && r.Body != http.NoBody {
+			reqCounter = &countingReadCloser{ReadCloser: r.Body}
+			r.Body = reqCounter
+		}
+	}
+
 	lw := newLoggingResponseWriter(w, bodyLimit)
-	reqInfo, err := captureRequestBody(r, bodyLimit)
-	if err != nil {
-		g.recordError()
-		status := http.StatusBadRequest
-		http.Error(lw, "Invalid request body", status)
-		g.logRequest(r, status, startTime, "", "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
-		return
+	if !grpcReq {
+		var err error
+		reqInfo, err = captureRequestBody(r, bodyLimit)
+		if err != nil {
+			g.recordError()
+			status := http.StatusBadRequest
+			http.Error(lw, "Invalid request body", status)
+			g.logRequest(r, status, startTime, "", "", "", "", "", true, "failed to read request body", reqInfo, lw.LogInfo())
+			return
+		}
 	}
 
 	clientIP := getClientIP(r)
@@ -980,7 +1020,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		if message == "" {
 			message = "Client blocked"
 		}
-		http.Error(lw, message, statusCode)
+		writeGatewayError(lw, grpcReq, statusCode, message)
 		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, message, reqInfo, lw.LogInfo())
 		trackClient = false
 		return
@@ -1005,7 +1045,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordError()
 			g.recordRateLimited()
 			statusCode = http.StatusTooManyRequests
-			http.Error(lw, "Rate limit exceeded", statusCode)
+			writeGatewayError(lw, grpcReq, statusCode, "Rate limit exceeded")
 			g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
@@ -1016,7 +1056,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if route == nil {
 		g.recordError()
 		statusCode = http.StatusNotFound
-		http.Error(lw, "Not Found", statusCode)
+		writeGatewayError(lw, grpcReq, statusCode, "Not Found")
 		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "no matching route", reqInfo, lw.LogInfo())
 		return
 	}
@@ -1037,16 +1077,11 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 
 	// Check route-level rate limit
 	if route.RateLimitEnabled && route.RateLimitRequests > 0 {
-		routeLimiter := &rateLimiter{
-			clients:  make(map[string]*clientRateLimit),
-			requests: route.RateLimitRequests,
-			window:   time.Duration(route.RateLimitWindow) * time.Second,
-		}
-		if !g.checkRateLimit(routeLimiter, clientIP) {
+		if !g.checkRateLimit(g.routeRateLimiter(route), clientIP) {
 			g.recordError()
 			g.recordRateLimited()
 			statusCode = http.StatusTooManyRequests
-			http.Error(lw, "Rate limit exceeded", statusCode)
+			writeGatewayError(lw, grpcReq, statusCode, "Rate limit exceeded")
 			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "rate limit exceeded", reqInfo, lw.LogInfo())
 			return
 		}
@@ -1061,7 +1096,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			if challenge != "" {
 				lw.Header().Set("WWW-Authenticate", challenge)
 			}
-			http.Error(lw, "Unauthorized", statusCode)
+			writeGatewayError(lw, grpcReq, statusCode, "Unauthorized")
 			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "authentication failed", reqInfo, lw.LogInfo())
 			return
 		}
@@ -1073,7 +1108,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if pickErr != nil {
 		g.recordError()
 		statusCode = http.StatusServiceUnavailable
-		http.Error(lw, "Service Unavailable", statusCode)
+		writeGatewayError(lw, grpcReq, statusCode, "Service Unavailable")
 		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, pickErr.Error(), reqInfo, lw.LogInfo())
 		return
 	}
@@ -1092,14 +1127,26 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	g.stats.mu.Unlock()
 
 	// Proxy the request
-	err = g.proxyRequest(lw, r, route, service)
+	err := g.proxyRequest(lw, r, route, service, grpcReq)
 	statusCode = lw.StatusCode()
+	if reqCounter != nil {
+		n := reqCounter.n.Load()
+		reqInfo = bodyLogInfo{size: n, truncated: n > 0}
+	}
+	errMsg := ""
 	if err != nil {
 		g.recordServiceError(serviceID)
-		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, err.Error(), reqInfo, lw.LogInfo())
-	} else {
-		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, "", reqInfo, lw.LogInfo())
+		errMsg = err.Error()
+	} else if grpcReq {
+		// gRPC failures arrive as HTTP 200 with a non-zero grpc-status trailer.
+		if code, msg, ok := responseGRPCStatus(lw.Header()); ok && code != grpcCodeOK {
+			errMsg = grpcStatusError(code, msg)
+			if isGRPCServerFailure(code) {
+				g.recordServiceError(serviceID)
+			}
+		}
 	}
+	g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, errMsg, reqInfo, lw.LogInfo())
 
 	// Record latency
 	latency := time.Since(startTime).Milliseconds()
@@ -1386,45 +1433,39 @@ func applyResponseHeaders(h http.Header, headers map[string]string) {
 }
 
 // proxyRequest forwards the request to the upstream service
-func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service) error {
+func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service, grpcReq bool) error {
 	// Build target URL
-	protocol := service.Protocol
-	if protocol == "" {
-		protocol = "http"
-	}
-
-	targetURL := fmt.Sprintf("%s://%s:%d", protocol, service.Host, service.Port)
+	targetURL := fmt.Sprintf("%s://%s:%d", upstreamScheme(service.Protocol), service.Host, service.Port)
 	target, err := url.Parse(targetURL)
 	if err != nil {
-		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		writeGatewayError(w, grpcReq, http.StatusBadGateway, "Bad Gateway")
 		return err
 	}
 
 	// Create reverse proxy
 	proxy := httputil.NewSingleHostReverseProxy(target)
-
-	to := g.resolveTimeouts()
-	proxy.Transport = &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   to.upstreamDial,
-			KeepAlive: to.upstreamKeepAlive,
-		}).DialContext,
-		MaxIdleConns:          100,
-		IdleConnTimeout:       to.upstreamIdleConn,
-		TLSHandshakeTimeout:   to.tlsHandshake,
-		ExpectContinueTimeout: to.expectContinue,
+	proxy.Transport = g.upstreamTransport(service.Protocol, grpcReq)
+	if grpcReq {
+		// Stream every message to the client as soon as it arrives.
+		proxy.FlushInterval = -1
 	}
 
 	// Resolve effective request timeout: route → service → global default.
 	// Skip for protocol upgrades (e.g. WebSocket) since those are long-lived.
+	// gRPC calls may be endless streams, so they only honor the client's
+	// grpc-timeout instead of the configured HTTP timeouts.
 	requestTimeout := time.Duration(0)
 	switch {
+	case grpcReq:
+		if d, ok := parseGRPCTimeout(r.Header.Get("Grpc-Timeout")); ok {
+			requestTimeout = d
+		}
 	case route.Timeout > 0:
 		requestTimeout = time.Duration(route.Timeout) * time.Second
 	case service.Timeout > 0:
 		requestTimeout = time.Duration(service.Timeout) * time.Second
 	default:
-		requestTimeout = to.request
+		requestTimeout = g.resolveTimeouts().request
 	}
 	if requestTimeout > 0 && !strings.EqualFold(r.Header.Get("Connection"), "upgrade") {
 		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
@@ -1443,9 +1484,10 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		req.URL.Scheme = target.Scheme
 		req.URL.Host = target.Host
 
-		// Handle path transformation
+		// Handle path transformation. gRPC servers dispatch on the exact
+		// "/package.Service/Method" path, so it is never rewritten.
 		originalPath := req.URL.Path
-		if route.StripPath {
+		if route.StripPath && !grpcReq {
 			for _, p := range route.Paths {
 				stripped := strings.TrimSuffix(p, "*")
 				stripped = strings.TrimSuffix(stripped, "/")
@@ -1459,7 +1501,7 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 			}
 		}
 
-		if service.Path != "" {
+		if service.Path != "" && !grpcReq {
 			req.URL.Path = strings.TrimSuffix(service.Path, "/") + originalPath
 		} else {
 			req.URL.Path = originalPath
@@ -1491,10 +1533,10 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	proxy.ErrorHandler = func(w http.ResponseWriter, r *http.Request, err error) {
 		proxyErr = fmt.Errorf("proxy error: %w", err)
 		if errors.Is(err, context.DeadlineExceeded) {
-			http.Error(w, "Gateway Timeout", http.StatusGatewayTimeout)
+			writeGatewayError(w, grpcReq, http.StatusGatewayTimeout, "Gateway Timeout")
 			return
 		}
-		http.Error(w, "Bad Gateway", http.StatusBadGateway)
+		writeGatewayError(w, grpcReq, http.StatusBadGateway, "Bad Gateway")
 	}
 
 	// Add route CORS and response headers to every proxied response (including WebSocket 101 upgrade)
@@ -1504,6 +1546,9 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	proxy.ModifyResponse = func(resp *http.Response) error {
 		applyCORSHeaders(resp.Header, origin, corsCfg)
 		applyResponseHeaders(resp.Header, respHeaders)
+		if grpcReq {
+			announceGRPCTrailers(resp)
+		}
 		return nil
 	}
 
@@ -1710,22 +1755,13 @@ func (g *Gateway) checkAllServices(now time.Time) {
 
 // checkServiceHealth performs a health check on a single service
 func (g *Gateway) checkServiceHealth(service *Service) {
-	protocol := service.Protocol
-	if protocol == "" {
-		protocol = "http"
-	}
-
-	healthURL := fmt.Sprintf("%s://%s:%d%s", protocol, service.Host, service.Port, service.HealthCheck.Path)
-
 	timeout := time.Duration(service.HealthCheck.Timeout) * time.Second
 	if timeout == 0 {
 		timeout = g.resolveTimeouts().healthCheck
 	}
 
-	client := &http.Client{Timeout: timeout}
-
 	startTime := time.Now()
-	resp, err := client.Get(healthURL)
+	healthy, note := g.probeServiceHealth(service, timeout)
 	responseTime := time.Since(startTime).Milliseconds()
 
 	g.mu.Lock()
@@ -1741,41 +1777,56 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 	health := g.serviceHealth[service.ID]
 	health.LastCheck = time.Now()
 	health.ResponseTime = responseTime
+	health.LastError = note
 
-	if err != nil {
+	if !healthy {
 		health.FailureCount++
 		health.SuccessCount = 0
-		health.LastError = err.Error()
 		if health.FailureCount >= service.HealthCheck.UnhealthyThreshold {
 			health.Healthy = false
 		}
 		return
 	}
+	health.SuccessCount++
+	health.FailureCount = 0
+	if health.SuccessCount >= service.HealthCheck.HealthyThreshold {
+		health.Healthy = true
+	}
+}
 
+// probeServiceHealth runs one health probe. note is recorded as LastError; it
+// may be set even when healthy (e.g. reachable but answering a client error).
+func (g *Gateway) probeServiceHealth(service *Service, timeout time.Duration) (healthy bool, note string) {
+	baseURL := fmt.Sprintf("%s://%s:%d", upstreamScheme(service.Protocol), service.Host, service.Port)
+
+	if isGRPCProtocol(service.Protocol) {
+		client := &http.Client{Transport: g.upstreamTransport(service.Protocol, true), Timeout: timeout}
+		err := probeGRPCHealth(context.Background(), client, baseURL, grpcHealthServiceName(service.HealthCheck.Path))
+		switch {
+		case err == nil:
+			return true, ""
+		case errors.Is(err, errGRPCHealthUnimplemented):
+			// Reachable but without grpc.health.v1 — same stance as an HTTP 4xx.
+			return true, err.Error()
+		default:
+			return false, err.Error()
+		}
+	}
+
+	client := &http.Client{Timeout: timeout}
+	resp, err := client.Get(baseURL + service.HealthCheck.Path)
+	if err != nil {
+		return false, err.Error()
+	}
 	resp.Body.Close()
 	switch {
 	case resp.StatusCode >= 500:
-		health.FailureCount++
-		health.SuccessCount = 0
-		health.LastError = fmt.Sprintf("HTTP %d", resp.StatusCode)
-		if health.FailureCount >= service.HealthCheck.UnhealthyThreshold {
-			health.Healthy = false
-		}
+		return false, fmt.Sprintf("HTTP %d", resp.StatusCode)
 	case resp.StatusCode >= 400:
 		// Client errors still prove the service is reachable, so treat them as successes
-		health.SuccessCount++
-		health.FailureCount = 0
-		health.LastError = fmt.Sprintf("HTTP %d (client error)", resp.StatusCode)
-		if health.SuccessCount >= service.HealthCheck.HealthyThreshold {
-			health.Healthy = true
-		}
+		return true, fmt.Sprintf("HTTP %d (client error)", resp.StatusCode)
 	default:
-		health.SuccessCount++
-		health.FailureCount = 0
-		health.LastError = ""
-		if health.SuccessCount >= service.HealthCheck.HealthyThreshold {
-			health.Healthy = true
-		}
+		return true, ""
 	}
 }
 
@@ -2853,6 +2904,12 @@ func (lrw *loggingResponseWriter) LogInfo() bodyLogInfo {
 		truncated: truncated,
 		size:      lrw.bytesWritten,
 	}
+}
+
+// Unwrap lets http.ResponseController reach the underlying writer (deadlines,
+// full duplex) through the logging wrapper.
+func (lrw *loggingResponseWriter) Unwrap() http.ResponseWriter {
+	return lrw.ResponseWriter
 }
 
 func (lrw *loggingResponseWriter) Flush() {

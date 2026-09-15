@@ -127,6 +127,10 @@ const createDefaultUpstream = () => ({
 
 const newUpstream = ref(createDefaultUpstream())
 
+// grpc = cleartext HTTP/2 (h2c), grpcs = HTTP/2 over TLS
+const serviceProtocolOptions = ['http', 'https', 'grpc', 'grpcs']
+const isGrpcProtocol = (protocol) => protocol === 'grpc' || protocol === 'grpcs'
+
 // Form data
 const newService = ref({
   name: '',
@@ -2018,7 +2022,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         </div>
         <div class="grid grid-cols-2 gap-4">
           <FormField :label="t('gw.protocol')">
-            <FormControl v-model="newService.protocol" :options="['http', 'https']" />
+            <FormControl v-model="newService.protocol" :options="serviceProtocolOptions" />
           </FormField>
           <FormField :label="t('gw.requestTimeout')">
             <FormControl v-model.number="newService.timeout" type="number" min="0" placeholder="0" />
@@ -2028,8 +2032,11 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           <FormControl v-model="newService.path" placeholder="/api" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField :label="t('gw.healthCheckPath')">
-            <FormControl v-model="newService.health_check.path" placeholder="/health" />
+          <FormField :label="isGrpcProtocol(newService.protocol) ? t('gw.grpcHealthService') : t('gw.healthCheckPath')">
+            <FormControl
+              v-model="newService.health_check.path"
+              :placeholder="isGrpcProtocol(newService.protocol) ? t('gw.grpcHealthServicePlaceholder') : '/health'"
+            />
           </FormField>
           <FormField :label="t('gw.healthCheckInterval')">
             <FormControl
@@ -2459,7 +2466,7 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
         </div>
         <div class="grid grid-cols-2 gap-4">
           <FormField :label="t('gw.protocol')">
-            <FormControl v-model="editingService.protocol" :options="['http', 'https']" />
+            <FormControl v-model="editingService.protocol" :options="serviceProtocolOptions" />
           </FormField>
           <FormField :label="t('gw.requestTimeout')">
             <FormControl v-model.number="editingService.timeout" type="number" min="0" placeholder="0" />
@@ -2472,8 +2479,11 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           <FormCheckRadio v-model="editingService.enabled" :label="t('common.enabled')" name="edit_service_enabled" />
         </FormField>
         <div class="grid grid-cols-2 gap-4">
-          <FormField :label="t('gw.healthCheckPath')">
-            <FormControl v-model="editingService.health_check.path" placeholder="/health" />
+          <FormField :label="isGrpcProtocol(editingService.protocol) ? t('gw.grpcHealthService') : t('gw.healthCheckPath')">
+            <FormControl
+              v-model="editingService.health_check.path"
+              :placeholder="isGrpcProtocol(editingService.protocol) ? t('gw.grpcHealthServicePlaceholder') : '/health'"
+            />
           </FormField>
           <FormField :label="t('gw.healthCheckInterval')">
             <FormControl

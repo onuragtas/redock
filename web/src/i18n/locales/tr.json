@@ -487,6 +487,8 @@
     "healthCheckPath": "Sağlık Kontrolü Yolu",
     "healthCheckInterval": "Sağlık Kontrolü Aralığı (saniye)",
     "ignoreHealthCheck": "Sağlıksız olsa bile trafiği gönder (sağlık kontrolünü yok say)",
+    "grpcHealthService": "gRPC Sağlık Servisi (grpc.health.v1)",
+    "grpcHealthServicePlaceholder": "Boş veya / ile başlayan = tüm sunucu",
     "editService": "Servisi Düzenle",
     "updateService": "Servisi Güncelle",
     "editUpstream": "Upstream Düzenle",

@@ -487,6 +487,8 @@
     "healthCheckPath": "Health Check Path",
     "healthCheckInterval": "Health Check Interval (seconds)",
     "ignoreHealthCheck": "Send traffic even if unhealthy (ignore health check)",
+    "grpcHealthService": "gRPC Health Service (grpc.health.v1)",
+    "grpcHealthServicePlaceholder": "Empty or starting with / = whole server",
     "editService": "Edit Service",
     "updateService": "Update Service",
     "editUpstream": "Edit Upstream",
