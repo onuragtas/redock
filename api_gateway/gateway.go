@@ -983,6 +983,14 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			reqCounter = &countingReadCloser{ReadCloser: r.Body}
 			r.Body = reqCounter
 		}
+	} else if isSSERequest(r) {
+		// An SSE stream stays open for as long as the upstream keeps pushing
+		// events, so the server-wide write deadline must not cut it. Only the
+		// write side needs clearing: the client sends nothing after the
+		// request, and the response body is never buffered for the log because
+		// a stream has no end to log.
+		clearWriteDeadline(w)
+		bodyLimit = 0
 	}
 
 	lw := newLoggingResponseWriter(w, bodyLimit)
@@ -1451,9 +1459,10 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	}
 
 	// Resolve effective request timeout: route → service → global default.
-	// Skip for protocol upgrades (e.g. WebSocket) since those are long-lived.
-	// gRPC calls may be endless streams, so they only honor the client's
-	// grpc-timeout instead of the configured HTTP timeouts.
+	// Skip long-lived streams (WebSocket upgrades, SSE), which have no
+	// meaningful overall duration. gRPC calls may be endless streams too, so
+	// they only honor the client's grpc-timeout instead of the configured
+	// HTTP timeouts.
 	requestTimeout := time.Duration(0)
 	switch {
 	case grpcReq:
@@ -1467,7 +1476,8 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 	default:
 		requestTimeout = g.resolveTimeouts().request
 	}
-	if requestTimeout > 0 && !strings.EqualFold(r.Header.Get("Connection"), "upgrade") {
+	longLived := strings.EqualFold(r.Header.Get("Connection"), "upgrade") || isSSERequest(r)
+	if requestTimeout > 0 && !longLived {
 		ctx, cancel := context.WithTimeout(r.Context(), requestTimeout)
 		defer cancel()
 		r = r.WithContext(ctx)
@@ -1548,6 +1558,14 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		applyResponseHeaders(resp.Header, respHeaders)
 		if grpcReq {
 			announceGRPCTrailers(resp)
+		}
+		if isSSEResponse(resp) {
+			// A client that omitted Accept: text/event-stream is only
+			// recognizable here, before the first event reaches it. The
+			// configured request timeout is already armed at this point and
+			// cannot be disarmed, so such a client still gets cut by a route
+			// or service timeout if one is set.
+			clearWriteDeadline(w)
 		}
 		return nil
 	}
