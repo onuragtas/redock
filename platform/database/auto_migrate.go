@@ -21,6 +21,12 @@ type MigrationStatus struct {
 
 // AutoMigrate checks migration status (SQLite migration removed - use JSON only)
 func AutoMigrate(dataDir string) error {
+	// On a fresh install the data directory does not exist yet; the status file
+	// is written here, before the memory DB gets a chance to create it.
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		return fmt.Errorf("failed to create data directory %s: %w", dataDir, err)
+	}
+
 	// Check migration status
 	statusPath := filepath.Join(dataDir, ".migration_status")
 	status, err := loadMigrationStatus(statusPath)
@@ -79,6 +85,10 @@ func loadMigrationStatus(path string) (MigrationStatus, error) {
 func saveMigrationStatus(path string, status MigrationStatus) error {
 	data, err := json.MarshalIndent(status, "", "  ")
 	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
 		return err
 	}
 
