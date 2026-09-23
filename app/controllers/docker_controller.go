@@ -283,7 +283,7 @@ func UnstarVHost(c *fiber.Ctx) error {
 func GetPhpServices(c *fiber.Ctx) error {
 
 	manager := docker_manager.GetDockerManager()
-	list := manager.ActiveServices
+	list := manager.ActiveServices()
 	var services []string
 	for _, service := range list {
 		if strings.Contains(service, "php") {

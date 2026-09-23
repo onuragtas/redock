@@ -10,31 +10,19 @@ import (
 	"path/filepath"
 	"redock/docker-manager/stacks"
 	"regexp"
-	"runtime"
-	"sort"
 	"strings"
 	"time"
 
 	"github.com/onuragtas/command"
-	"gopkg.in/yaml.v2"
 )
 
 type DockerEnvironmentManager struct {
-	ComposeFilePath    string
-	File               string
-	Struct             map[string]interface{}
-	CopyStruct         map[string]interface{}
-	copyStruct         map[string]interface{}
-	Services           Services
-	ActiveServicesList Services
-	ActiveServices     []string
 	EnvDistPath        string
 	EnvDist            string
 	EnvPath            string
 	InstallPath        string
 	limitLog           int
 	Env                string
-	activeServices     map[int]bool
 	command            command.Command
 	AddVirtualHostPath string
 	Virtualhost        *VirtualHost
@@ -103,8 +91,6 @@ func Find(obj interface{}, key string) (interface{}, bool) {
 }
 
 func (t *DockerEnvironmentManager) initialize() {
-	t.File = dockerEnvironmentManager.GetWorkDir() + "/docker-compose.yml.{.arch}.dist"
-	t.ComposeFilePath = dockerEnvironmentManager.GetWorkDir() + "/docker-compose.yml"
 	t.EnvDistPath = dockerEnvironmentManager.GetWorkDir() + "/.env.example"
 	t.EnvPath = dockerEnvironmentManager.GetWorkDir() + "/.env"
 	t.InstallPath = dockerEnvironmentManager.GetWorkDir() + "/install.sh"
@@ -113,103 +99,70 @@ func (t *DockerEnvironmentManager) initialize() {
 	t.NginxConfPath = dockerEnvironmentManager.GetWorkDir() + "/etc/nginx"
 }
 
+// Init loads env state. The service catalog and the active set come from the
+// stacks repository system (see Services / ActiveServices); the legacy
+// docker-compose.yml.<arch>.dist clone no longer exists.
 func (t *DockerEnvironmentManager) Init() {
 	t.initialize()
 	t.loadServiceSettings()
 
-	t.Services = Services{}
-	t.activeServices = make(map[int]bool)
-	t.ActiveServices = []string{}
-
 	t.Virtualhost = NewVirtualHost(t)
 	t.command = command.Command{}
-	t.activeServices = make(map[int]bool)
-	envDist, err := ioutil.ReadFile(t.EnvDistPath)
+	envDist, _ := ioutil.ReadFile(t.EnvDistPath)
 	t.EnvDist = string(envDist)
 	envFile, envFileErr := ioutil.ReadFile(t.EnvPath)
 	t.Env = string(envFile)
 	if envFileErr == nil {
 		t.EnvDistPath = t.EnvPath
 	}
-	composeYamlFile, err := ioutil.ReadFile(t.ComposeFilePath)
-	yamlFile, err := ioutil.ReadFile(strings.ReplaceAll(t.File, "{.arch}", runtime.GOARCH))
-	if err != nil {
-		log.Printf("yamlFile.Get err   #%v ", err)
-	}
-	err = yaml.Unmarshal(yamlFile, &t.Struct)
-	err = yaml.Unmarshal(composeYamlFile, &t.copyStruct)
-	if err != nil {
-		log.Fatalf("Unmarshal: %v", err)
-	}
-
-	if obj, ok := Find(t.Struct, "services"); ok {
-		i := 0
-		for key, value := range obj.(map[interface{}]interface{}) {
-			t.Services = append(t.Services, Service{
-				ContainerName: key,
-				Links:         t.findLinks(value),
-				DependsOn:     t.findDependsOn(value),
-				Original:      value,
-				Image:         t.findImage(value),
-			})
-
-			t.activeServices[i] = t.isActive(key.(string))
-			i++
-		}
-	}
-
-	if obj, ok := Find(t.copyStruct, "services"); ok {
-		i := 0
-		for key, value := range obj.(map[interface{}]interface{}) {
-			t.ActiveServices = append(t.ActiveServices, key.(string))
-			t.ActiveServicesList = append(t.ActiveServicesList, Service{
-				ContainerName: key,
-				Links:         t.findLinks(value),
-				DependsOn:     t.findDependsOn(value),
-				Original:      value,
-				Image:         t.findImage(value),
-			})
-			i++
-		}
-	}
-
-	sort.Slice(t.Services, func(i, j int) bool {
-		return t.Services[i].ContainerName.(string) < t.Services[j].ContainerName.(string)
-	})
 
 	t.limitLog = 500
-
 }
 
-func (t *DockerEnvironmentManager) findLinks(value interface{}) []string {
-	var links []string
-	if obj, ok := value.(map[interface{}]interface{})["links"]; ok {
-		for _, value := range obj.([]interface{}) {
-			links = append(links, value.(string))
+// Services returns the stacks catalog in the legacy Service shape, with
+// Original holding a compose-like map (container_name, image, ports) for the
+// service settings helpers.
+func (t *DockerEnvironmentManager) Services() Services {
+	m, err := stacks.GetManager(t.GetWorkDir())
+	if err != nil {
+		return nil
+	}
+	specs, _ := m.Catalog()
+	services := make(Services, 0, len(specs))
+	for _, spec := range specs {
+		ports := make([]interface{}, 0, len(spec.Ports))
+		for _, p := range spec.Ports {
+			port := p.Host + ":" + p.Container
+			if p.Protocol != "" && p.Protocol != "tcp" {
+				port += "/" + p.Protocol
+			}
+			ports = append(ports, port)
 		}
+		services = append(services, Service{
+			ContainerName: spec.Name,
+			DependsOn:     spec.DependsOn,
+			Image:         spec.Image,
+			Original: map[interface{}]interface{}{
+				"container_name": spec.ContainerName,
+				"image":          spec.Image,
+				"ports":          ports,
+			},
+		})
 	}
-	return links
+	return services
 }
 
-func (t *DockerEnvironmentManager) findDependsOn(value interface{}) []string {
-	var dependsOn []string
-	if obj, ok := value.(map[interface{}]interface{})["depends_on"]; ok {
-		for _, value := range obj.([]interface{}) {
-			dependsOn = append(dependsOn, value.(string))
-		}
+// ActiveServices returns the names of the user-activated stacks services.
+func (t *DockerEnvironmentManager) ActiveServices() []string {
+	m, err := stacks.GetManager(t.GetWorkDir())
+	if err != nil {
+		return nil
 	}
-	return dependsOn
-}
-func (t *DockerEnvironmentManager) findImage(value interface{}) string {
-	var image string
-	if obj, ok := value.(map[interface{}]interface{})["image"]; ok {
-		image = obj.(string)
-	}
-	return image
+	return m.Active()
 }
 
 func (t *DockerEnvironmentManager) GetService(name string) (*Service, bool) {
-	for _, value := range t.Services {
+	for _, value := range t.Services() {
 		if value.ContainerName == name {
 			return &value, true
 		}
@@ -240,21 +193,6 @@ func (t *DockerEnvironmentManager) SetEnv(text string) {
 	if err != nil {
 		log.Fatal(err)
 	}
-}
-
-func (t *DockerEnvironmentManager) isActive(service string) bool {
-	if obj, ok := Find(t.copyStruct, "services"); ok {
-		for key := range obj.(map[interface{}]interface{}) {
-			if key == service {
-				return true
-			}
-		}
-	}
-	return false
-}
-
-func (t *DockerEnvironmentManager) GetActiveServices() map[int]bool {
-	return t.activeServices
 }
 
 func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) {

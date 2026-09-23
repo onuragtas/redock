@@ -158,11 +158,7 @@ func (s *ServiceSettings) Override(name string, override *ServiceOverride) {
 	s.Overrides[name] = copy
 }
 
-func (t *DockerEnvironmentManager) serviceDefinitionWithOverrides(name string) interface{} {
-	service, ok := t.GetService(name)
-	if !ok {
-		return nil
-	}
+func (t *DockerEnvironmentManager) definitionWithOverrides(name string, service *Service) interface{} {
 	definition, ok := service.Original.(map[interface{}]interface{})
 	if !ok {
 		return service.Original
@@ -222,17 +218,6 @@ func (t *DockerEnvironmentManager) computeContainerName(name string, definition 
 	return ""
 }
 
-func (t *DockerEnvironmentManager) containerNameForService(name string) string {
-	if def, ok := t.serviceDefinitionWithOverrides(name).(map[interface{}]interface{}); ok {
-		if raw, ok := def["container_name"]; ok {
-			if str, ok := raw.(string); ok && str != "" {
-				return str
-			}
-		}
-	}
-	return name
-}
-
 func deepCopyInterface(value interface{}) interface{} {
 	switch v := value.(type) {
 	case map[interface{}]interface{}:
@@ -259,13 +244,16 @@ func deepCopyInterface(value interface{}) interface{} {
 }
 
 func (t *DockerEnvironmentManager) ListServiceMetadata() []ServiceMetadata {
-	services := make([]ServiceMetadata, 0, len(t.Services))
-	for _, service := range t.Services {
+	all := t.Services()
+	services := make([]ServiceMetadata, 0, len(all))
+	for _, service := range all {
 		name, _ := service.ContainerName.(string)
 		defaultName := extractDefaultContainerName(name, service.Original)
 		effectiveName := defaultName
-		if resolved := t.containerNameForService(name); resolved != "" {
-			effectiveName = resolved
+		if def, ok := t.definitionWithOverrides(name, &service).(map[interface{}]interface{}); ok {
+			if resolved, ok := def["container_name"].(string); ok && resolved != "" {
+				effectiveName = resolved
+			}
 		}
 		services = append(services, ServiceMetadata{
 			Name:                   name,
