@@ -1,7 +1,7 @@
 package localproxy
 
 import (
-	"fmt"
+	"errors"
 	"log"
 	"net"
 	docker_manager "redock/docker-manager"
@@ -137,11 +137,19 @@ func (lp *LocalProxy) Start(localPort int) {
 }
 
 func (lp *LocalProxy) Stop(localPort int) {
-	if listener, ok := lp.startedList[localPort]; ok {
-		listener.Listener.Close()
+	lock.Lock()
+	item, ok := lp.startedList[localPort]
+	if ok {
 		delete(lp.startedList, localPort)
-		listener.CloseSignal <- true
 	}
+	lock.Unlock()
+	if !ok {
+		return
+	}
+	// Önce sinyali kapat, sonra listener'ı: Accept hata döndüğünde döngü
+	// kapanmış kanalı görüp çıkar. Kanal kapatıldığı için Stop asla bloklanmaz.
+	close(item.CloseSignal)
+	item.Listener.Close()
 }
 
 func (lp *LocalProxy) start(localPort int) {
@@ -152,7 +160,11 @@ func (lp *LocalProxy) start(localPort int) {
 	localProxy := lp.getProxy(localPort)
 
 	localAddr := "0.0.0.0:" + strconv.Itoa(localPort)
-	listener, _ := net.Listen("tcp", localAddr)
+	listener, err := net.Listen("tcp", localAddr)
+	if err != nil {
+		log.Println("Local proxy listen error on", localAddr, ":", err)
+		return
+	}
 	lock.Lock()
 	closeSignal := make(chan bool)
 	lp.startedList[localPort] = StartItem{Listener: listener, CloseSignal: closeSignal}
@@ -160,13 +172,20 @@ func (lp *LocalProxy) start(localPort int) {
 
 	log.Println("Proxy listening on", localAddr, "...")
 	for {
-		select {
-		case <-closeSignal:
-			return
-		default:
-		}
-
 		conn, err := listener.Accept()
+		if err != nil {
+			select {
+			case <-closeSignal:
+				return
+			default:
+			}
+			if errors.Is(err, net.ErrClosed) {
+				return
+			}
+			log.Println("Local proxy accept error on", localAddr, ":", err)
+			time.Sleep(100 * time.Millisecond)
+			continue
+		}
 		proxy := proxy.Proxy{
 			Timeout: time.Duration(localProxy.Timeout),
 			Src:     conn,
@@ -189,10 +208,6 @@ func (lp *LocalProxy) start(localPort int) {
 				tcp, _ := net.Dial("tcp", destination)
 				return tcp
 			},
-		}
-		if err != nil {
-			fmt.Println("Accept Error:", err)
-			continue
 		}
 		go proxy.Handle()
 	}
