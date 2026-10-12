@@ -648,17 +648,24 @@ func (g *Gateway) saveConfigLocked() error {
 	return memory.Create(db, tableApiGatewayConfig, entity)
 }
 
+// rebuildServiceIndexLocked rebuilds g.services from g.config.Services. The map
+// points into the slice, so it must be rebuilt whenever the slice is appended
+// to (may reallocate) or shifted (delete); otherwise entries point at the wrong
+// service. Caller must hold g.mu.
+func (g *Gateway) rebuildServiceIndexLocked() {
+	g.services = make(map[string]*Service, len(g.config.Services))
+	for i := range g.config.Services {
+		svc := &g.config.Services[i]
+		g.services[svc.ID] = svc
+	}
+}
+
 // refreshServicesAndRoutes refreshes internal maps from config
 func (g *Gateway) refreshServicesAndRoutes() {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 
-	// Rebuild services map
-	g.services = make(map[string]*Service)
-	for i := range g.config.Services {
-		svc := &g.config.Services[i]
-		g.services[svc.ID] = svc
-	}
+	g.rebuildServiceIndexLocked()
 
 	// Rebuild upstreams map. Runtime state (RR counter, in-flight) is kept
 	// across reloads so an UpdateConfig that doesn't touch a pool doesn't
@@ -1762,7 +1769,12 @@ func (g *Gateway) checkAllServices(now time.Time) {
 			continue
 		}
 		g.lastHealthCheck[id] = now
-		services = append(services, svc)
+		// Snapshot: the goroutine runs without g.mu, while *svc lives in
+		// g.config.Services and may be overwritten by Update/DeleteService.
+		snapshot := *svc
+		hc := *svc.HealthCheck
+		snapshot.HealthCheck = &hc
+		services = append(services, &snapshot)
 	}
 	g.mu.Unlock()
 
@@ -1784,6 +1796,11 @@ func (g *Gateway) checkServiceHealth(service *Service) {
 
 	g.mu.Lock()
 	defer g.mu.Unlock()
+
+	// Service was deleted while the probe was in flight; don't resurrect its health entry.
+	if _, ok := g.services[service.ID]; !ok {
+		return
+	}
 
 	if g.serviceHealth[service.ID] == nil {
 		g.serviceHealth[service.ID] = &ServiceHealth{
@@ -2293,7 +2310,7 @@ func (g *Gateway) AddService(service Service) error {
 	}
 
 	g.config.Services = append(g.config.Services, service)
-	g.services[service.ID] = &g.config.Services[len(g.config.Services)-1]
+	g.rebuildServiceIndexLocked()
 
 	return g.saveConfigLocked()
 }
@@ -2322,8 +2339,9 @@ func (g *Gateway) DeleteService(serviceID string) error {
 	for i, svc := range g.config.Services {
 		if svc.ID == serviceID {
 			g.config.Services = append(g.config.Services[:i], g.config.Services[i+1:]...)
-			delete(g.services, serviceID)
+			g.rebuildServiceIndexLocked()
 			delete(g.serviceHealth, serviceID)
+			delete(g.lastHealthCheck, serviceID)
 			return g.saveConfigLocked()
 		}
 	}
