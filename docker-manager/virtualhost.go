@@ -6,15 +6,19 @@ import (
 	"io/ioutil"
 	"log"
 	"os"
-	"os/exec"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 
 	"redock/platform/database"
 	"redock/platform/memory"
-
-	"github.com/AlecAivazis/survey/v2"
 )
+
+// ErrVirtualHostExists is returned when a config for the domain already exists.
+var ErrVirtualHostExists = errors.New("virtual host already exists")
+
+var domainPattern = regexp.MustCompile(`^(?i)[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)*$`)
 
 var proxyNginx = `server {
     listen 80;
@@ -96,29 +100,26 @@ func (t *VirtualHost) createConfig(service, domain, folder, phpVersion, typeConf
 	}
 }
 
-func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) {
-	var process string
-	confPath := t.GetConfigPath(service)
-	if t.checkFile(confPath + "/" + domain + ".conf") {
-		selectBox := &survey.Select{Message: "this conf is exists. Continue? :", Options: []string{"y", "n"}}
-		err := survey.AskOne(selectBox, &process)
-		if err != nil {
-			log.Println(err)
+// AddVirtualHost creates the vhost config, restarts the service and (optionally)
+// maps the domain to 127.0.0.1 in /etc/hosts. It runs non-interactively: an
+// existing config is rejected with ErrVirtualHostExists, and a domain already
+// present in /etc/hosts is simply not added again.
+func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) error {
+	domain = strings.TrimSpace(domain)
+	if !domainPattern.MatchString(domain) {
+		return fmt.Errorf("invalid domain: %q", domain)
+	}
+	if typeConf != "Default" {
+		port, err := strconv.Atoi(strings.TrimSpace(proxyPassPort))
+		if err != nil || port < 1 || port > 65535 {
+			return fmt.Errorf("invalid proxy pass port: %q", proxyPassPort)
 		}
-		if process == "n" {
-			return
-		}
+		proxyPassPort = strconv.Itoa(port)
 	}
 
-	if t.FindInHosts(domain) {
-		selectBox := &survey.Select{Message: "this domain is exists. Continue? :", Options: []string{"y", "n"}}
-		err := survey.AskOne(selectBox, &process)
-		if err != nil {
-			log.Println(err)
-		}
-		if process == "n" {
-			return
-		}
+	confPath := t.GetConfigPath(service)
+	if t.checkFile(confPath + "/" + domain + ".conf") {
+		return fmt.Errorf("%w: %s", ErrVirtualHostExists, domain)
 	}
 
 	if t.manager.DevEnv {
@@ -127,14 +128,29 @@ func (t *VirtualHost) AddVirtualHost(service, domain, folder, phpVersion, typeCo
 
 	t.createConfig(service, domain, folder, phpVersion, typeConf, proxyPassPort)
 	t.manager.Restart(service)
-	if addHosts {
-		t.addHosts(domain)
+	if addHosts && !t.FindInHosts(domain) {
+		if err := t.addHosts(domain); err != nil {
+			return fmt.Errorf("vhost created but /etc/hosts update failed: %w", err)
+		}
 	}
+	return nil
 }
 
+// FindInHosts reports whether /etc/hosts has an entry for exactly this hostname.
 func (t *VirtualHost) FindInHosts(domain string) bool {
 	hosts, _ := ioutil.ReadFile("/etc/hosts")
-	return strings.Contains(string(hosts), domain)
+	for _, line := range strings.Split(string(hosts), "\n") {
+		if i := strings.IndexByte(line, '#'); i >= 0 {
+			line = line[:i]
+		}
+		fields := strings.Fields(line)
+		for _, name := range fields[min(1, len(fields)):] {
+			if strings.EqualFold(name, domain) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func (t *VirtualHost) GetConfigPath(service string) string {
@@ -190,24 +206,16 @@ func (t *VirtualHost) createHttpdConfig(domain string, folder string, version st
 	}
 }
 
-func (t *VirtualHost) addHosts(domain string) {
-	var cmd *exec.Cmd
-	if t.manager.DevEnv {
-		cmd = exec.Command("bash", "-c", `echo "127.0.0.1 `+domain+`" >> /etc/hosts`)
-	} else {
-		cmd = exec.Command("sudo", "bash", "-c", `echo "127.0.0.1 `+domain+`" >> /etc/hosts`)
-	}
-	cmd.Stdin = os.Stdin
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	err := cmd.Start()
+// addHosts appends "127.0.0.1 <domain>" to /etc/hosts. Redock runs as root, so
+// the file is written directly instead of shelling out through sudo/bash.
+func (t *VirtualHost) addHosts(domain string) error {
+	f, err := os.OpenFile("/etc/hosts", os.O_APPEND|os.O_WRONLY, 0644)
 	if err != nil {
-		fmt.Println(err)
+		return err
 	}
-	err1 := cmd.Wait()
-	if err1 != nil {
-		fmt.Println(err1)
-	}
+	defer f.Close()
+	_, err = f.WriteString("\n127.0.0.1 " + domain + "\n")
+	return err
 }
 
 func (t *VirtualHost) getApache2Ip() string {

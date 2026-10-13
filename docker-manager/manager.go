@@ -195,8 +195,8 @@ func (t *DockerEnvironmentManager) SetEnv(text string) {
 	}
 }
 
-func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) {
-	t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort, addHosts)
+func (t *DockerEnvironmentManager) AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort string, addHosts bool) error {
+	return t.Virtualhost.AddVirtualHost(service, domain, folder, phpVersion, typeConf, proxyPassPort, addHosts)
 }
 
 func (t *DockerEnvironmentManager) getHomeDir() string {

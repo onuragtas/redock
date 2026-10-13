@@ -1,7 +1,10 @@
 package controllers
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
+	"errors"
 	"log"
 	"os"
 	"redock/devenv"
@@ -750,13 +753,34 @@ func DeleteVHost(c *fiber.Ctx) error {
 // @Param user_role body string true "User role"
 // @Success 200 {object} models.User
 // @Router /v1/docker/env [get]
+// flexString accepts either a JSON string or a JSON number and stores it as a string.
+type flexString string
+
+func (f *flexString) UnmarshalJSON(b []byte) error {
+	if bytes.Equal(b, []byte("null")) {
+		*f = ""
+		return nil
+	}
+	var s string
+	if err := json.Unmarshal(b, &s); err == nil {
+		*f = flexString(s)
+		return nil
+	}
+	var n json.Number
+	if err := json.Unmarshal(b, &n); err != nil {
+		return err
+	}
+	*f = flexString(n.String())
+	return nil
+}
+
 func CreateVHost(c *fiber.Ctx) error {
 
 	type Parameter struct {
 		Domain            string `json:"domain"`
 		Service           string `json:"service"`
 		ConfigurationType string `json:"configurationType"`
-		ProxyPass         string `json:"proxyPass"`
+		ProxyPass         flexString `json:"proxyPass"` // form sends a number input
 		Folder            string `json:"folder"`
 		PhpService        string `json:"phpService"`
 	}
@@ -780,7 +804,16 @@ func CreateVHost(c *fiber.Ctx) error {
 
 	manager := docker_manager.GetDockerManager()
 
-	manager.AddVirtualHost(model.Service, model.Domain, model.Folder, model.PhpService, model.ConfigurationType, model.ProxyPass, true)
+	if err := manager.AddVirtualHost(model.Service, model.Domain, model.Folder, model.PhpService, model.ConfigurationType, string(model.ProxyPass), true); err != nil {
+		status := fiber.StatusBadRequest
+		if errors.Is(err, docker_manager.ErrVirtualHostExists) {
+			status = fiber.StatusConflict
+		}
+		return c.Status(status).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
 
 	return c.Status(fiber.StatusOK).JSON(fiber.Map{
 		"error": false,

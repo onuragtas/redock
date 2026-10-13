@@ -3,8 +3,11 @@ module redock
 go 1.25.0
 
 require (
-	github.com/AlecAivazis/survey/v2 v2.3.7
+	blitiri.com.ar/go/spf v1.6.0
+	github.com/cretz/bine v0.2.0
 	github.com/docker/docker v27.4.1+incompatible
+	github.com/emersion/go-imap-idle v0.0.0-20210907174914-db2568431445
+	github.com/emersion/go-msgauth v0.7.0
 	github.com/go-playground/validator/v10 v10.26.0
 	github.com/go-sql-driver/mysql v1.9.2
 	github.com/gofiber/contrib/jwt v1.1.1
@@ -21,10 +24,12 @@ require (
 	github.com/miekg/dns v1.1.62
 	github.com/onuragtas/command v1.0.22
 	github.com/onuragtas/tunnel-client v1.0.59
+	github.com/quic-go/quic-go v0.61.0
 	github.com/sanbornm/go-selfupdate v0.0.0-20230714125711-e1c03e3d6ac7
 	github.com/skip2/go-qrcode v0.0.0-20200617195104-da1b6568686e
 	github.com/stretchr/testify v1.11.1
 	github.com/swaggo/swag v1.16.4
+	github.com/vishvananda/netlink v1.3.0
 	golang.org/x/crypto v0.54.0
 	golang.org/x/text v0.40.0
 	golang.zx2c4.com/wireguard v0.0.0-20250521234502-f333402bd9cb
@@ -35,13 +40,7 @@ require (
 )
 
 require (
-	blitiri.com.ar/go/spf v1.6.0 // indirect
-	github.com/cretz/bine v0.2.0 // indirect
-	github.com/emersion/go-imap-idle v0.0.0-20210907174914-db2568431445 // indirect
-	github.com/emersion/go-msgauth v0.7.0 // indirect
 	github.com/onuragtas/go-requests v1.0.6 // indirect
-	github.com/quic-go/quic-go v0.61.0 // indirect
-	github.com/vishvananda/netlink v1.3.0 // indirect
 	github.com/vishvananda/netns v0.0.4 // indirect
 )
 
@@ -95,7 +94,7 @@ require (
 	github.com/creack/pty v1.1.24 // indirect
 	github.com/davecgh/go-spew v1.1.1 // indirect
 	github.com/docker/go-connections v0.5.0
-	github.com/docker/go-units v0.5.0 // indirect
+	github.com/docker/go-units v0.5.0
 	github.com/emirpasic/gods v1.18.1 // indirect
 	github.com/fasthttp/websocket v1.5.12 // indirect
 	github.com/gabriel-vasile/mimetype v1.4.9 // indirect
@@ -118,7 +117,6 @@ require (
 	github.com/jbenet/go-context v0.0.0-20150711004518-d14ea06fba99 // indirect
 	github.com/josharian/intern v1.0.0 // indirect
 	github.com/kardianos/service v1.2.2
-	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51 // indirect
 	github.com/kevinburke/ssh_config v1.2.0 // indirect
 	github.com/klauspost/compress v1.18.0 // indirect
 	github.com/kr/pty v1.1.8
@@ -127,13 +125,12 @@ require (
 	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mattn/go-runewidth v0.0.16 // indirect
-	github.com/mgutz/ansi v0.0.0-20200706080929-d51e80ef957d // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
 	github.com/moby/term v0.5.0 // indirect
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/onuragtas/reverse-proxy v1.0.28
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.1 // indirect
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.4.7 // indirect
@@ -146,8 +143,7 @@ require (
 	github.com/valyala/fasthttp v1.61.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.3 // indirect
 	golang.org/x/net v0.56.0 // indirect
-	golang.org/x/sys v0.47.0 // indirect
-	golang.org/x/term v0.45.0 // indirect
+	golang.org/x/sys v0.47.0
 	golang.org/x/time v0.9.0 // indirect
 	golang.org/x/tools v0.47.0 // indirect
 	gopkg.in/headzoo/surf.v1 v1.0.1 // indirect

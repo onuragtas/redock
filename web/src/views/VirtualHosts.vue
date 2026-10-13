@@ -38,6 +38,7 @@ import {
 } from "@mdi/js";
 import { computed, onMounted, ref } from "vue";
 import { useI18n } from "vue-i18n";
+import { useToast } from "vue-toastification";
 
 const { t } = useI18n();
 
@@ -54,6 +55,8 @@ const virtualhostContent = ref('')
 const envModes = ref({}) // Track env mode for each vhost path
 const togglingEnv = ref({}) // Track which vhosts are currently toggling
 const togglingStarred = ref({}) // Track which vhosts are currently toggling star
+
+const toast = useToast()
 
 // Form data
 const createVirtualHost = ref({
@@ -288,12 +291,16 @@ const deleteSubmit = async () => {
 
 const addSubmit = async () => {
   try {
-    await ApiService.addVHost(createVirtualHost.value)
+    await ApiService.addVHost({
+      ...createVirtualHost.value,
+      proxyPass: String(createVirtualHost.value.proxyPass ?? ''),
+    })
     isAddModalActive.value = false
     resetForm()
     await getAllVHosts()
   } catch (error) {
     console.error('Failed to create vhost:', error)
+    toast.error(error?.response?.data?.msg || error.message)
   }
 }
 
