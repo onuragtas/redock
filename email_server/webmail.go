@@ -90,6 +90,8 @@ func (m *EmailManager) WebmailThread(mailboxID uint, folder string, uid uint32, 
 		return nil, fmt.Errorf("message not found")
 	}
 
+	// Same grouping as the list, so an opened conversation matches its row.
+	assignThreadIDs(emails)
 	thread := make([]*Email, 0, 8)
 	for _, email := range emails {
 		if email.ThreadID == target.ThreadID {

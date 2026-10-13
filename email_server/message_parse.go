@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"regexp"
 	"sort"
 	"strings"
 
@@ -95,19 +96,22 @@ func formatAddressV1(addr *imap.Address) string {
 	return email
 }
 
+// subjectReplyPrefixes are reply/forward markers stripped before subjects are
+// compared ("Re:", "Fwd:", Outlook's "FW:" and Turkish "YNT:").
+var subjectReplyPrefixes = []string{"re:", "fwd:", "fw:", "ynt:"}
+
 // normalizeSubjectForThread konu satırından "Re:", "Fwd:" vb. kaldırıp thread gruplamada kullanılacak anahtarı döner.
 func normalizeSubjectForThread(subject string) string {
 	s := strings.TrimSpace(subject)
 	for {
 		lower := strings.ToLower(s)
 		trimmed := false
-		if strings.HasPrefix(lower, "re:") {
-			s = strings.TrimSpace(s[3:])
-			trimmed = true
-		}
-		if strings.HasPrefix(strings.ToLower(s), "fwd:") {
-			s = strings.TrimSpace(s[4:])
-			trimmed = true
+		for _, prefix := range subjectReplyPrefixes {
+			if strings.HasPrefix(lower, prefix) {
+				s = strings.TrimSpace(s[len(prefix):])
+				trimmed = true
+				break
+			}
 		}
 		if !trimmed {
 			break
@@ -116,42 +120,109 @@ func normalizeSubjectForThread(subject string) string {
 	return strings.TrimSpace(s)
 }
 
-// GroupEmailsIntoThreads mailleri thread_id'ye göre gruplar; thread_id eksik/yanlışsa konu (Re: temizlenmiş) ile gruplar.
-// Her thread tek bir root message_id ile etiketlenir; cevaplar da aynı thread_id'yi alır.
+var emailAddressPattern = regexp.MustCompile(`[^\s<>,;"']+@[^\s<>,;"']+`)
+
+// threadParticipants returns the sorted, de-duplicated From+To addresses. The
+// set is the same for a message and its answer (B→A and A→B), so it pairs an
+// Inbox message with the Sent reply while keeping mails to different people apart.
+func threadParticipants(e *Email) string {
+	seen := make(map[string]bool)
+	var list []string
+	for _, addr := range emailAddressPattern.FindAllString(e.From+" "+e.To, -1) {
+		addr = strings.ToLower(addr)
+		if !seen[addr] {
+			seen[addr] = true
+			list = append(list, addr)
+		}
+	}
+	sort.Strings(list)
+	return strings.Join(list, ",")
+}
+
+// assignThreadIDs sets ThreadID on every email so that one conversation shares
+// one ID. Messages are linked through Message-ID / In-Reply-To / References;
+// a message without reply headers falls back to "normalized subject + the
+// same participants", so unrelated mails that merely share a subject (or have
+// none) to different people stay separate. The thread ID is the Message-ID of
+// the oldest message in the conversation.
+func assignThreadIDs(emails []*Email) {
+	parent := make(map[string]string)
+	var find func(string) string
+	find = func(x string) string {
+		p, ok := parent[x]
+		if !ok || p == x {
+			parent[x] = x
+			return x
+		}
+		root := find(p)
+		parent[x] = root
+		return root
+	}
+	union := func(a, b string) {
+		if ra, rb := find(a), find(b); ra != rb {
+			parent[ra] = rb
+		}
+	}
+
+	nodes := make([]string, len(emails))
+	for i, e := range emails {
+		node := fmt.Sprintf("e:%d", i)
+		nodes[i] = node
+		find(node)
+
+		if id := normalizeID(e.MessageID); id != "" {
+			union(node, "id:"+id)
+		}
+		refs := parseMessageIDList(e.References)
+		if id := normalizeID(e.InReplyTo); id != "" {
+			refs = append(refs, id)
+		}
+		for _, ref := range refs {
+			union(node, "id:"+ref)
+		}
+		if len(refs) == 0 {
+			key := strings.ToLower(normalizeSubjectForThread(e.Subject))
+			union(node, "subj:"+key+"|"+threadParticipants(e))
+		}
+	}
+
+	groups := make(map[string][]*Email)
+	for i, e := range emails {
+		root := find(nodes[i])
+		groups[root] = append(groups[root], e)
+	}
+	for _, group := range groups {
+		sort.SliceStable(group, func(i, j int) bool { return group[i].Date.Before(group[j].Date) })
+		tid := ""
+		for _, e := range group {
+			if tid = normalizeID(e.MessageID); tid != "" {
+				break
+			}
+		}
+		if tid == "" {
+			tid = fmt.Sprintf("uid:%d", group[0].UID)
+		}
+		for _, e := range group {
+			e.ThreadID = tid
+		}
+	}
+}
+
+// GroupEmailsIntoThreads mailleri konuşmalara gruplar (bkz. assignThreadIDs);
+// en yeni konuşma başta olacak şekilde döner.
 func GroupEmailsIntoThreads(emails []*Email) []*EmailThread {
 	if len(emails) == 0 {
 		return nil
 	}
-	// Önce konuya göre grupla (References/InReplyTo boş olan cevaplar için)
-	bySubject := make(map[string][]*Email)
-	for _, e := range emails {
-		key := normalizeSubjectForThread(e.Subject)
-		if key == "" {
-			key = "(konu yok)"
-		}
-		bySubject[key] = append(bySubject[key], e)
-	}
-	// Her konu grubunda en eski mesajı root kabul et, thread_id'yi root'un message_id yap
-	for _, group := range bySubject {
-		sort.Slice(group, func(i, j int) bool { return group[i].Date.Before(group[j].Date) })
-		rootID := strings.Trim(group[0].MessageID, "<>")
-		for _, e := range group {
-			e.ThreadID = rootID
-		}
-	}
-	// thread_id'ye göre grupla, EmailThread olarak dön
+	assignThreadIDs(emails)
+
 	byThread := make(map[string][]*Email)
 	for _, e := range emails {
-		tid := e.ThreadID
-		if tid == "" {
-			tid = normalizeID(e.MessageID)
-		}
-		byThread[tid] = append(byThread[tid], e)
+		byThread[e.ThreadID] = append(byThread[e.ThreadID], e)
 	}
-	var threads []*EmailThread
+	threads := make([]*EmailThread, 0, len(byThread))
 	for tid, group := range byThread {
-		sort.Slice(group, func(i, j int) bool { return group[i].Date.Before(group[j].Date) })
-		latest := group[len(group)-1].Date
+		sort.SliceStable(group, func(i, j int) bool { return group[i].Date.Before(group[j].Date) })
 		subject := group[0].Subject
 		if subject == "" {
 			subject = "(konu yok)"
@@ -159,7 +230,7 @@ func GroupEmailsIntoThreads(emails []*Email) []*EmailThread {
 		threads = append(threads, &EmailThread{
 			ThreadID: tid,
 			Subject:  subject,
-			Date:     latest,
+			Date:     group[len(group)-1].Date,
 			Count:    len(group),
 			Messages: group,
 		})
