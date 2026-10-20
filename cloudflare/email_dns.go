@@ -45,6 +45,10 @@ func (o DNSRecordOutcome) OK() bool {
 type desiredRecord struct {
 	kind   string
 	params DNSRecordParams
+	// mailHost marks records that live at the mail server's hostname rather
+	// than at the domain (A, SPF-HELO). One host serves every domain, so these
+	// belong to whichever zone owns that hostname, not to each mail domain.
+	mailHost bool
 	// matches identifies the counterpart of this record among the zone's
 	// existing records. It must be narrow enough to leave unrelated records of
 	// the same type and name alone.
@@ -125,7 +129,8 @@ func buildEmailRecords(domain string, params EmailDNSParams) []desiredRecord {
 	// few remaining marks against an otherwise authenticated message.
 	heloHost := params.MXRecord
 	records = append(records, desiredRecord{
-		kind: "SPF-HELO",
+		kind:     "SPF-HELO",
+		mailHost: true,
 		params: DNSRecordParams{
 			Type: "TXT", Name: heloHost, Content: "v=spf1 a -all", TTL: 1,
 			Comment: "SPF record for the mail host's HELO identity",
@@ -140,7 +145,8 @@ func buildEmailRecords(domain string, params EmailDNSParams) []desiredRecord {
 		mailHost := params.MXRecord
 		proxied := false
 		records = append(records, desiredRecord{
-			kind: "A",
+			kind:     "A",
+			mailHost: true,
 			params: DNSRecordParams{
 				Type: "A", Name: mailHost, Content: params.MailServerIP, TTL: 1,
 				Proxied: &proxied, Comment: "Mail server A record",
@@ -177,10 +183,54 @@ func applyEmailDefaults(domain string, params *EmailDNSParams) {
 	}
 }
 
+// inZone reports whether name is the zone apex or a name inside the zone.
+func inZone(name, zone string) bool {
+	name = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(name), "."))
+	zone = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(zone), "."))
+	return name == zone || strings.HasSuffix(name, "."+zone)
+}
+
+// MailHostInZone reports whether the mail host the params resolve to belongs
+// to the zone (so its A / SPF-HELO records can be published there).
+func MailHostInZone(zoneName, domain string, params EmailDNSParams) bool {
+	applyEmailDefaults(domain, &params)
+	return inZone(params.MXRecord, zoneName)
+}
+
+// recordsFor selects the records to manage in a zone. Mail-host records are
+// only published in the zone that owns the host name: written into another
+// zone, Cloudflare would store "mail.a.com" as "mail.a.com.b.com", the record
+// would never match on the next sync, and every later create would fail with
+// "An identical record already exists" (81058).
+func recordsFor(zoneName string, params EmailDNSParams, hostOnly bool) []desiredRecord {
+	var out []desiredRecord
+	for _, r := range buildEmailRecords(zoneName, params) {
+		if r.mailHost {
+			if !inZone(r.params.Name, zoneName) {
+				continue
+			}
+		} else if hostOnly {
+			continue
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
 // PlanEmailDNSRecords reports what a sync would do, changing nothing. This is
 // the safe way to see which records are already correct, which differ and which
 // are missing.
 func (m *CloudflareManager) PlanEmailDNSRecords(zoneID string, params EmailDNSParams) ([]DNSRecordOutcome, error) {
+	return m.planRecords(zoneID, params, false)
+}
+
+// PlanMailHostRecords is PlanEmailDNSRecords for just the mail host's own
+// records (A, SPF-HELO), for the zone that owns the host name.
+func (m *CloudflareManager) PlanMailHostRecords(zoneID string, params EmailDNSParams) ([]DNSRecordOutcome, error) {
+	return m.planRecords(zoneID, params, true)
+}
+
+func (m *CloudflareManager) planRecords(zoneID string, params EmailDNSParams, hostOnly bool) ([]DNSRecordOutcome, error) {
 	zone, err := m.GetZone(zoneID)
 	if err != nil {
 		return nil, err
@@ -192,7 +242,7 @@ func (m *CloudflareManager) PlanEmailDNSRecords(zoneID string, params EmailDNSPa
 	}
 
 	outcomes := make([]DNSRecordOutcome, 0, 5)
-	for _, desired := range buildEmailRecords(zone.Name, params) {
+	for _, desired := range recordsFor(zone.Name, params, hostOnly) {
 		outcome := DNSRecordOutcome{
 			Kind: desired.kind, Type: desired.params.Type,
 			Name: desired.params.Name, Content: desired.params.Content,
@@ -221,8 +271,20 @@ func (m *CloudflareManager) PlanEmailDNSRecords(zoneID string, params EmailDNSPa
 
 // SyncEmailDNSRecords brings the zone's mail records to the desired state,
 // creating what is missing and updating what differs. Records it did not put
-// there are never deleted.
+// there are never deleted. The mail host's A / SPF-HELO records are included
+// only when the host name belongs to this zone (see SyncMailHostRecords).
 func (m *CloudflareManager) SyncEmailDNSRecords(zoneID string, params EmailDNSParams) ([]DNSRecordOutcome, error) {
+	return m.syncRecords(zoneID, params, false)
+}
+
+// SyncMailHostRecords publishes just the mail host's own records (A,
+// SPF-HELO) into the zone that owns the host name — used when a mail domain
+// lives in a different zone than the shared mail host.
+func (m *CloudflareManager) SyncMailHostRecords(zoneID string, params EmailDNSParams) ([]DNSRecordOutcome, error) {
+	return m.syncRecords(zoneID, params, true)
+}
+
+func (m *CloudflareManager) syncRecords(zoneID string, params EmailDNSParams, hostOnly bool) ([]DNSRecordOutcome, error) {
 	zone, err := m.GetZone(zoneID)
 	if err != nil {
 		return nil, err
@@ -234,7 +296,7 @@ func (m *CloudflareManager) SyncEmailDNSRecords(zoneID string, params EmailDNSPa
 	}
 
 	outcomes := make([]DNSRecordOutcome, 0, 5)
-	for _, desired := range buildEmailRecords(zone.Name, params) {
+	for _, desired := range recordsFor(zone.Name, params, hostOnly) {
 		outcome := DNSRecordOutcome{
 			Kind: desired.kind, Type: desired.params.Type,
 			Name: desired.params.Name, Content: desired.params.Content,

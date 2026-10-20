@@ -54,7 +54,7 @@ func (m *CloudflareManager) ListDNSRecords(zoneID string) ([]*CloudflareDNSRecor
 			Name:     record.Name,
 			Content:  record.Content,
 			TTL:      record.TTL,
-			Proxied:  *record.Proxied,
+			Proxied:  record.Proxied != nil && *record.Proxied,
 			Comment:  record.Comment,
 		}
 		

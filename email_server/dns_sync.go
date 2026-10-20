@@ -51,6 +51,9 @@ func (m *EmailManager) SyncDomainDNS(domain *EmailDomain) DNSSyncResult {
 	params := m.emailDNSParams(domain)
 
 	outcomes, err := cfManager.SyncEmailDNSRecords(zone.ZoneID, params)
+	if err == nil {
+		outcomes = append(outcomes, m.mailHostOutcomes(cfManager, zone, params, true)...)
+	}
 	if err != nil {
 		result.Message = "Cloudflare rejected the records: " + err.Error()
 		m.logMailEvent(mailEvent{
@@ -217,11 +220,13 @@ func (m *EmailManager) PreviewDomainDNS(domain *EmailDomain) DNSSyncResult {
 	}
 	result.ZoneID = zone.ZoneID
 
-	outcomes, err := cfManager.PlanEmailDNSRecords(zone.ZoneID, m.emailDNSParams(domain))
+	params := m.emailDNSParams(domain)
+	outcomes, err := cfManager.PlanEmailDNSRecords(zone.ZoneID, params)
 	if err != nil {
 		result.Message = "could not read the zone: " + err.Error()
 		return result
 	}
+	outcomes = append(outcomes, m.mailHostOutcomes(cfManager, zone, params, false)...)
 
 	result.Records = outcomes
 	pending := 0
@@ -237,6 +242,36 @@ func (m *EmailManager) PreviewDomainDNS(domain *EmailDomain) DNSSyncResult {
 		result.Message = fmt.Sprintf("%d record(s) need publishing", pending)
 	}
 	return result
+}
+
+// mailHostOutcomes handles the shared mail host's own records (A, SPF-HELO)
+// when the host name lives in a different zone than the mail domain — e.g.
+// every domain's MX points at mail.first.com. They are published into the zone
+// that owns the host, or skipped when that zone isn't on a connected account.
+func (m *EmailManager) mailHostOutcomes(cfManager *cloudflare.CloudflareManager, zone *cloudflare.CloudflareZone, params cloudflare.EmailDNSParams, apply bool) []cloudflare.DNSRecordOutcome {
+	if cloudflare.MailHostInZone(zone.Name, zone.Name, params) {
+		return nil // already part of the domain's own sync
+	}
+	hostZone := m.findCloudflareZone(params.MXRecord)
+	if hostZone == nil {
+		return nil
+	}
+	var (
+		outcomes []cloudflare.DNSRecordOutcome
+		err      error
+	)
+	if apply {
+		outcomes, err = cfManager.SyncMailHostRecords(hostZone.ZoneID, params)
+	} else {
+		outcomes, err = cfManager.PlanMailHostRecords(hostZone.ZoneID, params)
+	}
+	if err != nil {
+		return []cloudflare.DNSRecordOutcome{{
+			Kind: "MAIL-HOST", Name: params.MXRecord, Action: cloudflare.ActionFailed,
+			Detail: "zone " + hostZone.Name + ": " + err.Error(),
+		}}
+	}
+	return outcomes
 }
 
 // emailDNSParams is the desired mail DNS for a domain.
