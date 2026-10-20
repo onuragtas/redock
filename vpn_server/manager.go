@@ -429,6 +429,11 @@ func (m *WireGuardManager) enableForwarding() error {
 		return nil
 
 	case "linux":
+		// Often already on (Docker enables it on the host). Containers such as
+		// Home Assistant add-ons mount /proc/sys read-only, so only write when needed.
+		if v, err := os.ReadFile("/proc/sys/net/ipv4/ip_forward"); err == nil && strings.TrimSpace(string(v)) == "1" {
+			return nil
+		}
 		cmd := exec.Command("sysctl", "-w", "net.ipv4.ip_forward=1")
 		if output, err := cmd.CombinedOutput(); err != nil {
 			return fmt.Errorf("sysctl failed: %v, output: %s", err, string(output))
