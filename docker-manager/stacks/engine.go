@@ -4,12 +4,16 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/fs"
 	"path"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/docker/docker/api/types"
@@ -34,33 +38,43 @@ type Engine struct {
 	// WorkDir is the base directory relative bind-mount sources resolve against
 	// (the redock-managed equivalent of the old ~/.docker-environment).
 	WorkDir string
-	// BuildFS provides build contexts referenced by BuildSpec.Context. It is
-	// typically os.DirFS(<repository cache dir>); the contexts are fetched from
-	// a repository (compose URL / local folder), not embedded in the binary.
-	BuildFS fs.FS
 	// networkName is the resolved network to attach containers to. EnsureNetwork
 	// reuses an existing network that already owns our subnet (e.g. a running
 	// compose stack's lemp_net) instead of creating a conflicting one.
+	netMu       sync.Mutex
 	networkName string
 }
+
+// ConfigHashLabel stores a hash of the configuration a container was created
+// with, so later edits (env vars, ports, volumes, ...) can be detected and the
+// container recreated — Docker cannot change a container's config in place.
+const ConfigHashLabel = "redock.stacks.config-hash"
 
 // Network returns the resolved network name (after EnsureNetwork), defaulting
 // to the redock-managed network.
 func (e *Engine) Network() string {
+	e.netMu.Lock()
+	defer e.netMu.Unlock()
 	if e.networkName != "" {
 		return e.networkName
 	}
 	return NetworkName
 }
 
+func (e *Engine) setNetwork(name string) {
+	e.netMu.Lock()
+	e.networkName = name
+	e.netMu.Unlock()
+}
+
 // NewEngine creates an Engine using the ambient Docker environment (DOCKER_HOST
 // etc.) with API-version negotiation, matching the rest of the codebase.
-func NewEngine(workDir string, buildFS fs.FS) (*Engine, error) {
+func NewEngine(workDir string) (*Engine, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("docker client: %w", err)
 	}
-	return &Engine{cli: cli, WorkDir: workDir, BuildFS: buildFS}, nil
+	return &Engine{cli: cli, WorkDir: workDir}, nil
 }
 
 // Client exposes the underlying SDK client for callers that need raw access.
@@ -79,7 +93,7 @@ func (e *Engine) EnsureNetwork(ctx context.Context) error {
 		for _, n := range nets {
 			for _, cfg := range n.IPAM.Config {
 				if cfg.Subnet == NetworkSubnet {
-					e.networkName = n.Name
+					e.setNetwork(n.Name)
 					return nil
 				}
 			}
@@ -88,7 +102,7 @@ func (e *Engine) EnsureNetwork(ctx context.Context) error {
 
 	// 2. If our network already exists, reuse it.
 	if _, err := e.cli.NetworkInspect(ctx, NetworkName, network.InspectOptions{}); err == nil {
-		e.networkName = NetworkName
+		e.setNetwork(NetworkName)
 		return nil
 	}
 
@@ -103,7 +117,7 @@ func (e *Engine) EnsureNetwork(ctx context.Context) error {
 	if err != nil && !strings.Contains(err.Error(), "already exists") {
 		return fmt.Errorf("create network %s: %w", NetworkName, err)
 	}
-	e.networkName = NetworkName
+	e.setNetwork(NetworkName)
 	return nil
 }
 
@@ -127,17 +141,18 @@ func (e *Engine) PullImage(ctx context.Context, ref, platform string, logOut io.
 	return drain(rc, logOut)
 }
 
-// BuildImage builds spec.Build from the embedded build context, streaming the
-// build log to logOut (may be nil to discard).
-func (e *Engine) BuildImage(ctx context.Context, b *BuildSpec, platform string, logOut io.Writer) error {
-	if e.BuildFS == nil {
-		return fmt.Errorf("build %s: no embedded build FS configured", b.Tag)
+// BuildImage builds spec.Build from the build context in buildFS (typically
+// os.DirFS(<repository cache dir>)), streaming the build log to logOut (may be
+// nil to discard). buildFS is per call so concurrent builds never share it.
+func (e *Engine) BuildImage(ctx context.Context, buildFS fs.FS, b *BuildSpec, platform string, logOut io.Writer) error {
+	if buildFS == nil {
+		return fmt.Errorf("build %s: no build context configured", b.Tag)
 	}
 	dockerfile := b.Dockerfile
 	if dockerfile == "" {
 		dockerfile = "Dockerfile"
 	}
-	tarReader, err := tarFromFS(e.BuildFS, b.Context)
+	tarReader, err := tarFromFS(buildFS, b.Context)
 	if err != nil {
 		return fmt.Errorf("tar context %s: %w", b.Context, err)
 	}
@@ -156,14 +171,24 @@ func (e *Engine) BuildImage(ctx context.Context, b *BuildSpec, platform string, 
 }
 
 // EnsureImage builds or pulls the image backing spec, as appropriate.
-func (e *Engine) EnsureImage(ctx context.Context, spec ServiceSpec, logOut io.Writer) error {
+func (e *Engine) EnsureImage(ctx context.Context, spec ServiceSpec, buildFS fs.FS, logOut io.Writer) error {
 	if spec.Build != nil {
-		return e.BuildImage(ctx, spec.Build, spec.Platform, logOut)
+		return e.BuildImage(ctx, buildFS, spec.Build, spec.Platform, logOut)
 	}
 	if spec.Image != "" {
 		return e.PullImage(ctx, spec.Image, spec.Platform, logOut)
 	}
 	return fmt.Errorf("service %s has neither Image nor Build", spec.Name)
+}
+
+// HasImage reports whether the image backing spec is present locally.
+func (e *Engine) HasImage(ctx context.Context, spec ServiceSpec) bool {
+	ref := imageRef(spec)
+	if ref == "" {
+		return false
+	}
+	_, _, err := e.cli.ImageInspectWithRaw(ctx, ref)
+	return err == nil
 }
 
 // imageRef returns the image reference used to run spec.
@@ -174,19 +199,31 @@ func imageRef(spec ServiceSpec) string {
 	return spec.Image
 }
 
-// CreateAndStart creates (recreating if a same-named container exists) and
-// starts the container for an already env-resolved spec. Returns the new ID.
-func (e *Engine) CreateAndStart(ctx context.Context, spec ServiceSpec) (string, error) {
-	name := spec.ContainerName
-	if name == "" {
-		name = spec.Name
+// containerName returns the Docker container name for spec.
+func containerName(spec ServiceSpec) string {
+	if spec.ContainerName != "" {
+		return spec.ContainerName
 	}
+	return spec.Name
+}
 
-	// Remove any pre-existing container with the same name (recreate semantics).
-	if existing, err := e.findByName(ctx, name); err == nil && existing != "" {
-		_ = e.cli.ContainerRemove(ctx, existing, container.RemoveOptions{Force: true})
-	}
+// createConfig is everything ContainerCreate receives for spec.
+type createConfig struct {
+	Config   *container.Config
+	Host     *container.HostConfig
+	Net      *network.NetworkingConfig
+	Platform *ocispec.Platform
+}
 
+// hash fingerprints the create config (computed before the hash label is added).
+func (c createConfig) hash() string {
+	b, _ := json.Marshal(c)
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])[:16]
+}
+
+// buildCreateConfig turns an env-resolved spec into the Docker create config.
+func (e *Engine) buildCreateConfig(spec ServiceSpec) createConfig {
 	exposed, bindings := portConfig(spec.Ports)
 
 	config := &container.Config{
@@ -235,15 +272,83 @@ func (e *Engine) CreateAndStart(ctx context.Context, spec ServiceSpec) (string, 
 			e.Network(): endpoint(spec),
 		},
 	}
+	return createConfig{Config: config, Host: hostConfig, Net: netConfig, Platform: platformSpec(spec.Platform)}
+}
 
-	resp, err := e.cli.ContainerCreate(ctx, config, hostConfig, netConfig, platformSpec(spec.Platform), name)
+// CreateAndStart creates (recreating if a same-named container exists) and
+// starts the container for an already env-resolved spec. Returns the new ID.
+// The container is labeled with its config hash (see Outdated).
+func (e *Engine) CreateAndStart(ctx context.Context, spec ServiceSpec) (string, error) {
+	name := containerName(spec)
+	cc := e.buildCreateConfig(spec)
+	labels := make(map[string]string, len(cc.Config.Labels)+1)
+	for k, v := range cc.Config.Labels {
+		labels[k] = v
+	}
+	labels[ConfigHashLabel] = cc.hash()
+	cc.Config.Labels = labels
+
+	// Remove any pre-existing container with the same name (recreate semantics).
+	existing, err := e.findByName(ctx, name)
+	if err != nil {
+		return "", fmt.Errorf("look up %s: %w", name, err)
+	}
+	if existing != "" {
+		if err := e.cli.ContainerRemove(ctx, existing, container.RemoveOptions{Force: true}); err != nil {
+			return "", fmt.Errorf("remove old %s: %w", name, err)
+		}
+	}
+
+	resp, err := e.cli.ContainerCreate(ctx, cc.Config, cc.Host, cc.Net, cc.Platform, name)
 	if err != nil {
 		return "", fmt.Errorf("create %s: %w", name, err)
 	}
 	if err := e.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		// Don't leave a half-created container behind (it would show up as a
+		// stale "created" entry and hold the name).
+		_ = e.cli.ContainerRemove(ctx, resp.ID, container.RemoveOptions{Force: true})
 		return "", fmt.Errorf("start %s: %w", name, err)
 	}
 	return resp.ID, nil
+}
+
+// Outdated reports whether the container for spec exists and whether its
+// configuration differs from spec (i.e. it must be recreated to apply edits).
+// Containers created by redock carry ConfigHashLabel; older ones (or ones from
+// the previous docker-compose stack) are compared on their environment only, so
+// an env edit is still detected without recreating everything on upgrade.
+func (e *Engine) Outdated(ctx context.Context, spec ServiceSpec) (exists, outdated bool, err error) {
+	id, err := e.findByName(ctx, containerName(spec))
+	if err != nil || id == "" {
+		return false, false, err
+	}
+	info, err := e.cli.ContainerInspect(ctx, id)
+	if err != nil {
+		return true, false, err
+	}
+	if info.Config == nil {
+		return true, false, nil
+	}
+	if want, ok := info.Config.Labels[ConfigHashLabel]; ok {
+		if e.buildCreateConfig(spec).hash() != want {
+			return true, true, nil
+		}
+		// Same config, but the image was re-pulled / rebuilt since.
+		if img, _, ierr := e.cli.ImageInspectWithRaw(ctx, imageRef(spec)); ierr == nil && img.ID != info.Image {
+			return true, true, nil
+		}
+		return true, false, nil
+	}
+	have := make(map[string]bool, len(info.Config.Env))
+	for _, kv := range info.Config.Env {
+		have[kv] = true
+	}
+	for _, kv := range envSlice(spec.Env) {
+		if !have[kv] {
+			return true, true, nil
+		}
+	}
+	return true, false, nil
 }
 
 // Stop stops a container by name (best-effort, with a grace timeout).
@@ -499,10 +604,14 @@ func platformSpec(p string) *ocispec.Platform {
 	if p == "" {
 		return nil
 	}
-	parts := strings.SplitN(p, "/", 2)
+	// os/arch[/variant], e.g. linux/arm/v7 or linux/arm64/v8.
+	parts := strings.SplitN(p, "/", 3)
 	plat := &ocispec.Platform{OS: parts[0]}
-	if len(parts) == 2 {
+	if len(parts) >= 2 {
 		plat.Architecture = parts[1]
+	}
+	if len(parts) == 3 {
+		plat.Variant = parts[2]
 	}
 	return plat
 }
@@ -561,13 +670,40 @@ func tarFromFS(fsys fs.FS, root string) (io.Reader, error) {
 	return &buf, nil
 }
 
-// drain copies r to out (or discards it) until EOF. Used to block on
-// build/pull completion.
+// drain consumes a Docker pull/build JSON message stream, copying it to out
+// (may be nil) and returning the first error the daemon reported in-stream.
+// Pull/build failures (failed RUN step, no manifest for this platform, ...)
+// arrive as {"errorDetail":...} messages with an HTTP 200, not as an API error.
 func drain(r io.Reader, out io.Writer) error {
 	if out == nil {
-		_, err := io.Copy(io.Discard, r)
-		return err
+		out = io.Discard
 	}
-	_, err := io.Copy(out, r)
-	return err
+	tee := io.TeeReader(r, out)
+	dec := json.NewDecoder(tee)
+	var streamErr error
+	for {
+		var msg struct {
+			Error       string `json:"error"`
+			ErrorDetail *struct {
+				Message string `json:"message"`
+			} `json:"errorDetail"`
+		}
+		if err := dec.Decode(&msg); err != nil {
+			if err == io.EOF {
+				return streamErr
+			}
+			// Not JSON (unexpected); keep consuming so the operation completes.
+			if _, cerr := io.Copy(io.Discard, tee); cerr != nil {
+				return cerr
+			}
+			return streamErr
+		}
+		if streamErr == nil {
+			if msg.ErrorDetail != nil && msg.ErrorDetail.Message != "" {
+				streamErr = fmt.Errorf("%s", msg.ErrorDetail.Message)
+			} else if msg.Error != "" {
+				streamErr = fmt.Errorf("%s", msg.Error)
+			}
+		}
+	}
 }

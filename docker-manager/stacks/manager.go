@@ -3,8 +3,10 @@ package stacks
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 	"sync"
@@ -46,6 +48,25 @@ type Manager struct {
 	Engine   *Engine
 	Env      *EnvModel
 	db       *memory.Database
+
+	// mu guards Registry.Repos/Custom and Env (short critical sections; may
+	// include a repository sync). opMu serializes container lifecycle work
+	// (Up/Down/Restart/Apply) so concurrent requests can't interleave
+	// recreates of the same container. Lock order: opMu before mu.
+	mu   sync.Mutex
+	opMu sync.Mutex
+}
+
+// namePattern restricts repository / custom-service names: they become
+// directory names under the work dir (and are passed to os.RemoveAll), so
+// separators and dot-only names must never get through.
+var namePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]{0,63}$`)
+
+func validateName(kind, name string) error {
+	if !namePattern.MatchString(name) || strings.Contains(name, "..") {
+		return fmt.Errorf("invalid %s name %q: use letters, digits, '-', '_' or '.'", kind, name)
+	}
+	return nil
 }
 
 // NewManager constructs the manager, loading persisted state (or seeding the
@@ -59,7 +80,7 @@ func NewManager(workDir string) (*Manager, error) {
 	}
 	m.loadFromDB()
 
-	eng, err := NewEngine(workDir, nil)
+	eng, err := NewEngine(workDir)
 	if err != nil {
 		return nil, err
 	}
@@ -77,7 +98,11 @@ func loadEnv(workDir string) *EnvModel {
 }
 
 // ReloadEnv re-reads the .env file (call after the user edits it).
-func (m *Manager) ReloadEnv() { m.Env = loadEnv(m.WorkDir) }
+func (m *Manager) ReloadEnv() {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.rebuildEnv()
+}
 
 func (m *Manager) loadFromDB() {
 	if m.db == nil {
@@ -108,6 +133,12 @@ func (m *Manager) loadFromDB() {
 // Catalog returns the effective, env-resolved catalog (default + user repos +
 // custom services) and any per-repository sync errors.
 func (m *Manager) Catalog() ([]ServiceSpec, map[string]error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.catalogLocked()
+}
+
+func (m *Manager) catalogLocked() ([]ServiceSpec, map[string]error) {
 	specs, errs := m.Registry.Effective(false)
 	m.rebuildEnv()
 	for i := range specs {
@@ -172,6 +203,8 @@ func (m *Manager) repoDefaults() *EnvModel {
 // referenced by services) with its effective value, default, override flag,
 // source repository, and the services that reference it — sorted by key.
 func (m *Manager) EnvVars() []EnvVar {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	specs, _ := m.Registry.Effective(false) // unresolved specs (so ${VAR} survive)
 
 	// Defaults + the repository that provides each one.
@@ -320,9 +353,14 @@ func specEnvRefs(s ServiceSpec) map[string]string {
 // SaveEnvVars writes the global .env with only the values that differ from the
 // repo defaults (plus any custom keys), keeping the override file minimal.
 func (m *Manager) SaveEnvVars(vars map[string]string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	defaults := m.repoDefaults().All()
 	keys := make([]string, 0, len(vars))
-	for k := range vars {
+	for k, v := range vars {
+		if strings.ContainsAny(k, "=\r\n") || strings.ContainsAny(v, "\r\n") {
+			return fmt.Errorf("invalid variable %q: keys can't contain '=' or line breaks, values can't contain line breaks", k)
+		}
 		if k != "" {
 			keys = append(keys, k)
 		}
@@ -361,17 +399,53 @@ func (m *Manager) catalogMap() map[string]ServiceSpec {
 
 // Sync force-refreshes all enabled repositories (bypasses the cache).
 func (m *Manager) Sync() map[string]error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	_, errs := m.Registry.Effective(true)
 	return errs
 }
 
 // --- lifecycle ---
 
+// plan resolves names (plus transitive dependencies) into start order and
+// returns each service materialized against the current env, all under one
+// consistent snapshot of the registry/env.
+func (m *Manager) plan(names []string, withDeps bool) ([]ServiceSpec, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	specs, _ := m.catalogLocked()
+	cat := make(map[string]ServiceSpec, len(specs))
+	for _, s := range specs {
+		cat[s.Name] = s
+	}
+	order := names
+	if withDeps {
+		var err error
+		if order, err = m.resolveOrder(names, cat); err != nil {
+			return nil, err
+		}
+	}
+	out := make([]ServiceSpec, 0, len(order))
+	for _, name := range order {
+		spec, ok := cat[name]
+		if !ok {
+			return nil, fmt.Errorf("service %q not found in catalog", name)
+		}
+		if spec.ImportError != "" {
+			return nil, fmt.Errorf("cannot start %q: %s", name, spec.ImportError)
+		}
+		out = append(out, m.materialize(spec, true))
+	}
+	return out, nil
+}
+
 // Up starts the named services (and their transitive dependencies) in
 // dependency order, building/pulling images as needed, and marks them active.
+// Every container is recreated, so the current configuration always applies.
 func (m *Manager) Up(ctx context.Context, names ...string) error {
-	cat := m.catalogMap()
-	order, err := m.resolveOrder(names, cat)
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	order, err := m.plan(names, true)
 	if err != nil {
 		return err
 	}
@@ -380,39 +454,45 @@ func (m *Manager) Up(ctx context.Context, names ...string) error {
 	}
 	// Seed base web configs so nginx/httpd work without the legacy git clone.
 	m.SeedWebConfig()
-	for _, name := range order {
-		spec, ok := cat[name]
-		if !ok {
-			return fmt.Errorf("service %q not found in catalog", name)
-		}
-		if spec.ImportError != "" {
-			return fmt.Errorf("cannot start %q: %s", name, spec.ImportError)
-		}
-		s := m.materialize(spec)
-
-		for _, v := range s.Volumes {
-			if v.Kind == VolumeNamed {
-				if err := m.Engine.EnsureVolume(ctx, v.Source); err != nil {
-					return err
-				}
-			}
-		}
-		if s.Build != nil {
-			m.Engine.BuildFS = os.DirFS(s.SourceDir)
-		}
-		if err := m.Engine.EnsureImage(ctx, s, os.Stdout); err != nil {
-			return fmt.Errorf("ensure image for %s: %w", name, err)
-		}
-		if _, err := m.Engine.CreateAndStart(ctx, s); err != nil {
+	for _, s := range order {
+		if err := m.create(ctx, s, true); err != nil {
 			return err
 		}
-		m.markActive(name)
+		m.markActive(s.Name)
+	}
+	return nil
+}
+
+// create ensures volumes and the image, then (re)creates the container.
+// pull=false only fetches/builds the image when it is missing locally (used
+// when recreating to apply a config edit, which shouldn't upgrade images).
+func (m *Manager) create(ctx context.Context, s ServiceSpec, pull bool) error {
+	for _, v := range s.Volumes {
+		if v.Kind == VolumeNamed {
+			if err := m.Engine.EnsureVolume(ctx, v.Source); err != nil {
+				return err
+			}
+		}
+	}
+	if pull || !m.Engine.HasImage(ctx, s) {
+		var buildFS fs.FS
+		if s.Build != nil {
+			buildFS = os.DirFS(s.SourceDir)
+		}
+		if err := m.Engine.EnsureImage(ctx, s, buildFS, os.Stdout); err != nil {
+			return fmt.Errorf("ensure image for %s: %w", s.Name, err)
+		}
+	}
+	if _, err := m.Engine.CreateAndStart(ctx, s); err != nil {
+		return err
 	}
 	return nil
 }
 
 // Down stops and removes a service's container and clears its active mark.
 func (m *Manager) Down(ctx context.Context, name string) error {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
 	cat := m.catalogMap()
 	containerName := name
 	if s, ok := cat[name]; ok && s.ContainerName != "" {
@@ -425,14 +505,81 @@ func (m *Manager) Down(ctx context.Context, name string) error {
 	return nil
 }
 
-// Restart restarts a running service's container.
+// Restart restarts a service's container. If its configuration changed since
+// the container was created (env vars, ports, image, ...), the container is
+// recreated instead — a plain restart would keep the old configuration.
 func (m *Manager) Restart(ctx context.Context, name string) error {
-	cat := m.catalogMap()
-	containerName := name
-	if s, ok := cat[name]; ok && s.ContainerName != "" {
-		containerName = s.ContainerName
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	specs, err := m.plan([]string{name}, false)
+	if err != nil {
+		// Not in the catalog (e.g. a devenv container): plain restart by name.
+		return m.Engine.Restart(ctx, name)
 	}
-	return m.Engine.Restart(ctx, containerName)
+	s := specs[0]
+	exists, outdated, err := m.Engine.Outdated(ctx, s)
+	if err != nil {
+		return err
+	}
+	if exists && !outdated {
+		return m.Engine.Restart(ctx, containerName(s))
+	}
+	if err := m.Engine.EnsureNetwork(ctx); err != nil {
+		return err
+	}
+	return m.create(ctx, s, false)
+}
+
+// ApplyChanges recreates every active service whose container exists but no
+// longer matches its configuration (after an env or service edit), so edits
+// take effect without the user deleting containers. Returns the recreated
+// services; on error, those recreated before it.
+func (m *Manager) ApplyChanges(ctx context.Context) ([]string, error) {
+	m.opMu.Lock()
+	defer m.opMu.Unlock()
+	active := m.Active()
+	specs, err := m.planActive(active)
+	if err != nil {
+		return nil, err
+	}
+	var applied []string
+	networkReady := false
+	for _, s := range specs {
+		exists, outdated, err := m.Engine.Outdated(ctx, s)
+		if err != nil || !exists || !outdated {
+			continue
+		}
+		if !networkReady {
+			if err := m.Engine.EnsureNetwork(ctx); err != nil {
+				return applied, err
+			}
+			networkReady = true
+		}
+		if err := m.create(ctx, s, false); err != nil {
+			return applied, fmt.Errorf("apply %s: %w", s.Name, err)
+		}
+		applied = append(applied, s.Name)
+	}
+	return applied, nil
+}
+
+// planActive materializes the given (active) services that are still in the
+// catalog, skipping ones that disappeared or can't be imported.
+func (m *Manager) planActive(names []string) ([]ServiceSpec, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	specs, _ := m.catalogLocked()
+	want := make(map[string]bool, len(names))
+	for _, n := range names {
+		want[n] = true
+	}
+	var out []ServiceSpec
+	for _, s := range specs {
+		if want[s.Name] && s.ImportError == "" {
+			out = append(out, m.materialize(s, true))
+		}
+	}
+	return out, nil
 }
 
 // ServiceStatus is the runtime state of one catalog service.
@@ -440,23 +587,28 @@ type ServiceStatus struct {
 	Name      string `json:"name"`
 	Container string `json:"container"`
 	Category  string `json:"category"`
-	Active    bool   `json:"active"`  // user-activated (persisted)
-	Exists    bool   `json:"exists"`  // container present
-	Running   bool   `json:"running"` // container running
+	Active    bool   `json:"active"`   // user-activated (persisted)
+	Exists    bool   `json:"exists"`   // container present
+	Running   bool   `json:"running"`  // container running
+	Outdated  bool   `json:"outdated"` // config changed since the container was created
 	State     string `json:"state"`
 }
 
 // Status returns the runtime status of every catalog service.
 func (m *Manager) Status(ctx context.Context) ([]ServiceStatus, error) {
-	specs, _ := m.Catalog()
+	m.mu.Lock()
+	specs, _ := m.catalogLocked()
+	resolved := make([]ServiceSpec, len(specs))
+	for i, s := range specs {
+		resolved[i] = m.materialize(s, false)
+	}
+	m.mu.Unlock()
+
 	active := m.activeSet()
 	seed := !m.metaFlag(metaActiveSeeded)
 	out := make([]ServiceStatus, 0, len(specs))
-	for _, s := range specs {
-		cn := s.ContainerName
-		if cn == "" {
-			cn = s.Name
-		}
+	for i, s := range specs {
+		cn := containerName(s)
 		exists, running, state, _ := m.Engine.Status(ctx, cn)
 		// First-run migration: a service whose container already exists was
 		// started by the previous (docker-compose) stack — adopt it as active so
@@ -465,9 +617,13 @@ func (m *Manager) Status(ctx context.Context) ([]ServiceStatus, error) {
 			m.markActive(s.Name)
 			active[s.Name] = true
 		}
+		outdated := false
+		if exists && s.ImportError == "" {
+			_, outdated, _ = m.Engine.Outdated(ctx, resolved[i])
+		}
 		out = append(out, ServiceStatus{
 			Name: s.Name, Container: cn, Category: s.Category,
-			Active: active[s.Name], Exists: exists, Running: running, State: state,
+			Active: active[s.Name], Exists: exists, Running: running, Outdated: outdated, State: state,
 		})
 	}
 	if seed {
@@ -479,7 +635,10 @@ func (m *Manager) Status(ctx context.Context) ([]ServiceStatus, error) {
 // materialize env-resolves a spec and turns repo-relative bind sources into
 // absolute host paths: repository config files resolve to the repo cache, other
 // relative dirs (logs, data, ...) to the work dir (created on demand).
-func (m *Manager) materialize(spec ServiceSpec) ServiceSpec {
+// create=false computes the same result without creating missing runtime
+// directories (used by read-only callers such as Status).
+// Caller must hold m.mu.
+func (m *Manager) materialize(spec ServiceSpec, create bool) ServiceSpec {
 	s := m.Env.Resolve(spec)
 	s.SourceDir = spec.SourceDir
 
@@ -547,7 +706,7 @@ func (m *Manager) materialize(spec ServiceSpec) ServiceSpec {
 		}
 		// Runtime path under the work dir; ensure the directory exists.
 		wd := filepath.Join(m.WorkDir, rel)
-		if !pathExists(wd) {
+		if create && !pathExists(wd) {
 			_ = os.MkdirAll(wd, 0o755)
 		}
 		v.Source = wd
@@ -718,11 +877,32 @@ func (m *Manager) unmarkActive(name string) {
 
 // AddRepository registers and persists a new repository.
 func (m *Manager) AddRepository(r Repository) error {
-	if r.Name == "" || r.Location == "" {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.addRepositoryLocked(r)
+}
+
+func (m *Manager) hasRepositoryLocked(name string) bool {
+	for _, r := range m.Registry.Repos {
+		if r.Name == name {
+			return true
+		}
+	}
+	return false
+}
+
+func (m *Manager) addRepositoryLocked(r Repository) error {
+	if err := validateName("repository", r.Name); err != nil {
+		return err
+	}
+	if r.Location == "" {
 		return fmt.Errorf("repository requires a name and location")
 	}
+	if m.hasRepositoryLocked(r.Name) {
+		return fmt.Errorf("repository %q already exists", r.Name)
+	}
 	if m.db != nil {
-		e := &RepositoryEntity{Name: r.Name, Kind: r.Kind, Location: r.Location, Compose: r.Compose, Enabled: r.Enabled}
+		e := &RepositoryEntity{Name: r.Name, Kind: r.Kind, Location: r.Location, Compose: r.Compose, Ref: r.Ref, Enabled: r.Enabled}
 		if err := memory.Create(m.db, TableRepositories, e); err != nil {
 			return err
 		}
@@ -734,6 +914,8 @@ func (m *Manager) AddRepository(r Repository) error {
 // SetRepositoryEnabled toggles a repository on/off without removing it. A
 // disabled repo contributes no services or env defaults to the catalog.
 func (m *Manager) SetRepositoryEnabled(name string, enabled bool) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	found := false
 	for i := range m.Registry.Repos {
 		if m.Registry.Repos[i].Name == name {
@@ -760,6 +942,11 @@ func (m *Manager) SetRepositoryEnabled(name string, enabled bool) error {
 // The name is the immutable key; the cache is invalidated so the next sync
 // re-fetches from the new location.
 func (m *Manager) UpdateRepository(name string, r Repository) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := validateName("repository", name); err != nil {
+		return err
+	}
 	if r.Location == "" {
 		return fmt.Errorf("repository requires a location")
 	}
@@ -767,6 +954,9 @@ func (m *Manager) UpdateRepository(name string, r Repository) error {
 	for i := range m.Registry.Repos {
 		if m.Registry.Repos[i].Name == name {
 			r.Name = name
+			// Enabled is toggled through SetRepositoryEnabled; an edit of the
+			// source must not silently switch the repository off.
+			r.Enabled = m.Registry.Repos[i].Enabled
 			m.Registry.Repos[i] = r
 			found = true
 		}
@@ -777,7 +967,7 @@ func (m *Manager) UpdateRepository(name string, r Repository) error {
 	if m.db != nil {
 		for _, e := range memory.FindAll[*RepositoryEntity](m.db, TableRepositories) {
 			if e.Name == name {
-				e.Kind, e.Location, e.Compose, e.Enabled = r.Kind, r.Location, r.Compose, r.Enabled
+				e.Kind, e.Location, e.Compose, e.Ref = r.Kind, r.Location, r.Compose, r.Ref
 				_ = memory.Update(m.db, TableRepositories, e)
 			}
 		}
@@ -792,6 +982,11 @@ func (m *Manager) UpdateRepository(name string, r Repository) error {
 
 // RemoveRepository removes a repository by name (the default repo is protected).
 func (m *Manager) RemoveRepository(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := validateName("repository", name); err != nil {
+		return err
+	}
 	if name == DefaultRepoName {
 		return fmt.Errorf("the default repository cannot be removed")
 	}
@@ -826,6 +1021,11 @@ func (m *Manager) RemoveRepository(name string) error {
 
 // AddCustomService registers and persists a single Hub-image service.
 func (m *Manager) AddCustomService(s ServiceSpec) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.checkNewCustomLocked(s.Name); err != nil {
+		return err
+	}
 	if err := m.Registry.AddCustomService(s); err != nil {
 		return err
 	}
@@ -841,9 +1041,23 @@ func (m *Manager) AddCustomService(s ServiceSpec) error {
 // AddCustomBuildService registers a single service built from an inline
 // Dockerfile (+ optional extra context files, e.g. an entrypoint script). The
 // context is written under <workDir>/custom/<name>/ and built via the SDK.
+func (m *Manager) checkNewCustomLocked(name string) error {
+	if err := validateName("service", name); err != nil {
+		return err
+	}
+	for _, c := range m.Registry.Custom {
+		if c.Name == name {
+			return fmt.Errorf("custom service %q already exists", name)
+		}
+	}
+	return nil
+}
+
 func (m *Manager) AddCustomBuildService(s ServiceSpec, dockerfile string, files map[string]string) error {
-	if s.Name == "" {
-		return fmt.Errorf("service requires a name")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := m.checkNewCustomLocked(s.Name); err != nil {
+		return err
 	}
 	if dockerfile == "" {
 		return fmt.Errorf("service %q requires a Dockerfile", s.Name)
@@ -887,6 +1101,11 @@ func (m *Manager) AddCustomBuildService(s ServiceSpec, dockerfile string, files 
 // UpdateCustomService edits an existing custom (Hub-image) service in place. The
 // name is the immutable key. Build-based custom services keep their build dir.
 func (m *Manager) UpdateCustomService(name string, s ServiceSpec) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := validateName("service", name); err != nil {
+		return err
+	}
 	s.Name = name
 	if s.ContainerName == "" {
 		s.ContainerName = name
@@ -921,6 +1140,11 @@ func (m *Manager) UpdateCustomService(name string, s ServiceSpec) error {
 
 // RemoveCustomService removes a custom service by name.
 func (m *Manager) RemoveCustomService(name string) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := validateName("service", name); err != nil {
+		return err
+	}
 	if m.db != nil {
 		for _, e := range memory.FindAll[*CustomServiceEntity](m.db, TableCustomServices) {
 			if e.Spec.Name == name {

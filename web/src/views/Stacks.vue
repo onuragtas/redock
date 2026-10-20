@@ -134,6 +134,12 @@ const down = async (name) => {
   }
 }
 
+// Recreated containers (env/service edits are applied by recreating them).
+const announceApplied = (res) => {
+  const applied = res.data?.data?.applied || []
+  if (applied.length) toast.info(t('stacks.appliedTo', { names: applied.join(', ') }))
+}
+
 const restart = async (name) => {
   busy.value = name
   try {
@@ -172,7 +178,7 @@ const openEditRepo = (repo) => {
   editRepoName.value = repo.name
   newRepo.value = {
     name: repo.name, kind: repo.kind, location: repo.location,
-    compose: repo.compose || '', ref: '', file: null
+    compose: repo.compose || '', ref: repo.ref || '', file: null
   }
   isAddRepoModal.value = true
 }
@@ -338,10 +344,11 @@ const submitService = async () => {
       : await ApiService.addStacksService(spec)
     if (!apiOk(res)) return
     toast.success(editServiceName.value ? t('stacks.serviceUpdated') : t('stacks.serviceAdded'))
+    announceApplied(res)
     isAddServiceModal.value = false
     editServiceName.value = ''
     newService.value = blankService()
-    await Promise.all([loadCatalog(), loadEnv()])
+    await Promise.all([loadCatalog(), loadEnv(), loadStatus()])
   } catch (e) {
     toast.error(e.response?.data?.msg || t('stacks.actionFailed'))
   }
@@ -431,7 +438,8 @@ const saveEnv = async () => {
     const res = await ApiService.saveStacksEnv(map)
     if (!apiOk(res)) return
     toast.success(t('stacks.envSaved'))
-    await Promise.all([loadEnv(), loadCatalog()])
+    announceApplied(res)
+    await Promise.all([loadEnv(), loadCatalog(), loadStatus()])
   } catch (e) {
     toast.error(e.response?.data?.msg || e.message || t('stacks.actionFailed'))
   }
@@ -639,11 +647,16 @@ onMounted(refreshAll)
                   class="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300"
                 >● {{ statusFor(s.name).state || t('common.stopped') }}</span>
                 <span v-else class="text-xs text-slate-400">{{ t('stacks.notStarted') }}</span>
+                <span
+                  v-if="statusFor(s.name).outdated"
+                  class="ml-1 inline-flex items-center text-xs px-2 py-0.5 rounded-full bg-orange-100 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300"
+                  :title="t('stacks.outdatedHint')"
+                >{{ t('stacks.outdated') }}</span>
               </td>
               <td class="py-2 px-3">
                 <div class="flex justify-end gap-1">
                   <BaseButton :icon="mdiPlay" color="success" small :disabled="!!s.import_error" :loading="busy === s.name" :title="t('stacks.up')" @click="up(s.name)" />
-                  <BaseButton :icon="mdiRestart" color="info" small :title="t('common.restart')" @click="restart(s.name)" />
+                  <BaseButton :icon="mdiRestart" :color="statusFor(s.name).outdated ? 'warning' : 'info'" small :loading="busy === s.name" :title="statusFor(s.name).outdated ? t('stacks.outdatedHint') : t('common.restart')" @click="restart(s.name)" />
                   <BaseButton :icon="mdiStop" color="danger" small :title="t('stacks.down')" @click="down(s.name)" />
                   <BaseButton v-if="s.repo === 'custom'" :icon="mdiPencil" color="lightDark" small outline :title="t('common.edit')" @click="openEditService(s)" />
                   <BaseButton v-if="s.repo === 'custom'" :icon="mdiDelete" color="danger" small outline :title="t('common.delete')" @click="removeService(s.name)" />

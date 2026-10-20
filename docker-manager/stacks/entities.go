@@ -34,6 +34,7 @@ type RepositoryEntity struct {
 	Kind     RepoKind `json:"kind"`
 	Location string   `json:"location"`
 	Compose  string   `json:"compose"`
+	Ref      string   `json:"ref,omitempty"` // git branch (RepoGit only)
 	Enabled  bool     `json:"enabled"`
 }
 
@@ -43,6 +44,7 @@ func (e *RepositoryEntity) toRepository() Repository {
 		Kind:     e.Kind,
 		Location: e.Location,
 		Compose:  e.Compose,
+		Ref:      e.Ref,
 		Enabled:  e.Enabled,
 	}
 }

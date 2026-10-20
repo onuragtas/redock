@@ -6,6 +6,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/docker/docker/api/types/container"
@@ -92,9 +93,19 @@ func (m *Manager) SaveDevEnvSettings(s DevEnvSettings) error {
 
 // CreateDevEnv launches a personal SSH development container for a user via the
 // Docker SDK, driven entirely by DevEnvSettings (stacks serviceip.sh).
+var devEnvUserPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]{0,31}$`)
+
+// ValidDevEnvUsername reports whether username is safe to use as a devenv
+// container name, hostname and host directory.
+func ValidDevEnvUsername(username string) bool { return devEnvUserPattern.MatchString(username) }
+
 func (m *Manager) CreateDevEnv(ctx context.Context, username, password string, sshPort, redockPort int) error {
 	if username == "" || sshPort == 0 {
 		return fmt.Errorf("devenv requires a username and SSH port")
+	}
+	// The username becomes a host directory, a container name and a hostname.
+	if !devEnvUserPattern.MatchString(username) {
+		return fmt.Errorf("invalid devenv username %q: use lowercase letters, digits, '-' or '_'", username)
 	}
 	s := m.GetDevEnvSettings()
 
@@ -178,7 +189,7 @@ func (m *Manager) CreateDevEnv(ctx context.Context, username, password string, s
 	}
 
 	// Post-setup (best-effort): username marker, git credential helper, nvm.
-	_, _ = m.Engine.Exec(ctx, username, []string{"sh", "-c", "echo " + username + " > /root/.username"})
+	_, _ = m.Engine.Exec(ctx, username, []string{"sh", "-c", `printf '%s\n' "$1" > /root/.username`, "sh", username})
 	_, _ = m.Engine.Exec(ctx, username, []string{"sh", "-c",
 		`printf '[credential]\n\thelper = store --file /root/.configs/.git-credential\n' > /root/.gitconfig`})
 	if s.InstallNvm {

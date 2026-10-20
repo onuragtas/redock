@@ -3,6 +3,7 @@ package controllers
 import (
 	"archive/zip"
 	"context"
+	"fmt"
 
 	docker_manager "redock/docker-manager"
 	"redock/docker-manager/stacks"
@@ -283,7 +284,11 @@ func StacksUpdateService(c *fiber.Ctx) error {
 	if err := m.UpdateCustomService(body.Name, body.ServiceSpec); err != nil {
 		return stacksErr(c, err)
 	}
-	return stacksOK(c, fiber.Map{"service": body.Name})
+	applied, err := m.ApplyChanges(context.Background())
+	if err != nil {
+		return stacksErr(c, fmt.Errorf("service saved, but applying it failed: %w", err))
+	}
+	return stacksOK(c, fiber.Map{"service": body.Name, "applied": applied})
 }
 
 // StacksRemoveService removes a custom Hub-image service.
@@ -329,7 +334,13 @@ func StacksSaveEnv(c *fiber.Ctx) error {
 	if err := m.SaveEnvVars(body.Vars); err != nil {
 		return stacksErr(c, err)
 	}
-	return stacksOK(c, fiber.Map{"saved": true})
+	// Env is baked into containers at creation; recreate the active services
+	// whose configuration changed so the new values take effect now.
+	applied, err := m.ApplyChanges(context.Background())
+	if err != nil {
+		return stacksErr(c, fmt.Errorf("variables saved, but applying them failed: %w", err))
+	}
+	return stacksOK(c, fiber.Map{"saved": true, "applied": applied})
 }
 
 // StacksGetDevEnvSettings returns the configurable dev-environment parameters.

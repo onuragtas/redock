@@ -54,7 +54,7 @@ func TestMaterializeBindResolution(t *testing.T) {
 			{Kind: VolumeBind, Source: "./logs", Target: "/var/log"},
 		},
 	}
-	s := m.materialize(spec)
+	s := m.materialize(spec, true)
 	if s.Volumes[0].Source != "/srv/sites" {
 		t.Errorf("env path not resolved: %q", s.Volumes[0].Source)
 	}

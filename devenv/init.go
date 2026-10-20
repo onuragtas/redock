@@ -86,6 +86,10 @@ func (t *DevEnvManager) AddDevEnv(model *DevEnvModel) bool {
 		return false
 	}
 	manager := t.dockerEnvironmentManager
+	if !stacks.ValidDevEnvUsername(model.Username) {
+		log.Println("AddDevEnv: invalid username:", model.Username)
+		return false
+	}
 
 	all := memory.FindAll[*DevEnvEntity](db, "dev_envs")
 	for _, e := range all {

@@ -76,6 +76,19 @@ func (r Repository) CacheDir(workDir string) string {
 	return filepath.Join(workDir, "repositories", r.Name)
 }
 
+// cachePath joins a repository-provided relative path onto the cache dir and
+// rejects anything that would land outside it. Paths come from a remote
+// compose file / Dockerfile (env_file, bind sources, COPY sources) and redock
+// runs as root, so "../../etc/cron.d/x" must never be written.
+func cachePath(cache, rel string) (string, error) {
+	dst := filepath.Join(cache, filepath.FromSlash(rel))
+	base := filepath.Clean(cache)
+	if dst != base && !strings.HasPrefix(dst, base+string(os.PathSeparator)) {
+		return "", fmt.Errorf("path %q escapes the repository directory", rel)
+	}
+	return dst, nil
+}
+
 // HTTPGetter fetches a URL's bytes (overridable for tests).
 type HTTPGetter func(url string) ([]byte, error)
 
@@ -157,11 +170,15 @@ func (r Repository) syncURL(workDir string, get HTTPGetter) (*ParsedStack, error
 
 	var docs [][]byte
 	for _, name := range names {
+		dst, err := cachePath(cache, name)
+		if err != nil {
+			return nil, err
+		}
 		data, err := get(baseURL + name)
 		if err != nil {
 			return nil, fmt.Errorf("fetch compose %s: %w", name, err)
 		}
-		if err := os.WriteFile(filepath.Join(cache, filepath.FromSlash(name)), data, 0o644); err != nil {
+		if err := os.WriteFile(dst, data, 0o644); err != nil {
 			return nil, err
 		}
 		docs = append(docs, data)
@@ -249,7 +266,11 @@ func (r Repository) fetchBuildContext(cache, baseURL, ctx string, get HTTPGetter
 	if err := r.fetchFile(cache, baseURL, dfRel, get); err != nil {
 		return err
 	}
-	dfBytes, err := os.ReadFile(filepath.Join(cache, filepath.FromSlash(dfRel)))
+	dfPath, err := cachePath(cache, dfRel)
+	if err != nil {
+		return err
+	}
+	dfBytes, err := os.ReadFile(dfPath)
 	if err != nil {
 		return err
 	}
@@ -310,8 +331,11 @@ var fetchFallbackSuffixes = []string{"", ".dist", ".example", ".sample"}
 // fetchFile downloads <baseURL><rel> (trying fallback suffixes) into
 // <cache>/<rel>, creating dirs. Returns the last error if every attempt fails.
 func (r Repository) fetchFile(cache, baseURL, rel string, get HTTPGetter) error {
+	dst, err := cachePath(cache, rel)
+	if err != nil {
+		return err
+	}
 	var data []byte
-	var err error
 	for _, suf := range fetchFallbackSuffixes {
 		data, err = get(baseURL + rel + suf)
 		if err == nil {
@@ -321,7 +345,6 @@ func (r Repository) fetchFile(cache, baseURL, rel string, get HTTPGetter) error 
 	if err != nil {
 		return err
 	}
-	dst := filepath.Join(cache, filepath.FromSlash(rel))
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
 	}
@@ -451,8 +474,15 @@ func (reg *Registry) Effective(force bool) ([]ServiceSpec, map[string]error) {
 // build contexts) into the repository cache and registers it as a local repo.
 // Protects against zip-slip path traversal.
 func (m *Manager) ImportZipRepository(name, compose string, zr *zip.Reader) error {
-	if name == "" {
-		return fmt.Errorf("repository requires a name")
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if err := validateName("repository", name); err != nil {
+		return err
+	}
+	// Check before touching the disk: re-using a name would wipe that
+	// repository's cache (e.g. "default").
+	if m.hasRepositoryLocked(name) {
+		return fmt.Errorf("repository %q already exists", name)
 	}
 	dir := filepath.Join(m.WorkDir, "repositories", name)
 	_ = os.RemoveAll(dir)
@@ -492,5 +522,5 @@ func (m *Manager) ImportZipRepository(name, compose string, zr *zip.Reader) erro
 			return copyErr
 		}
 	}
-	return m.AddRepository(Repository{Name: name, Kind: RepoLocal, Location: dir, Compose: compose, Enabled: true})
+	return m.addRepositoryLocked(Repository{Name: name, Kind: RepoLocal, Location: dir, Compose: compose, Enabled: true})
 }
