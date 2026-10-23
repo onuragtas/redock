@@ -882,6 +882,28 @@ const toggleRenewer = async () => {
   }
 }
 
+// Extra trusted proxies (one IP/CIDR per line or comma separated); loopback,
+// private ranges and Cloudflare are always trusted by the gateway.
+const trustedProxiesText = ref('')
+// Untrusted peers seen sending X-Forwarded-For: likely proxies to trust.
+const proxyCandidates = ref([])
+const trustedProxyList = computed(() =>
+  trustedProxiesText.value.split(/[\s,]+/).map(v => v.trim()).filter(Boolean)
+)
+const loadProxyCandidates = async () => {
+  try {
+    const res = await ApiService.apiGatewayProxyCandidates()
+    proxyCandidates.value = res.data?.data || []
+  } catch (e) {
+    proxyCandidates.value = []
+  }
+}
+const addTrustedProxy = (ip) => {
+  if (trustedProxyList.value.includes(ip)) return
+  const text = trustedProxiesText.value.trim()
+  trustedProxiesText.value = text ? `${text}\n${ip}` : ip
+}
+
 const openConfigModal = async () => {
   try {
     const res = await ApiService.apiGatewayGetConfig()
@@ -893,6 +915,8 @@ const openConfigModal = async () => {
     if (!clientSecurity.top_client_limit || clientSecurity.top_client_limit < 1) {
       clientSecurity.top_client_limit = 1000
     }
+    trustedProxiesText.value = (clientSecurity.trusted_proxies || []).join('\n')
+    loadProxyCandidates()
     const le = cfg.lets_encrypt || {}
     gatewayConfig.value = {
       http_port: cfg.http_port || 80,
@@ -924,6 +948,10 @@ const saveConfig = async () => {
     const rawLimit = Number(clientSecurityPayload.top_client_limit)
     const boundedLimit = Math.min(1000, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 1000))
     clientSecurityPayload.top_client_limit = Math.round(boundedLimit)
+    clientSecurityPayload.trusted_proxies = trustedProxiesText.value
+      .split(/[\s,]+/)
+      .map(v => v.trim())
+      .filter(Boolean)
     const timeoutsPayload = {
       ...(currentConfig.timeouts || {}),
       ...((gatewayConfig.value && gatewayConfig.value.timeouts) || {})
@@ -2397,6 +2425,50 @@ v-for="domain in certificateInfo.lets_encrypt_domains" :key="domain"
           <p class="text-xs text-slate-500 mt-2">
             Controls how many clients are stored for analytics and manual blocking (up to 1000).
           </p>
+          <FormField :label="t('gw.trustedProxies')" :help="t('gw.trustedProxiesHelp')" class="mt-4">
+            <FormControl v-model="trustedProxiesText" type="textarea" placeholder="203.0.113.10&#10;198.51.100.0/24" />
+          </FormField>
+          <div class="mt-2">
+            <div class="flex items-center justify-between mb-1">
+              <span class="text-sm font-medium">{{ t('gw.proxyCandidates') }}</span>
+              <BaseButton :icon="mdiRefresh" small color="lightDark" outline :title="t('common.refresh')" @click="loadProxyCandidates" />
+            </div>
+            <p class="text-xs text-slate-500 mb-2">{{ t('gw.proxyCandidatesHelp') }}</p>
+            <p v-if="!proxyCandidates.length" class="text-xs text-slate-400">{{ t('gw.noProxyCandidates') }}</p>
+            <div v-else class="overflow-x-auto">
+              <table class="w-full text-xs">
+                <thead>
+                  <tr class="text-left text-slate-500">
+                    <th class="py-1 pr-2">IP</th>
+                    <th class="py-1 pr-2">{{ t('gw.requests') }}</th>
+                    <th class="py-1 pr-2">X-Forwarded-For</th>
+                    <th class="py-1 pr-2">Host</th>
+                    <th class="py-1 pr-2">{{ t('gw.lastSeen') }}</th>
+                    <th class="py-1"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="c in proxyCandidates" :key="c.ip" class="border-t border-slate-200 dark:border-slate-700">
+                    <td class="py-1 pr-2 font-mono">{{ c.ip }}</td>
+                    <td class="py-1 pr-2">{{ c.requests }}</td>
+                    <td class="py-1 pr-2 font-mono truncate max-w-[12rem]" :title="c.forwarded_for">{{ c.forwarded_for }}</td>
+                    <td class="py-1 pr-2 truncate max-w-[10rem]" :title="c.host">{{ c.host }}{{ c.forwarded_proto ? ` (${c.forwarded_proto})` : '' }}</td>
+                    <td class="py-1 pr-2 whitespace-nowrap">{{ formatDateTime(c.last_seen) }}</td>
+                    <td class="py-1 text-right">
+                      <BaseButton
+                        :icon="mdiPlus"
+                        small
+                        color="info"
+                        :label="trustedProxyList.includes(c.ip) ? t('gw.proxyAdded') : t('gw.trustProxy')"
+                        :disabled="trustedProxyList.includes(c.ip)"
+                        @click="addTrustedProxy(c.ip)"
+                      />
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
         </div>
         <div class="border-t pt-4 mt-4">
           <h4 class="font-semibold mb-3">{{ t('gw.timeoutsSeconds') }}</h4>

@@ -46,6 +46,9 @@ func (g *Gateway) upstreamTransport(protocol string, grpcReq bool) *http.Transpo
 		IdleConnTimeout:       to.upstreamIdleConn,
 		TLSHandshakeTimeout:   to.tlsHandshake,
 		ExpectContinueTimeout: to.expectContinue,
+		// A custom DialContext turns off Go's automatic HTTP/2; ask for it
+		// explicitly so TLS upstreams that speak h2 get multiplexing.
+		ForceAttemptHTTP2: true,
 	}
 	switch key {
 	case ProtocolGRPC:

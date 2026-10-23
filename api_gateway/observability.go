@@ -20,6 +20,66 @@ type TelemetryExporter struct {
 	stopChan   chan struct{}
 	running    bool
 	httpClient *http.Client
+
+	// sinks tracks per-destination failures so an unreachable endpoint is
+	// backed off instead of being hit (and logged) on every flush.
+	sinkMu sync.Mutex
+	sinks  map[string]*sinkState
+}
+
+type sinkState struct {
+	failures int
+	nextTry  time.Time
+}
+
+const (
+	sinkBackoffBase = 5 * time.Second
+	sinkBackoffMax  = 5 * time.Minute
+)
+
+// sinkAllowed reports whether a destination may be tried now.
+func (e *TelemetryExporter) sinkAllowed(name string) bool {
+	e.sinkMu.Lock()
+	defer e.sinkMu.Unlock()
+	st := e.sinks[name]
+	return st == nil || !time.Now().Before(st.nextTry)
+}
+
+// sinkFailed records a delivery failure and schedules the next attempt with
+// exponential backoff. Only the first failure of a streak is logged, so a
+// down endpoint produces one line, not one per record.
+func (e *TelemetryExporter) sinkFailed(name string, err error) {
+	e.sinkMu.Lock()
+	defer e.sinkMu.Unlock()
+	if e.sinks == nil {
+		e.sinks = make(map[string]*sinkState)
+	}
+	st := e.sinks[name]
+	if st == nil {
+		st = &sinkState{}
+		e.sinks[name] = st
+	}
+	st.failures++
+	delay := sinkBackoffBase << min(st.failures-1, 10)
+	if delay > sinkBackoffMax || delay <= 0 {
+		delay = sinkBackoffMax
+	}
+	st.nextTry = time.Now().Add(delay)
+	if st.failures == 1 {
+		log.Printf("API Gateway Telemetry: %s unreachable, backing off (records are dropped meanwhile): %v", name, err)
+	}
+}
+
+// sinkSucceeded clears a destination's failure streak.
+func (e *TelemetryExporter) sinkSucceeded(name string) {
+	e.sinkMu.Lock()
+	defer e.sinkMu.Unlock()
+	if st := e.sinks[name]; st != nil {
+		if st.failures > 0 {
+			log.Printf("API Gateway Telemetry: %s reachable again", name)
+		}
+		delete(e.sinks, name)
+	}
 }
 
 var (
@@ -35,6 +95,12 @@ func GetTelemetryExporter() *TelemetryExporter {
 			stopChan: make(chan struct{}),
 			httpClient: &http.Client{
 				Timeout: 10 * time.Second,
+				Transport: &http.Transport{
+					Proxy:               http.ProxyFromEnvironment,
+					MaxIdleConns:        32,
+					MaxIdleConnsPerHost: 8, // Graylog sends one request per record: keep them on warm connections
+					IdleConnTimeout:     90 * time.Second,
+				},
 			},
 		}
 	})
@@ -216,6 +282,9 @@ func (e *TelemetryExporter) flush() {
 
 // sendToLoki sends data to a Loki datasource
 func (e *TelemetryExporter) sendToLoki(lokiCfg *LokiDatasourceConfig, data []RequestLog) {
+	if !e.sinkAllowed("Loki") {
+		return
+	}
 	endpoint := strings.TrimSpace(lokiCfg.URL)
 	if endpoint == "" {
 		log.Printf("API Gateway Telemetry: Loki endpoint missing")
@@ -275,17 +344,22 @@ func (e *TelemetryExporter) sendToLoki(lokiCfg *LokiDatasourceConfig, data []Req
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to send to Loki: %v", err)
+		e.sinkFailed("Loki", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		log.Printf("API Gateway Telemetry: Loki returned status %d", resp.StatusCode)
+	} else {
+		e.sinkSucceeded("Loki")
 	}
 }
 
 func (e *TelemetryExporter) sendToInfluxDB(influxCfg *InfluxDBDatasourceConfig, data []RequestLog) {
+	if !e.sinkAllowed("InfluxDB") {
+		return
+	}
 	if influxCfg.URL == "" || influxCfg.Org == "" || influxCfg.Bucket == "" || influxCfg.Token == "" {
 		log.Printf("API Gateway Telemetry: InfluxDB config missing url/org/bucket/token")
 		return
@@ -338,16 +412,21 @@ func (e *TelemetryExporter) sendToInfluxDB(influxCfg *InfluxDBDatasourceConfig, 
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to send to InfluxDB: %v", err)
+		e.sinkFailed("InfluxDB", err)
 		return
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode >= 400 {
 		log.Printf("API Gateway Telemetry: InfluxDB returned status %d", resp.StatusCode)
+	} else {
+		e.sinkSucceeded("InfluxDB")
 	}
 }
 
 func (e *TelemetryExporter) sendToGraylog(graylogCfg *GraylogConfig, data []RequestLog) {
+	if !e.sinkAllowed("Graylog") {
+		return
+	}
 	endpoint := strings.TrimSpace(graylogCfg.Endpoint)
 	if endpoint == "" {
 		log.Printf("API Gateway Telemetry: Graylog endpoint missing")
@@ -405,12 +484,14 @@ func (e *TelemetryExporter) sendToGraylog(graylogCfg *GraylogConfig, data []Requ
 
 		resp, err := e.httpClient.Do(req)
 		if err != nil {
-			log.Printf("API Gateway Telemetry: Failed to send to Graylog: %v", err)
-			continue
+			e.sinkFailed("Graylog", err)
+			return // endpoint down: don't try the rest of the batch
 		}
 		resp.Body.Close()
 		if resp.StatusCode >= 400 {
 			log.Printf("API Gateway Telemetry: Graylog returned status %d", resp.StatusCode)
+		} else {
+			e.sinkSucceeded("Graylog")
 		}
 	}
 }
@@ -438,6 +519,9 @@ func escapeInfluxStringField(value string) string {
 
 // sendToOTLP sends data to OpenTelemetry collector
 func (e *TelemetryExporter) sendToOTLP(data []RequestLog, config *ObservabilityConfig) {
+	if !e.sinkAllowed("OTLP") {
+		return
+	}
 	// Convert to OTLP format
 	spans := make([]map[string]interface{}, 0)
 
@@ -508,18 +592,23 @@ func (e *TelemetryExporter) sendToOTLP(data []RequestLog, config *ObservabilityC
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to send to OTLP: %v", err)
+		e.sinkFailed("OTLP", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		log.Printf("API Gateway Telemetry: OTLP returned status %d", resp.StatusCode)
+	} else {
+		e.sinkSucceeded("OTLP")
 	}
 }
 
 // sendToClickHouse sends data to ClickHouse
 func (e *TelemetryExporter) sendToClickHouse(data []RequestLog, config *ObservabilityConfig) {
+	if !e.sinkAllowed("ClickHouse") {
+		return
+	}
 	// Build INSERT query
 	database := config.ClickHouseDatabase
 	if database == "" {
@@ -573,13 +662,15 @@ func (e *TelemetryExporter) sendToClickHouse(data []RequestLog, config *Observab
 
 	resp, err := e.httpClient.Do(req)
 	if err != nil {
-		log.Printf("API Gateway Telemetry: Failed to send to ClickHouse: %v", err)
+		e.sinkFailed("ClickHouse", err)
 		return
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode >= 400 {
 		log.Printf("API Gateway Telemetry: ClickHouse returned status %d", resp.StatusCode)
+	} else {
+		e.sinkSucceeded("ClickHouse")
 	}
 }
 

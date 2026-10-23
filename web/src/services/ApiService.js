@@ -808,6 +808,10 @@ class ApiService {
     return await this.post('/api/v1/api_gateway/clients/unblock', data);
   }
 
+  static async apiGatewayProxyCandidates() {
+    return await this.get('/api/v1/api_gateway/proxy_candidates');
+  }
+
   static async apiGatewayListServices() {
     return await this.get('/api/v1/api_gateway/services');
   }

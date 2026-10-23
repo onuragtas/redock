@@ -437,20 +437,19 @@ func TestGatewayAddDeleteRoute(t *testing.T) {
 func TestGatewayStats(t *testing.T) {
 	g := &Gateway{
 		stats: &gatewayStatsTracker{
-			startTime:     time.Now().Add(-time.Hour), // Started 1 hour ago
-			totalRequests: 1000,
-			totalErrors:   50,
-			totalLatency:  5000, // 5000ms total
-			serviceStats:  make(map[string]*serviceStatsTracker),
-			rateLimited:   10,
+			startTime:    time.Now().Add(-time.Hour), // Started 1 hour ago
+			serviceStats: make(map[string]*serviceStatsTracker),
 		},
 	}
+	g.stats.totalRequests.Store(1000)
+	g.stats.totalErrors.Store(50)
+	g.stats.totalLatency.Store(5000) // 5000ms total
+	g.stats.rateLimited.Store(10)
 
-	g.stats.serviceStats["svc1"] = &serviceStatsTracker{
-		requests:     500,
-		errors:       25,
-		totalLatency: 2500,
-	}
+	svc := g.stats.service("svc1")
+	svc.requests.Store(500)
+	svc.errors.Store(25)
+	svc.totalLatency.Store(2500)
 
 	stats := g.GetStats()
 

@@ -189,6 +189,23 @@ func APIGatewayGetStats(c *fiber.Ctx) error {
 	})
 }
 
+// APIGatewayProxyCandidates lists untrusted peers that send forwarding
+// headers — reverse proxies in front of the gateway that may need trusting.
+func APIGatewayProxyCandidates(c *fiber.Ctx) error {
+	gw := api_gateway.GetGateway()
+	if gw == nil {
+		return c.Status(fiber.StatusServiceUnavailable).JSON(fiber.Map{
+			"error": true,
+			"msg":   "API Gateway not initialized",
+		})
+	}
+	return c.Status(fiber.StatusOK).JSON(fiber.Map{
+		"error": false,
+		"msg":   nil,
+		"data":  gw.ProxyCandidates(),
+	})
+}
+
 // APIGatewayGetServiceHealth returns the health status of all services
 // @Description Get the health status of all upstream services
 // @Summary get service health

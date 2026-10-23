@@ -146,11 +146,11 @@ func selectTarget(upstream *Upstream, healthy []*Service, weights []int, rt *ups
 	if upstream.Sticky != nil {
 		switch upstream.Sticky.Mode {
 		case StickyIPHash:
-			return hrwSelect(healthy, weights, getClientIP(r), upstream.Strategy == StrategyWeighted)
+			return hrwSelect(healthy, weights, requestClientIP(r), upstream.Strategy == StrategyWeighted)
 		case StickyHeader:
 			key := r.Header.Get(upstream.Sticky.HeaderName)
 			if key == "" {
-				key = getClientIP(r)
+				key = requestClientIP(r)
 			}
 			return hrwSelect(healthy, weights, key, upstream.Strategy == StrategyWeighted)
 		case StickyCookie:

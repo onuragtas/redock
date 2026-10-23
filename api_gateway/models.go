@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -199,6 +200,9 @@ type ClientSecurityConfig struct {
 	NoRouteThreshold     int                 `json:"no_route_threshold"`
 	AutoBlockDurationSec int                 `json:"auto_block_duration_seconds"`
 	ManualBlocks         []ManualBlockConfig `json:"manual_blocks,omitempty"`
+	// TrustedProxies are extra IPs/CIDRs whose X-Forwarded-For / X-Real-IP
+	// headers are believed, on top of loopback, private ranges and Cloudflare.
+	TrustedProxies []string `json:"trusted_proxies,omitempty"`
 }
 
 // ManualBlockConfig persists manually blocked clients in configuration
@@ -399,11 +403,6 @@ type Gateway struct {
 	workDir           string
 	httpClient        *http.Client
 	tlsConfig         *tls.Config
-	routeCache        map[string]*cachedRoute
-	routeCacheOrder   []string
-	routeCacheLimit   int
-	routeCacheTTL     time.Duration
-	routeCacheMu      sync.RWMutex
 	clientStats       map[string]*clientStatsTracker
 	clientStatsLimit  int
 	clientStatsMu     sync.RWMutex
@@ -414,24 +413,47 @@ type Gateway struct {
 	transportMu       sync.Mutex
 	routeLimiters     map[string]*rateLimiter // per-route rate limiters keyed by route ID
 	routeLimiterMu    sync.Mutex
+	certs             certCache // parsed TLS certificate, reloaded on file change
 }
 
 // gatewayStatsTracker tracks gateway statistics
+// Counters are atomics so the request path never serializes on a lock; mu only
+// guards the serviceStats map itself (read-locked on the hot path).
 type gatewayStatsTracker struct {
 	mu            sync.RWMutex
 	startTime     time.Time
-	totalRequests int64
-	totalErrors   int64
-	totalLatency  int64
+	totalRequests atomic.Int64
+	totalErrors   atomic.Int64
+	totalLatency  atomic.Int64
 	serviceStats  map[string]*serviceStatsTracker
-	rateLimited   int64
+	rateLimited   atomic.Int64
 }
 
 // serviceStatsTracker tracks per-service statistics
 type serviceStatsTracker struct {
-	requests     int64
-	errors       int64
-	totalLatency int64
+	requests     atomic.Int64
+	errors       atomic.Int64
+	totalLatency atomic.Int64
+}
+
+// service returns the tracker for serviceID, creating it on first use.
+func (s *gatewayStatsTracker) service(serviceID string) *serviceStatsTracker {
+	s.mu.RLock()
+	t := s.serviceStats[serviceID]
+	s.mu.RUnlock()
+	if t != nil {
+		return t
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if t = s.serviceStats[serviceID]; t == nil {
+		if s.serviceStats == nil {
+			s.serviceStats = make(map[string]*serviceStatsTracker)
+		}
+		t = &serviceStatsTracker{}
+		s.serviceStats[serviceID] = t
+	}
+	return t
 }
 
 // clientStatsTracker keeps in-memory metrics per client IP

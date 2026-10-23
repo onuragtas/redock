@@ -21,6 +21,7 @@ func APIGatewayRoutes(a *fiber.App) {
 	route.Get("/api_gateway/health", controllers.APIGatewayGetServiceHealth)
 	route.Post("/api_gateway/clients/block", controllers.APIGatewayBlockClient)
 	route.Post("/api_gateway/clients/unblock", controllers.APIGatewayUnblockClient)
+	route.Get("/api_gateway/proxy_candidates", controllers.APIGatewayProxyCandidates)
 
 	// Services management
 	route.Get("/api_gateway/services", controllers.APIGatewayListServices)

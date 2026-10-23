@@ -17,27 +17,6 @@ const degradedClientStats = 200
 // never dropped.
 func registerMemoryRelievers() {
 	memguard.RegisterReliever(memguard.Reliever{
-		Name:        "gateway-route-cache",
-		Description: "Clears the route match cache (matching falls back to full lookup)",
-		MinLevel:    memguard.LevelWarning,
-		Priority:    15,
-		Release: func(memguard.Level) (int64, string) {
-			g := GetGateway()
-			if g == nil {
-				return 0, ""
-			}
-			g.routeCacheMu.RLock()
-			n := len(g.routeCache)
-			g.routeCacheMu.RUnlock()
-			if n == 0 {
-				return 0, ""
-			}
-			g.clearRouteCache()
-			return int64(n) * 256, fmt.Sprintf("%d route cache entries cleared", n)
-		},
-	})
-
-	memguard.RegisterReliever(memguard.Reliever{
 		Name:        "gateway-client-stats",
 		Description: "Trims per-client-IP statistics to the busiest clients",
 		MinLevel:    memguard.LevelCritical,
