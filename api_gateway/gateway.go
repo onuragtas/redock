@@ -685,16 +685,10 @@ func (g *Gateway) refreshServicesAndRoutes() {
 
 	// Initialize rate limiters
 	if g.config.GlobalRateLimit != nil && g.config.GlobalRateLimit.Enabled {
-		g.globalLimiter = &rateLimiter{
-			clients:  make(map[string]*clientRateLimit),
-			requests: g.config.GlobalRateLimit.Requests,
-			window:   time.Duration(g.config.GlobalRateLimit.Window) * time.Second,
-		}
+		g.globalLimiter = newRateLimiter(g.config.GlobalRateLimit.Requests, time.Duration(g.config.GlobalRateLimit.Window)*time.Second)
 	}
 
-	g.rateLimiter = &rateLimiter{
-		clients: make(map[string]*clientRateLimit),
-	}
+	g.rateLimiter = newRateLimiter(0, 0)
 	g.resetRouteRateLimiters()
 	if g.config.ClientSecurity != nil {
 		setTrustedProxies(g.config.ClientSecurity.TrustedProxies)
@@ -1013,7 +1007,6 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	clientIP := getClientIP(r)
-	r = withClientIP(r, clientIP)
 	noteProxyCandidate(r)
 	trackClient := clientIP != ""
 	statusCode := http.StatusOK
@@ -1037,7 +1030,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			message = "Client blocked"
 		}
 		writeGatewayError(lw, grpcReq, statusCode, message)
-		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, message, requestBodyInfo(), lw.LogInfo())
+		g.logRequest(r, clientIP, statusCode, startTime, "", "", "", "", "", true, message, requestBodyInfo(), lw.LogInfo())
 		trackClient = false
 		return
 	}
@@ -1045,7 +1038,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	// Handle ACME challenges for Let's Encrypt
 	if HandleACMEChallenge(lw, r) {
 		statusCode = lw.StatusCode()
-		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "", requestBodyInfo(), lw.LogInfo())
+		g.logRequest(r, clientIP, statusCode, startTime, "", "", "", "", "", true, "", requestBodyInfo(), lw.LogInfo())
 		trackClient = false
 		return
 	}
@@ -1059,7 +1052,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordRateLimited()
 			statusCode = http.StatusTooManyRequests
 			writeGatewayError(lw, grpcReq, statusCode, "Rate limit exceeded")
-			g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "rate limit exceeded", requestBodyInfo(), lw.LogInfo())
+			g.logRequest(r, clientIP, statusCode, startTime, "", "", "", "", "", true, "rate limit exceeded", requestBodyInfo(), lw.LogInfo())
 			return
 		}
 	}
@@ -1070,7 +1063,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 		g.recordError()
 		statusCode = http.StatusNotFound
 		writeGatewayError(lw, grpcReq, statusCode, "Not Found")
-		g.logRequest(r, statusCode, startTime, "", "", "", "", "", true, "no matching route", requestBodyInfo(), lw.LogInfo())
+		g.logRequest(r, clientIP, statusCode, startTime, "", "", "", "", "", true, "no matching route", requestBodyInfo(), lw.LogInfo())
 		return
 	}
 	matchedRoute = true
@@ -1082,7 +1075,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	if r.Method == http.MethodOptions && route.CORS != nil && route.CORS.Enabled {
 		applyCORSHeaders(lw.Header(), r.Header.Get("Origin"), route.CORS)
 		lw.WriteHeader(http.StatusNoContent)
-		g.logRequest(r, http.StatusNoContent, startTime, routeID, routeName, upstreamID, "", "", g.isRouteObservabilityEnabled(route), "", requestBodyInfo(), lw.LogInfo())
+		g.logRequest(r, clientIP, http.StatusNoContent, startTime, routeID, routeName, upstreamID, "", "", g.isRouteObservabilityEnabled(route), "", requestBodyInfo(), lw.LogInfo())
 		return
 	}
 
@@ -1095,7 +1088,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			g.recordRateLimited()
 			statusCode = http.StatusTooManyRequests
 			writeGatewayError(lw, grpcReq, statusCode, "Rate limit exceeded")
-			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "rate limit exceeded", requestBodyInfo(), lw.LogInfo())
+			g.logRequest(r, clientIP, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "rate limit exceeded", requestBodyInfo(), lw.LogInfo())
 			return
 		}
 	}
@@ -1110,19 +1103,19 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 				lw.Header().Set("WWW-Authenticate", challenge)
 			}
 			writeGatewayError(lw, grpcReq, statusCode, "Unauthorized")
-			g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "authentication failed", requestBodyInfo(), lw.LogInfo())
+			g.logRequest(r, clientIP, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, "authentication failed", requestBodyInfo(), lw.LogInfo())
 			return
 		}
 	}
 
 	// Resolve a healthy backend through the upstream load balancer.
-	service, upstream, release, pickErr := g.pickBackend(route, r)
+	service, upstream, release, pickErr := g.pickBackend(route, r, clientIP)
 	defer release()
 	if pickErr != nil {
 		g.recordError()
 		statusCode = http.StatusServiceUnavailable
 		writeGatewayError(lw, grpcReq, statusCode, "Service Unavailable")
-		g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, pickErr.Error(), requestBodyInfo(), lw.LogInfo())
+		g.logRequest(r, clientIP, statusCode, startTime, routeID, routeName, upstreamID, "", "", routeObservability, pickErr.Error(), requestBodyInfo(), lw.LogInfo())
 		return
 	}
 	serviceID = service.ID
@@ -1135,7 +1128,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 	svcStats.requests.Add(1)
 
 	// Proxy the request
-	err := g.proxyRequest(lw, r, route, service, grpcReq)
+	err := g.proxyRequest(lw, r, route, service, grpcReq, clientIP)
 	statusCode = lw.StatusCode()
 	if reqCounter != nil {
 		n := reqCounter.n.Load()
@@ -1154,7 +1147,7 @@ func (g *Gateway) handleRequest(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 	}
-	g.logRequest(r, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, errMsg, requestBodyInfo(), lw.LogInfo())
+	g.logRequest(r, clientIP, statusCode, startTime, routeID, routeName, upstreamID, serviceID, serviceName, routeObservability, errMsg, requestBodyInfo(), lw.LogInfo())
 
 	// Record latency
 	latency := time.Since(startTime).Milliseconds()
@@ -1360,7 +1353,7 @@ func applyResponseHeaders(h http.Header, headers map[string]string) {
 }
 
 // proxyRequest forwards the request to the upstream service
-func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service, grpcReq bool) error {
+func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Route, service *Service, grpcReq bool, clientIP string) error {
 	// Build target URL (no parsing needed: every part is already known).
 	target := &url.URL{
 		Scheme: upstreamScheme(service.Protocol),
@@ -1452,7 +1445,7 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 		}
 
 		// Add X-Forwarded headers
-		if clientIP := requestClientIP(r); clientIP != "" {
+		if clientIP != "" {
 			req.Header.Set("X-Forwarded-For", clientIP)
 		}
 		req.Header.Set("X-Forwarded-Proto", incomingProto)
@@ -1496,26 +1489,7 @@ func (g *Gateway) proxyRequest(w http.ResponseWriter, r *http.Request, route *Ro
 
 // checkRateLimit checks if a client has exceeded the rate limit
 func (g *Gateway) checkRateLimit(limiter *rateLimiter, clientIP string) bool {
-	limiter.mu.Lock()
-	defer limiter.mu.Unlock()
-
-	now := time.Now()
-
-	client, exists := limiter.clients[clientIP]
-	if !exists || now.After(client.windowEnd) {
-		limiter.clients[clientIP] = &clientRateLimit{
-			requests:  1,
-			windowEnd: now.Add(limiter.window),
-		}
-		return true
-	}
-
-	if client.requests >= limiter.requests {
-		return false
-	}
-
-	client.requests++
-	return true
+	return limiter.allow(clientIP)
 }
 
 // checkAuth verifies authentication for the request.
@@ -1784,13 +1758,18 @@ func (g *Gateway) probeServiceHealth(service *Service, timeout time.Duration) (h
 }
 
 // logRequest logs an access log entry
-func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Time, routeID, routeName, upstreamID, serviceID, serviceName string, allowTelemetry bool, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
+func (g *Gateway) logRequest(r *http.Request, clientIP string, statusCode int, startTime time.Time, routeID, routeName, upstreamID, serviceID, serviceName string, allowTelemetry bool, errMsg string, reqInfo bodyLogInfo, respInfo bodyLogInfo) {
+	accessLogOn := g.config.AccessLogEnabled
+	telemetryOn := allowTelemetry && g.config.Observability != nil && g.config.Observability.Enabled
+	if !accessLogOn && !telemetryOn {
+		return // nobody consumes the entry
+	}
 	logEntry := RequestLog{
 		Timestamp:             startTime,
 		Method:                r.Method,
 		Path:                  r.URL.Path,
 		Host:                  r.Host,
-		RemoteAddr:            requestClientIP(r),
+		RemoteAddr:            clientIP,
 		RouteID:               routeID,
 		RouteName:             routeName,
 		UpstreamID:            upstreamID,
@@ -1808,14 +1787,10 @@ func (g *Gateway) logRequest(r *http.Request, statusCode int, startTime time.Tim
 		Error:                 errMsg,
 	}
 
-	// Log to console if enabled
-	if g.config.AccessLogEnabled {
-		logJSON, _ := json.Marshal(logEntry)
-		log.Printf("API Gateway Access: %s", string(logJSON))
+	if accessLogOn {
+		writeAccessLog(logEntry)
 	}
-
-	// Send to telemetry exporter if configured
-	if allowTelemetry && g.config.Observability != nil && g.config.Observability.Enabled {
+	if telemetryOn {
 		GetTelemetryExporter().Record(logEntry)
 	}
 }
@@ -1858,12 +1833,75 @@ func (g *Gateway) getClientSecurityConfig() *ClientSecurityConfig {
 	return &cfg
 }
 
+// clientTrackingSettings is the subset of ClientSecurityConfig the request
+// path needs, returned by value so reading it allocates nothing.
+type clientTrackingSettings struct {
+	enabled           bool
+	autoBlock         bool
+	noRouteThreshold  int
+	autoBlockDuration time.Duration
+}
+
+func (g *Gateway) trackingSettings() clientTrackingSettings {
+	g.mu.RLock()
+	defer g.mu.RUnlock()
+	if g.config == nil || g.config.ClientSecurity == nil {
+		return clientTrackingSettings{}
+	}
+	cs := g.config.ClientSecurity
+	d := defaultAutoBlockDuration
+	if cs.AutoBlockDurationSec > 0 {
+		d = time.Duration(cs.AutoBlockDurationSec) * time.Second
+	}
+	return clientTrackingSettings{
+		enabled:           cs.TrackingEnabled,
+		autoBlock:         cs.AutoBlockEnabled,
+		noRouteThreshold:  cs.NoRouteThreshold,
+		autoBlockDuration: d,
+	}
+}
+
+// trackClientActivity updates the per-IP counters. A known client is updated
+// under the table's read lock plus its own mutex, so requests from different
+// clients don't serialize; the table's write lock is only taken to add a new
+// client or to apply an auto-block (block state is read lock-free-ish by
+// isClientBlocked, so it must change under the write lock). Readers of the
+// counters (top clients, trimming) hold the write lock, which excludes every
+// in-progress update.
 func (g *Gateway) trackClientActivity(ip, path, routeID string, statusCode int, matchedRoute bool) {
-	cfg := g.getClientSecurityConfig()
-	if cfg == nil || !cfg.TrackingEnabled || ip == "" {
+	cfg := g.trackingSettings()
+	if !cfg.enabled || ip == "" {
 		return
 	}
 	now := time.Now()
+
+	g.clientStatsMu.RLock()
+	if tracker, ok := g.clientStats[ip]; ok {
+		tracker.mu.Lock()
+		tracker.requests++
+		tracker.lastSeen = now
+		if tracker.lastPath != path {
+			tracker.lastPath = path
+		}
+		tracker.lastRouteID = routeID
+		tracker.lastStatus = statusCode
+		needBlock := false
+		if matchedRoute {
+			tracker.consecutiveMisses = 0
+		} else {
+			tracker.consecutiveMisses++
+			tracker.totalMisses++
+			needBlock = cfg.autoBlock && cfg.noRouteThreshold > 0 && tracker.consecutiveMisses >= cfg.noRouteThreshold
+		}
+		tracker.mu.Unlock()
+		g.clientStatsMu.RUnlock()
+		if needBlock {
+			g.applyAutoBlock(ip, cfg)
+		}
+		return
+	}
+	g.clientStatsMu.RUnlock()
+
 	g.clientStatsMu.Lock()
 	tracker := g.getOrCreateClientTrackerLocked(ip)
 	tracker.requests++
@@ -1877,20 +1915,27 @@ func (g *Gateway) trackClientActivity(ip, path, routeID string, statusCode int, 
 		tracker.consecutiveMisses++
 		tracker.totalMisses++
 	}
-	var autoBlockReason string
-	if !matchedRoute && cfg.AutoBlockEnabled && cfg.NoRouteThreshold > 0 && tracker.consecutiveMisses >= cfg.NoRouteThreshold {
-		duration := defaultAutoBlockDuration
-		if cfg.AutoBlockDurationSec > 0 {
-			duration = time.Duration(cfg.AutoBlockDurationSec) * time.Second
-		}
-		autoBlockReason = fmt.Sprintf("blocked after %d unmatched requests", tracker.consecutiveMisses)
-		if !g.autoBlockClientLocked(tracker, duration, autoBlockReason) {
-			autoBlockReason = ""
-		}
-	}
+	needBlock := !matchedRoute && cfg.autoBlock && cfg.noRouteThreshold > 0 && tracker.consecutiveMisses >= cfg.noRouteThreshold
 	g.clientStatsMu.Unlock()
-	if autoBlockReason != "" {
-		log.Printf("API Gateway: Auto-blocked client %s (%s)", ip, autoBlockReason)
+	if needBlock {
+		g.applyAutoBlock(ip, cfg)
+	}
+}
+
+// applyAutoBlock blocks ip under the write lock once it crossed the
+// no-route threshold (re-checked there, since other requests may race).
+func (g *Gateway) applyAutoBlock(ip string, cfg clientTrackingSettings) {
+	g.clientStatsMu.Lock()
+	tracker, ok := g.clientStats[ip]
+	if !ok || tracker.consecutiveMisses < cfg.noRouteThreshold {
+		g.clientStatsMu.Unlock()
+		return
+	}
+	reason := fmt.Sprintf("blocked after %d unmatched requests", tracker.consecutiveMisses)
+	blocked := g.autoBlockClientLocked(tracker, cfg.autoBlockDuration, reason)
+	g.clientStatsMu.Unlock()
+	if blocked {
+		log.Printf("API Gateway: Auto-blocked client %s (%s)", ip, reason)
 	}
 }
 
@@ -2077,8 +2122,9 @@ func (g *Gateway) getTopClients(limit int) []ClientStats {
 	if limit <= 0 {
 		return nil
 	}
-	g.clientStatsMu.RLock()
-	defer g.clientStatsMu.RUnlock()
+	// Write lock: excludes in-flight counter updates (see trackClientActivity).
+	g.clientStatsMu.Lock()
+	defer g.clientStatsMu.Unlock()
 	if len(g.clientStats) == 0 {
 		return nil
 	}
@@ -2114,8 +2160,8 @@ func (g *Gateway) getTopClients(limit int) []ClientStats {
 }
 
 func (g *Gateway) getBlockedClients() []BlockedClient {
-	g.clientStatsMu.RLock()
-	defer g.clientStatsMu.RUnlock()
+	g.clientStatsMu.Lock()
+	defer g.clientStatsMu.Unlock()
 	blocked := make([]BlockedClient, 0)
 	now := time.Now()
 	for _, tracker := range g.clientStats {
@@ -2686,7 +2732,7 @@ func (g *Gateway) Validate(method, path, host string, headers map[string]string)
 		return nil, nil, fmt.Errorf("no matching route")
 	}
 
-	service, _, release, err := g.pickBackend(route, req)
+	service, _, release, err := g.pickBackend(route, req, getClientIP(req))
 	if err != nil {
 		return route, nil, err
 	}

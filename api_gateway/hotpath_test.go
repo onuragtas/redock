@@ -15,7 +15,9 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -130,7 +132,7 @@ func TestBasicAuthCachesOnlySuccess(t *testing.T) {
 	assert.True(t, check("s3cret"))
 }
 
-func writeTestCert(t *testing.T, dir, cn string) (string, string) {
+func writeTestCert(t testing.TB, dir, cn string) (string, string) {
 	t.Helper()
 	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	require.NoError(t, err)
@@ -231,4 +233,69 @@ func TestProxyCandidatesTracksUntrustedForwarders(t *testing.T) {
 
 	setTrustedProxies([]string{"203.0.113.50"})
 	assert.Empty(t, proxyCandidates.list(), "trusted peers drop out of the list")
+}
+
+func TestRateLimiterSweepsExpiredClients(t *testing.T) {
+	l := newRateLimiter(1, 10*time.Millisecond)
+	for i := 0; i < 50; i++ {
+		l.allow("198.51.100." + strconv.Itoa(i))
+	}
+	assert.Equal(t, 50, l.size())
+	time.Sleep(20 * time.Millisecond)
+	for i := range l.shards { // force the next request in every shard to sweep
+		l.shards[i].nextSweep = time.Time{}
+	}
+	for i := 0; i < rateLimitShards*4; i++ {
+		l.allow("203.0.113." + strconv.Itoa(i%250))
+	}
+	assert.LessOrEqual(t, l.size(), rateLimitShards*4, "expired windows are swept")
+	assert.False(t, l.allow("203.0.113.0"), "limit still enforced within the window")
+}
+
+func TestAccessLogOmitsBodies(t *testing.T) {
+	w := &accessLogWriter{}
+	w.queue = make(chan []byte, 1)
+	w.once.Do(func() {}) // don't start the writer goroutine
+	prev := accessLog
+	accessLog = w
+	t.Cleanup(func() { accessLog = prev })
+
+	writeAccessLog(RequestLog{Path: "/login", RequestBody: `{"password":"hunter2"}`, ResponseBody: "token-abc"})
+	line := string(<-w.queue)
+	assert.Contains(t, line, `"/login"`)
+	assert.NotContains(t, line, "hunter2")
+	assert.NotContains(t, line, "token-abc")
+
+	w.enqueue([]byte("a"))
+	w.enqueue([]byte("b")) // queue full: dropped, never blocks
+	assert.Equal(t, int64(1), w.dropped.Load())
+}
+
+// Concurrent tracking of the same and different clients, with readers and
+// auto-blocking, must be race-free (run with -race).
+func TestTrackClientActivityConcurrent(t *testing.T) {
+	g := &Gateway{
+		clientStats:      make(map[string]*clientStatsTracker),
+		clientStatsLimit: 100,
+		config: &GatewayConfig{ClientSecurity: &ClientSecurityConfig{
+			TrackingEnabled: true, AutoBlockEnabled: true, NoRouteThreshold: 50, TopClientLimit: 10,
+		}},
+	}
+	var wg sync.WaitGroup
+	for w := 0; w < 8; w++ {
+		wg.Add(1)
+		go func(w int) {
+			defer wg.Done()
+			for i := 0; i < 500; i++ {
+				ip := "198.51.100." + strconv.Itoa((w*7+i)%20)
+				g.trackClientActivity(ip, "/x", "", 404, false)
+				g.isClientBlocked(ip)
+				if i%50 == 0 {
+					g.getTopClients(5)
+				}
+			}
+		}(w)
+	}
+	wg.Wait()
+	assert.NotEmpty(t, g.getBlockedClients(), "clients past the no-route threshold get auto-blocked")
 }

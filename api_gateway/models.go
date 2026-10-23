@@ -366,12 +366,22 @@ type BlockedClient struct {
 	Reason       string    `json:"reason"`
 }
 
-// rateLimiter manages rate limiting for clients
+// rateLimiter manages fixed-window rate limiting per client IP. The client
+// table is split into shards (by IP hash) so concurrent requests from
+// different clients rarely share a lock, and expired windows are swept out so
+// the table doesn't keep every IP ever seen.
 type rateLimiter struct {
-	mu       sync.RWMutex
-	clients  map[string]*clientRateLimit
 	requests int
 	window   time.Duration
+	shards   [rateLimitShards]rateLimitShard
+}
+
+const rateLimitShards = 32
+
+type rateLimitShard struct {
+	mu        sync.Mutex
+	clients   map[string]*clientRateLimit
+	nextSweep time.Time
 }
 
 // clientRateLimit tracks rate limiting for a specific client
@@ -390,7 +400,7 @@ type Gateway struct {
 	services          map[string]*Service
 	upstreams         map[string]*Upstream
 	upstreamRuntimes  map[string]*upstreamRuntime
-	upstreamRuntimeMu sync.Mutex
+	upstreamRuntimeMu sync.RWMutex
 	routes            []*Route
 	serviceHealth     map[string]*ServiceHealth
 	lastHealthCheck   map[string]time.Time
@@ -456,8 +466,11 @@ func (s *gatewayStatsTracker) service(serviceID string) *serviceStatsTracker {
 	return t
 }
 
-// clientStatsTracker keeps in-memory metrics per client IP
+// clientStatsTracker keeps in-memory metrics per client IP. mu guards the
+// counters/last-seen fields while the table is only read-locked (see
+// trackClientActivity); block state changes under the table's write lock.
 type clientStatsTracker struct {
+	mu                sync.Mutex
 	ip                string
 	requests          int64
 	lastSeen          time.Time

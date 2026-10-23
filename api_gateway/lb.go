@@ -42,10 +42,17 @@ func (u *upstreamRuntime) inflightFor(serviceID string) *int64 {
 }
 
 // runtime returns (creating if necessary) the runtime state for an upstream.
+// The read-locked fast path keeps concurrent requests from serializing here.
 func (g *Gateway) runtime(upstreamID string) *upstreamRuntime {
+	g.upstreamRuntimeMu.RLock()
+	rt, ok := g.upstreamRuntimes[upstreamID]
+	g.upstreamRuntimeMu.RUnlock()
+	if ok {
+		return rt
+	}
 	g.upstreamRuntimeMu.Lock()
 	defer g.upstreamRuntimeMu.Unlock()
-	rt, ok := g.upstreamRuntimes[upstreamID]
+	rt, ok = g.upstreamRuntimes[upstreamID]
 	if !ok {
 		rt = &upstreamRuntime{}
 		g.upstreamRuntimes[upstreamID] = rt
@@ -60,26 +67,27 @@ func (g *Gateway) runtime(upstreamID string) *upstreamRuntime {
 // finishes (it decrements the in-flight counter for least_conn).
 //
 // On error (no upstream, all unhealthy, etc.) the release callback is a no-op.
-func (g *Gateway) pickBackend(route *Route, r *http.Request) (*Service, *Upstream, func(), error) {
+func (g *Gateway) pickBackend(route *Route, r *http.Request, clientIP string) (*Service, *Upstream, func(), error) {
 	noop := func() {}
 
 	g.mu.RLock()
 	upstream, ok := g.upstreams[route.UpstreamID]
-	g.mu.RUnlock()
 	if !ok || upstream == nil {
+		g.mu.RUnlock()
 		return nil, nil, noop, fmt.Errorf("upstream %q not found", route.UpstreamID)
 	}
 	if !upstream.Enabled {
+		g.mu.RUnlock()
 		return nil, upstream, noop, fmt.Errorf("upstream %q is disabled", upstream.ID)
 	}
-
-	healthy, weights := g.healthyTargets(upstream)
+	healthy, weights := g.healthyTargetsLocked(upstream)
+	g.mu.RUnlock()
 	if len(healthy) == 0 {
 		return nil, upstream, noop, fmt.Errorf("no healthy targets in upstream %q", upstream.ID)
 	}
 
 	rt := g.runtime(upstream.ID)
-	svc := selectTarget(upstream, healthy, weights, rt, r)
+	svc := selectTarget(upstream, healthy, weights, rt, r, clientIP)
 	if svc == nil {
 		return nil, upstream, noop, fmt.Errorf("upstream %q failed to select a target", upstream.ID)
 	}
@@ -115,11 +123,10 @@ func applyStickyCookie(w http.ResponseWriter, upstream *Upstream, serviceID stri
 	http.SetCookie(w, c)
 }
 
-// healthyTargets returns the subset of an upstream's targets that resolve to
+// healthyTargetsLocked returns the subset of an upstream's targets that resolve to
 // enabled, currently-healthy services, plus a parallel weights slice.
-func (g *Gateway) healthyTargets(upstream *Upstream) ([]*Service, []int) {
-	g.mu.RLock()
-	defer g.mu.RUnlock()
+// Caller must hold g.mu (read).
+func (g *Gateway) healthyTargetsLocked(upstream *Upstream) ([]*Service, []int) {
 
 	out := make([]*Service, 0, len(upstream.Targets))
 	weights := make([]int, 0, len(upstream.Targets))
@@ -141,16 +148,16 @@ func (g *Gateway) healthyTargets(upstream *Upstream) ([]*Service, []int) {
 	return out, weights
 }
 
-func selectTarget(upstream *Upstream, healthy []*Service, weights []int, rt *upstreamRuntime, r *http.Request) *Service {
+func selectTarget(upstream *Upstream, healthy []*Service, weights []int, rt *upstreamRuntime, r *http.Request, clientIP string) *Service {
 	// Sticky resolution short-circuits the strategy where applicable.
 	if upstream.Sticky != nil {
 		switch upstream.Sticky.Mode {
 		case StickyIPHash:
-			return hrwSelect(healthy, weights, requestClientIP(r), upstream.Strategy == StrategyWeighted)
+			return hrwSelect(healthy, weights, clientIP, upstream.Strategy == StrategyWeighted)
 		case StickyHeader:
 			key := r.Header.Get(upstream.Sticky.HeaderName)
 			if key == "" {
-				key = requestClientIP(r)
+				key = clientIP
 			}
 			return hrwSelect(healthy, weights, key, upstream.Strategy == StrategyWeighted)
 		case StickyCookie:

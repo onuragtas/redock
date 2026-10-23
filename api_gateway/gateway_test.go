@@ -58,11 +58,7 @@ func TestMatchWildcard(t *testing.T) {
 }
 
 func TestRateLimiter(t *testing.T) {
-	limiter := &rateLimiter{
-		clients:  make(map[string]*clientRateLimit),
-		requests: 3,
-		window:   time.Second,
-	}
+	limiter := newRateLimiter(3, time.Second)
 
 	g := &Gateway{}
 

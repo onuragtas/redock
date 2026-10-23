@@ -2,7 +2,6 @@ package api_gateway
 
 import (
 	"bytes"
-	"context"
 	"crypto/sha256"
 	"io"
 	"net"
@@ -69,28 +68,13 @@ func (g *Gateway) bodiesLogged() bool {
 	if cfg == nil {
 		return false
 	}
-	return cfg.AccessLogEnabled || (cfg.Observability != nil && cfg.Observability.Enabled)
+	// The console access log never carries bodies (see writeAccessLog), so
+	// only telemetry needs them captured.
+	return cfg.Observability != nil && cfg.Observability.Enabled
 }
 
 // ---------------------------------------------------------------------------
 // Client IP
-
-type clientIPKey struct{}
-
-// withClientIP stores the resolved client IP on the request so the director,
-// load balancer and logger don't re-parse forwarding headers.
-func withClientIP(r *http.Request, ip string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), clientIPKey{}, ip))
-}
-
-// requestClientIP returns the client IP resolved by handleRequest, falling
-// back to resolving it now.
-func requestClientIP(r *http.Request) string {
-	if ip, ok := r.Context().Value(clientIPKey{}).(string); ok {
-		return ip
-	}
-	return getClientIP(r)
-}
 
 // cloudflareRanges are Cloudflare's published edge ranges
 // (https://www.cloudflare.com/ips/). Requests proxied through Cloudflare
@@ -310,4 +294,67 @@ func (c *basicAuthCache) store(key [32]byte) {
 		}
 	}
 	c.entries[key] = now.Add(basicAuthCacheTTL)
+}
+
+// ---------------------------------------------------------------------------
+// Rate limiting
+
+const rateLimitMinSweep = 10 * time.Second
+
+func newRateLimiter(requests int, window time.Duration) *rateLimiter {
+	return &rateLimiter{requests: requests, window: window}
+}
+
+// fnv32a hashes s without allocating (shard selection).
+func fnv32a(s string) uint32 {
+	h := uint32(2166136261)
+	for i := 0; i < len(s); i++ {
+		h ^= uint32(s[i])
+		h *= 16777619
+	}
+	return h
+}
+
+// allow counts one request from clientIP and reports whether it is within
+// the limit for the current window.
+func (l *rateLimiter) allow(clientIP string) bool {
+	sh := &l.shards[fnv32a(clientIP)%rateLimitShards]
+	now := time.Now()
+
+	sh.mu.Lock()
+	defer sh.mu.Unlock()
+	if sh.clients == nil {
+		sh.clients = make(map[string]*clientRateLimit)
+	}
+	if now.After(sh.nextSweep) {
+		for ip, c := range sh.clients {
+			if now.After(c.windowEnd) {
+				delete(sh.clients, ip)
+			}
+		}
+		sh.nextSweep = now.Add(max(l.window, rateLimitMinSweep))
+	}
+
+	client, exists := sh.clients[clientIP]
+	if !exists || now.After(client.windowEnd) {
+		sh.clients[clientIP] = &clientRateLimit{requests: 1, windowEnd: now.Add(l.window)}
+		return true
+	}
+	if client.requests >= l.requests {
+		return false
+	}
+	client.requests++
+	return true
+}
+
+// size reports how many clients are tracked (tests / diagnostics).
+func (l *rateLimiter) size() int {
+	n := 0
+	for i := range l.shards {
+		sh := &l.shards[i]
+		sh.mu.Lock()
+		n += len(sh.clients)
+		sh.mu.Unlock()
+	}
+	return n
 }

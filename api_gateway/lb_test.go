@@ -38,7 +38,7 @@ func TestPickBackendRoundRobin(t *testing.T) {
 	picks := map[string]int{}
 	for i := 0; i < 9; i++ {
 		req := httptest.NewRequest("GET", "/", nil)
-		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 		assert.NoError(t, err)
 		picks[svc.ID]++
 		release()
@@ -60,7 +60,7 @@ func TestPickBackendSkipsUnhealthy(t *testing.T) {
 
 	for i := 0; i < 5; i++ {
 		req := httptest.NewRequest("GET", "/", nil)
-		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 		assert.NoError(t, err)
 		assert.Equal(t, "a", svc.ID)
 		release()
@@ -75,7 +75,7 @@ func TestPickBackendForcesTrafficWhenIgnoreHealthCheck(t *testing.T) {
 	g.serviceHealth["a"] = &ServiceHealth{Healthy: false}
 
 	req := httptest.NewRequest("GET", "/", nil)
-	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 	assert.NoError(t, err)
 	assert.Equal(t, "a", svc.ID)
 	release()
@@ -89,7 +89,7 @@ func TestPickBackendAllUnhealthy(t *testing.T) {
 	g.serviceHealth["a"] = &ServiceHealth{Healthy: false}
 
 	req := httptest.NewRequest("GET", "/", nil)
-	_, _, _, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+	_, _, _, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "no healthy targets")
 }
@@ -108,7 +108,7 @@ func TestPickBackendIPHashSticky(t *testing.T) {
 	pick := func(ip string) string {
 		req := httptest.NewRequest("GET", "/", nil)
 		req.Header.Set("X-Forwarded-For", ip)
-		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 		assert.NoError(t, err)
 		release()
 		return svc.ID
@@ -133,7 +133,7 @@ func TestPickBackendCookieStickyHonorsCookie(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.AddCookie(&http.Cookie{Name: "lb", Value: "b"})
-	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 	assert.NoError(t, err)
 	assert.Equal(t, "b", svc.ID)
 	release()
@@ -150,7 +150,7 @@ func TestPickBackendCookieStickyFallsBackWhenStale(t *testing.T) {
 
 	req := httptest.NewRequest("GET", "/", nil)
 	req.AddCookie(&http.Cookie{Name: "lb", Value: "ghost"}) // not in healthy set
-	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 	assert.NoError(t, err)
 	assert.Equal(t, "a", svc.ID)
 	release()
@@ -168,7 +168,7 @@ func TestPickBackendWeightedDistribution(t *testing.T) {
 	picks := map[string]int{}
 	for i := 0; i < 5000; i++ {
 		req := httptest.NewRequest("GET", "/", nil)
-		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+		svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 		assert.NoError(t, err)
 		picks[svc.ID]++
 		release()
@@ -193,7 +193,7 @@ func TestPickBackendLeastConn(t *testing.T) {
 	atomic.AddInt64(rt.inflightFor("a"), 2)
 
 	req := httptest.NewRequest("GET", "/", nil)
-	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req)
+	svc, _, release, err := g.pickBackend(&Route{UpstreamID: "up"}, req, getClientIP(req))
 	assert.NoError(t, err)
 	assert.Equal(t, "b", svc.ID)
 	release()

@@ -102,11 +102,7 @@ func (g *Gateway) routeRateLimiter(route *Route) *rateLimiter {
 	if g.routeLimiters == nil {
 		g.routeLimiters = make(map[string]*rateLimiter)
 	}
-	l := &rateLimiter{
-		clients:  make(map[string]*clientRateLimit),
-		requests: route.RateLimitRequests,
-		window:   window,
-	}
+	l := newRateLimiter(route.RateLimitRequests, window)
 	g.routeLimiters[route.ID] = l
 	return l
 }
