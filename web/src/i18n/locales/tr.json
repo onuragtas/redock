@@ -2566,5 +2566,33 @@
     "errNonNegative": "Negatif olamaz.",
     "errPositive": "En az 1 olmalı.",
     "errCidr": "Geçersiz IP/CIDR: {list}"
+  },
+  "ports": {
+    "title": "Açılması gereken portlar",
+    "help": "Bu sunucuya gelen bağlantılar için açılması gereken kurallar. Giden trafik için kural gerekmez.",
+    "source": "Kaynak",
+    "protocol": "Protokol",
+    "purposeCol": "Ne için",
+    "thisServer": "bu sunucu",
+    "required": "zorunlu",
+    "recommended": "önerilen",
+    "none": "Henüz açılacak port yok; WebRTC ayarlarını tamamlayın.",
+    "firewallTitle": "Sunucunun güvenlik duvarında (ufw)",
+    "purpose": {
+      "https": "Katılma sayfası ve sinyalleşme (HTTPS/WSS)",
+      "acme": "Let's Encrypt doğrulaması ve HTTPS'e yönlendirme",
+      "media": "Görüşme sunucusunun ses/görüntü trafiği",
+      "turn": "STUN/TURN: NAT arkasındaki istemcilerin bağlantısı",
+      "turns": "TURNS: yalnızca TLS'e izin veren kısıtlı ağlar",
+      "relay": "TURN relay portları (oturum başına bir port)"
+    },
+    "warn": {
+      "no-public-host": "Alan adı girilmemiş: görüşmeye yalnızca bu makineden (localhost) girilebilir, dışarıya açılacak HTTPS portu yok.",
+      "media-any-port": "Medya portları rastgele seçiliyor; NAT arkasında yönlendirilemez. Ayarlarda sabit bir UDP aralığı belirleyin.",
+      "no-turn": "TURN kapalı: güvenlik duvarı ya da NAT arkasındaki bazı katılımcılar bağlanamayabilir.",
+      "turn-not-enabled": "Görüşme sunucusu Redock TURN'ü kullanacak şekilde ayarlı ama TURN sunucusu kapalı. TURN / STUN sekmesinden açın."
+    },
+    "destination": "Hedef",
+    "any": "Herhangi"
   }
 }

@@ -13,6 +13,7 @@ func RTCRoutes(a *fiber.App) {
 	route := a.Group("/api/v1/rtc", middleware.JWTProtected())
 	route.Get("/status", controllers.RTCStatus)
 	route.Get("/config", controllers.RTCGetConfig)
+	route.Get("/ports", controllers.RTCPorts)
 	route.Post("/config", middleware.AdminOnly(), controllers.RTCUpdateConfig)
 	route.Post("/start", middleware.AdminOnly(), controllers.RTCStart)
 	route.Post("/stop", middleware.AdminOnly(), controllers.RTCStop)

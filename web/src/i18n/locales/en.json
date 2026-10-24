@@ -2566,5 +2566,33 @@
     "errNonNegative": "Can't be negative.",
     "errPositive": "Must be at least 1.",
     "errCidr": "Invalid IP/CIDR: {list}"
+  },
+  "ports": {
+    "title": "Ports to open",
+    "help": "Rules to allow inbound connections to this server. Outbound traffic needs no rule.",
+    "source": "Source",
+    "protocol": "Protocol",
+    "purposeCol": "Purpose",
+    "thisServer": "this server",
+    "required": "required",
+    "recommended": "recommended",
+    "none": "No ports to open yet; finish the WebRTC settings.",
+    "firewallTitle": "On the server's firewall (ufw)",
+    "purpose": {
+      "https": "Join page and signalling (HTTPS/WSS)",
+      "acme": "Let's Encrypt validation and redirect to HTTPS",
+      "media": "Audio/video traffic of the call server",
+      "turn": "STUN/TURN: connecting clients behind NAT",
+      "turns": "TURNS: restricted networks that only allow TLS",
+      "relay": "TURN relay ports (one per session)"
+    },
+    "warn": {
+      "no-public-host": "No domain set: calls can only be joined from this machine (localhost), so there is no HTTPS port to open.",
+      "media-any-port": "Media ports are random and can't be forwarded behind NAT. Set a fixed UDP range in the settings.",
+      "no-turn": "TURN is off: some participants behind firewalls or NAT may fail to connect.",
+      "turn-not-enabled": "The call server is set to use Redock TURN, but the TURN server is off. Turn it on in the TURN / STUN tab."
+    },
+    "destination": "Destination",
+    "any": "Any"
   }
 }

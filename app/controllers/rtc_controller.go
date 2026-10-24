@@ -356,3 +356,8 @@ func RTCDownloadRecording(c *fiber.Ctx) error {
 	c.Set("Cache-Control", "no-store")
 	return c.Download(p, c.Query("name"))
 }
+
+// RTCPorts lists the inbound port forwards / firewall rules WebRTC needs.
+var RTCPorts = rtcHandler(func(_ *fiber.Ctx, m *rtc_server.Manager) (any, error) {
+	return m.Ports(), nil
+})

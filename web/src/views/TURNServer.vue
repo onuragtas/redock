@@ -5,6 +5,7 @@ import CardBox from "@/components/CardBox.vue";
 import CardBoxModal from "@/components/CardBoxModal.vue";
 import FormCheckRadio from "@/components/FormCheckRadio.vue";
 import TURNSettings from "@/components/RTC/TURNSettings.vue";
+import RTCPortsTable from "@/components/RTC/RTCPortsTable.vue";
 import FormControl from "@/components/FormControl.vue";
 import FormField from "@/components/FormField.vue";
 import ApiService from "@/services/ApiService";
@@ -30,6 +31,7 @@ const { t } = useI18n();
 const toast = useToast();
 
 const status = ref(null)
+const portsTable = ref(null)
 const apps = ref([])
 const sessions = ref([])
 const blocked = ref([])
@@ -239,7 +241,8 @@ onUnmounted(() => clearInterval(timer))
       </div>
     </CardBox>
 
-    <TURNSettings :running="running" @saved="(st) => { if (st) status = st; refreshAll() }" />
+    <TURNSettings :running="running" @saved="(st) => { if (st) status = st; refreshAll(); portsTable?.load() }" />
+    <RTCPortsTable ref="portsTable" :services="['turn']" />
 
     <!-- Apps -->
     <CardBox>

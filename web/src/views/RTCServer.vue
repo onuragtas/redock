@@ -5,6 +5,7 @@ import CardBox from "@/components/CardBox.vue";
 import RTCAPIKeys from "@/components/RTC/RTCAPIKeys.vue";
 import RTCAudit from "@/components/RTC/RTCAudit.vue";
 import RTCRecordings from "@/components/RTC/RTCRecordings.vue";
+import RTCPortsTable from "@/components/RTC/RTCPortsTable.vue";
 import RTCRooms from "@/components/RTC/RTCRooms.vue";
 import RTCSettings from "@/components/RTC/RTCSettings.vue";
 import ApiService from "@/services/ApiService";
@@ -54,8 +55,10 @@ const toggleRunning = async () => {
   }
 }
 
+const portsTable = ref(null)
 const onSaved = (st) => {
   if (st) status.value = st
+  portsTable.value?.load() // ports follow the saved settings
 }
 
 // The test room URL: through the gateway when a public host is set,
@@ -67,12 +70,6 @@ const testRoomURL = computed(() => {
   return `http://${c.listen_addr}/group/${c.test_room_name}/`
 })
 
-const turnPortLine = computed(() => {
-  const turn = config.value.turn
-  if (turn === 'redock') return t('rtc.portRedockTurn')
-  if (!turn) return ''
-  return t('rtc.portTurn', { addr: turn === 'auto' ? '1194' : turn })
-})
 
 const copy = async (text) => {
   try {
@@ -132,7 +129,7 @@ onUnmounted(() => clearInterval(timer))
     </CardBox>
 
     <!-- At a glance -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <CardBox>
         <h3 class="text-lg font-semibold mb-4">{{ t('rtc.status') }}</h3>
         <dl class="grid grid-cols-2 gap-y-2 text-sm">
@@ -162,17 +159,10 @@ onUnmounted(() => clearInterval(timer))
         </div>
       </CardBox>
 
-      <CardBox>
-        <h3 class="text-lg font-semibold mb-2">{{ t('rtc.ports') }}</h3>
-        <ul class="text-sm space-y-1 text-slate-600 dark:text-slate-300 font-mono">
-          <li>{{ t('rtc.portHttps') }}</li>
-          <li>{{ t('rtc.portUdp', { min: config.udp_min || '*', max: config.udp_max || '*' }) }}</li>
-          <li v-if="turnPortLine">{{ turnPortLine }}</li>
-        </ul>
-      </CardBox>
     </div>
 
     <RTCSettings :running="running" @loaded="config = $event" @saved="onSaved" />
+    <RTCPortsTable ref="portsTable" />
     <RTCRooms :running="running" />
     <RTCRecordings :retention-days="config.retention_days || 0" />
     <RTCAPIKeys />

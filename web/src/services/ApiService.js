@@ -726,6 +726,8 @@ class ApiService {
   static async rtcCreateAPIKey(name) { return await this.post('/api/v1/rtc/apikeys', { name }); }
   static async rtcDeleteAPIKey(id) { return await this.post('/api/v1/rtc/apikeys/delete', { id }); }
 
+  static async rtcPorts() { return await this.get('/api/v1/rtc/ports'); }
+
   static async rtcStatus() {
     return await this.get('/api/v1/rtc/status');
   }
