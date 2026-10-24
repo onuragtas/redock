@@ -14,7 +14,7 @@ import {
   mdiShieldAccount,
   mdiAccount
 } from '@mdi/js'
-import { computed, onMounted, ref } from 'vue'
+import { onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useToast } from 'vue-toastification'
 import { useI18n } from 'vue-i18n'
@@ -153,9 +153,6 @@ const toggleMenuEdit = (path) => {
   else formEdit.value.allowed_menus.splice(idx, 1)
 }
 
-// Opt-in modules (hidden menus): admins don't get them automatically either.
-const hiddenOptions = computed(() => menuOptions.value.filter((o) => o.hidden))
-
 const isMenuCheckedCreate = (path) => formCreate.value.allowed_menus.includes(path)
 const isMenuCheckedEdit = (path) => formEdit.value.allowed_menus.includes(path)
 
@@ -285,27 +282,6 @@ onMounted(() => {
             />
             <span>{{ option.name }}</span>
             <span class="text-xs text-gray-500">({{ option.path }})</span>
-            <span v-if="option.hidden" class="text-xs px-1.5 rounded bg-gray-600 text-gray-200">{{ t('usr.optIn') }}</span>
-          </label>
-        </div>
-      </FormField>
-      <FormField
-        v-else-if="hiddenOptions.length"
-        :label="t('usr.extraMenus')"
-        :help="t('usr.extraMenusHelp')"
-      >
-        <div class="space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
-          <label
-            v-for="option in hiddenOptions"
-            :key="option.path"
-            class="flex items-center gap-2 cursor-pointer text-gray-300 hover:text-white"
-          >
-            <input
-              type="checkbox"
-              :checked="isMenuCheckedCreate(option.path)"
-              @change="toggleMenuCreate(option.path)"
-            />
-            <span>{{ option.name }}</span>
           </label>
         </div>
       </FormField>
@@ -346,27 +322,6 @@ onMounted(() => {
         <div class="max-h-48 overflow-y-auto space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
           <label
             v-for="option in menuOptions"
-            :key="option.path"
-            class="flex items-center gap-2 cursor-pointer text-gray-300 hover:text-white"
-          >
-            <input
-              type="checkbox"
-              :checked="isMenuCheckedEdit(option.path)"
-              @change="toggleMenuEdit(option.path)"
-            />
-            <span>{{ option.name }}</span>
-            <span v-if="option.hidden" class="text-xs px-1.5 rounded bg-gray-600 text-gray-200">{{ t('usr.optIn') }}</span>
-          </label>
-        </div>
-      </FormField>
-      <FormField
-        v-else-if="hiddenOptions.length"
-        :label="t('usr.extraMenus')"
-        :help="t('usr.extraMenusHelp')"
-      >
-        <div class="space-y-2 border border-gray-600 rounded-lg p-3 bg-gray-800/50">
-          <label
-            v-for="option in hiddenOptions"
             :key="option.path"
             class="flex items-center gap-2 cursor-pointer text-gray-300 hover:text-white"
           >

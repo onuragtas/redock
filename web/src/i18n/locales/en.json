@@ -1290,10 +1290,7 @@
     "userUpdated": "User updated",
     "updateFailed": "Failed to update",
     "userDeleted": "User deleted",
-    "deleteFailed": "Failed to delete",
-    "extraMenus": "Extra modules",
-    "extraMenusHelp": "Modules hidden by default. Nobody sees them automatically, admins included; select them here to show them in the menu.",
-    "optIn": "opt-in"
+    "deleteFailed": "Failed to delete"
   },
   "cs": {
     "dockerControls": "Docker Controls",

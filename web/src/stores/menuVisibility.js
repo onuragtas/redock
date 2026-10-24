@@ -3,7 +3,7 @@ import { computed, ref } from 'vue'
 
 const STORAGE_KEY = 'redock-menu-visibility'
 
-const DEFAULT_DISABLED = ['/dns-server', '/vpn-server', '/email-server', '/cloudflare']
+const DEFAULT_DISABLED = ['/dns-server', '/vpn-server', '/email-server', '/cloudflare', '/rtc']
 
 function loadStored() {
   if (typeof localStorage === 'undefined') return {}
