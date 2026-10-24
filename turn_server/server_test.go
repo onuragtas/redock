@@ -10,16 +10,19 @@ import (
 	"github.com/pion/turn/v5"
 )
 
-// freePort returns a port free for both UDP and TCP on 127.0.0.1.
+// freePort returns a port free for both UDP and TCP on every interface — the
+// server binds ":port", and on macOS a wildcard bind fails while any other
+// socket uses the port on a specific address, so checking 127.0.0.1 alone is
+// not enough.
 func freePort(t *testing.T) int {
 	t.Helper()
 	for i := 0; i < 50; i++ {
-		u, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		u, err := net.ListenPacket("udp4", ":0")
 		if err != nil {
 			continue
 		}
 		port := u.LocalAddr().(*net.UDPAddr).Port
-		l, err := net.Listen("tcp4", "127.0.0.1:"+strconv.Itoa(port))
+		l, err := net.Listen("tcp4", ":"+strconv.Itoa(port))
 		u.Close()
 		if err == nil {
 			l.Close()
@@ -36,17 +39,32 @@ func newTestManager(t *testing.T, mutate func(*TURNConfigEntity)) (*Manager, str
 	t.Helper()
 	m := &Manager{guard: newGuard(), registry: newSessionRegistry(), events: &eventLog{}, denied: map[string]time.Time{}}
 	m.apps = map[string]appInfo{"app1": {secret: testSecret, enabled: true}}
-	relay := uint16(freePort(t))
-	cfg := TURNConfigEntity{
-		Port: freePort(t), RelayIP: "127.0.0.1", RelayMin: relay, RelayMax: relay + 20, Realm: "redock",
-		MaxSessionsPerIP: 5, AuthFailLimit: 3, BlockMinutes: 1,
+
+	// Another process can still grab a port between the check and the bind,
+	// so pick fresh ports and retry a few times on "address already in use".
+	var cfg TURNConfigEntity
+	var err error
+	for attempt := 0; attempt < 5; attempt++ {
+		port := freePort(t)
+		relay := freePort(t)
+		// The relay range must fit below 65535 (uint16) and stay clear of the main port.
+		for relay > 65535-20 || (relay <= port && port <= relay+20) {
+			relay = freePort(t)
+		}
+		cfg = TURNConfigEntity{
+			Port: port, RelayIP: "127.0.0.1", RelayMin: uint16(relay), RelayMax: uint16(relay + 20), Realm: "redock",
+			MaxSessionsPerIP: 5, AuthFailLimit: 3, BlockMinutes: 1,
+		}
+		if mutate != nil {
+			mutate(&cfg)
+		}
+		m.mu.Lock()
+		err = m.startLocked(cfg)
+		m.mu.Unlock()
+		if err == nil || !strings.Contains(err.Error(), "address already in use") {
+			break
+		}
 	}
-	if mutate != nil {
-		mutate(&cfg)
-	}
-	m.mu.Lock()
-	err := m.startLocked(cfg)
-	m.mu.Unlock()
 	if err != nil {
 		t.Fatalf("start: %v", err)
 	}
@@ -151,7 +169,9 @@ func TestRelayWorksAndSessionCanBeKilled(t *testing.T) {
 		t.Fatal(err)
 	}
 	waitFor(t, "session removal", func() bool { return len(m.Sessions()) == 0 })
-	if !hasEvent(m, "session-killed") || !hasEvent(m, "session-ended") {
+	// "session-ended" is logged right after the registry drops the session.
+	waitFor(t, "session-ended event", func() bool { return hasEvent(m, "session-ended") })
+	if !hasEvent(m, "session-killed") {
 		t.Fatal("kill not recorded in the event log")
 	}
 	// The killed credential is revoked.
