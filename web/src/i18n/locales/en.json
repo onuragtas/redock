@@ -654,7 +654,6 @@
     "connTcpDesc": "Raw TCP connection (connect with telnet, netcat, or a socket to this address).",
     "connUdpDesc": "Send UDP packets to this target address.",
     "remoteAgents": "Remote Agents",
-    "noAgents": "No agents registered yet. A client appears here once it registers with this server.",
     "online": "online",
     "offline": "offline",
     "lastSeen": "last seen:",
@@ -681,7 +680,18 @@
     "hostRewritePlaceholder": "(optional, HTTP Host override)",
     "autoConnect": "Auto-connect (client opens it automatically)",
     "deleteDomain": "Delete Domain",
-    "deleteDomainText": "This domain will be permanently deleted."
+    "deleteDomainText": "This domain will be permanently deleted.",
+    "agentFilter": {
+      "online": "Online",
+      "offline": "Inactive",
+      "all": "All"
+    },
+    "agentFilterEmpty": {
+      "online": "No agents are online right now.",
+      "offline": "No inactive agents.",
+      "all": "No agents."
+    },
+    "showAllAgents": "Show all"
   },
   "tpc": {
     "title": "Tunnel Proxy Client",

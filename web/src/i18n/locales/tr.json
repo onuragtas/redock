@@ -654,7 +654,6 @@
     "connTcpDesc": "Ham TCP bağlantısı (telnet, netcat veya bir soket ile bu adrese bağlanın).",
     "connUdpDesc": "Bu hedef adrese UDP paketleri gönderin.",
     "remoteAgents": "Uzak Agent'lar",
-    "noAgents": "Henüz kayıtlı agent yok. Bir client bu sunucuya kaydolduğunda burada görünür.",
     "online": "çevrimiçi",
     "offline": "çevrimdışı",
     "lastSeen": "son görülme:",
@@ -681,7 +680,18 @@
     "hostRewritePlaceholder": "(isteğe bağlı, HTTP Host override)",
     "autoConnect": "Otomatik bağlan (client otomatik açar)",
     "deleteDomain": "Alan Adını Sil",
-    "deleteDomainText": "Bu alan adı kalıcı olarak silinecek."
+    "deleteDomainText": "Bu alan adı kalıcı olarak silinecek.",
+    "agentFilter": {
+      "online": "Çevrimiçi",
+      "offline": "Pasif",
+      "all": "Tümü"
+    },
+    "agentFilterEmpty": {
+      "online": "Şu an çevrimiçi agent yok.",
+      "offline": "Pasif agent yok.",
+      "all": "Agent yok."
+    },
+    "showAllAgents": "Tümünü göster"
   },
   "tpc": {
     "title": "Tünel Proxy İstemci",

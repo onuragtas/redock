@@ -271,6 +271,18 @@ const blankAssignment = () => ({
 });
 const assignmentForm = ref(blankAssignment());
 
+// Online agents by default; "offline" (pasif) and "all" on demand.
+const agentFilter = ref("online");
+const agentCounts = computed(() => {
+  const online = agents.value.filter((a) => a.online).length;
+  return { online, offline: agents.value.length - online, all: agents.value.length };
+});
+const filteredAgents = computed(() => {
+  if (agentFilter.value === "online") return agents.value.filter((a) => a.online);
+  if (agentFilter.value === "offline") return agents.value.filter((a) => !a.online);
+  return agents.value;
+});
+
 const loadAgents = async () => {
   try {
     const res = await ApiService.tunnelAgentsList();
@@ -747,19 +759,41 @@ onMounted(() => {
       </div>
     </CardBox>
 
-    <!-- Remote Agents (control plane) -->
-    <CardBox>
+    <!-- Remote Agents (control plane); hidden until an agent has registered -->
+    <CardBox v-if="agents.length">
       <SectionTitleLineWithButton :icon="mdiServerNetwork" :title="t('tps.remoteAgents')" main>
-        <BaseButton :icon="mdiRefresh" color="info" small :label="t('common.refresh')" @click="loadAgents" />
+        <div class="flex items-center gap-2">
+          <div class="inline-flex rounded-lg border border-slate-200 dark:border-slate-700 overflow-hidden text-sm" role="group">
+            <button
+              v-for="f in ['online', 'offline', 'all']"
+              :key="f"
+              type="button"
+              :aria-pressed="agentFilter === f"
+              :class="[
+                'px-3 py-1.5 transition-colors',
+                agentFilter === f
+                  ? 'bg-slate-800 text-white dark:bg-slate-200 dark:text-slate-900'
+                  : 'text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800',
+              ]"
+              @click="agentFilter = f"
+            >
+              {{ t('tps.agentFilter.' + f) }} <span class="opacity-60">{{ agentCounts[f] }}</span>
+            </button>
+          </div>
+          <BaseButton :icon="mdiRefresh" color="info" small :label="t('common.refresh')" @click="loadAgents" />
+        </div>
       </SectionTitleLineWithButton>
 
-      <div v-if="agents.length === 0" class="text-center py-10 text-slate-500">
-        {{ t('tps.noAgents') }}
+      <div v-if="!filteredAgents.length" class="text-center py-10 text-slate-500">
+        {{ t('tps.agentFilterEmpty.' + agentFilter) }}
+        <button type="button" class="ml-1 underline text-slate-700 dark:text-slate-300" @click="agentFilter = 'all'">
+          {{ t('tps.showAllAgents') }}
+        </button>
       </div>
 
       <div v-else class="space-y-3">
         <div
-          v-for="agent in agents"
+          v-for="agent in filteredAgents"
           :key="agent.id"
           class="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden"
         >
