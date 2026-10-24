@@ -189,6 +189,19 @@ const routes = [
       },
       {
         meta: {
+          title: 'WebRTC',
+        },
+        path: 'rtc',
+        name: 'rtc',
+        component: () => import('@/views/WebRTC.vue')
+      },
+      {
+        // TURN / STUN used to be its own page; it is now a tab of WebRTC.
+        path: 'turn',
+        redirect: { path: '/rtc', query: { tab: 'turn' } },
+      },
+      {
+        meta: {
           title: 'PHP XDebug Adapter',
         },
         path: 'php_xdebug_adapter',

@@ -690,6 +690,62 @@ class ApiService {
     return await this.get('/api/v1/local_proxy/start_all');
   }
 
+  static async turnStatus() { return await this.get('/api/v1/turn/status'); }
+  static async turnGetConfig() { return await this.get('/api/v1/turn/config'); }
+  static async turnUpdateConfig(data) { return await this.post('/api/v1/turn/config', data); }
+  static async turnStart() { return await this.post('/api/v1/turn/start', {}); }
+  static async turnStop() { return await this.post('/api/v1/turn/stop', {}); }
+  static async turnListApps() { return await this.get('/api/v1/turn/apps'); }
+  static async turnCreateApp(data) { return await this.post('/api/v1/turn/apps', data); }
+  static async turnUpdateApp(data) { return await this.post('/api/v1/turn/apps/update', data); }
+  static async turnRotateSecret(name) { return await this.post('/api/v1/turn/apps/rotate', { name }); }
+  static async turnDeleteApp(name) { return await this.post('/api/v1/turn/apps/delete', { name }); }
+  static async turnIssueCredentials(app, user) { return await this.post('/api/v1/turn/credentials', { app, user }); }
+  static async turnSessions() { return await this.get('/api/v1/turn/sessions'); }
+  static async turnKillSession(id, blockIP) { return await this.post('/api/v1/turn/sessions/kill', { id, block_ip: blockIP }); }
+  static async turnEvents() { return await this.get('/api/v1/turn/events'); }
+  static async turnBlocked() { return await this.get('/api/v1/turn/blocked'); }
+  static async turnUnblock(ip) { return await this.post('/api/v1/turn/blocked/unblock', { ip }); }
+
+  static async rtcListRooms() { return await this.get('/api/v1/rtc/rooms'); }
+  static async rtcSaveRoom(data) { return await this.post('/api/v1/rtc/rooms', data); }
+  static async rtcDeleteRoom(name) { return await this.post('/api/v1/rtc/rooms/delete', { name }); }
+  static async rtcInvite(data) { return await this.post('/api/v1/rtc/rooms/invite', data); }
+  static async rtcParticipants(room) { return await this.get(`/api/v1/rtc/rooms/${encodeURIComponent(room)}/participants`); }
+  static async rtcKick(data) { return await this.post('/api/v1/rtc/rooms/kick', data); }
+  static async rtcEndSession(data) { return await this.post('/api/v1/rtc/rooms/end', data); }
+  static async rtcLock(data) { return await this.post('/api/v1/rtc/rooms/lock', data); }
+  static async rtcClearChat(data) { return await this.post('/api/v1/rtc/rooms/clearchat', data); }
+  static async rtcModeratorJoin(data) { return await this.post('/api/v1/rtc/rooms/moderate', data); }
+  static async rtcAudit(room, limit) { return await this.get(`/api/v1/rtc/audit?room=${encodeURIComponent(room || '')}&limit=${limit || 200}`); }
+  static async rtcRecordings(room) { return await this.get(`/api/v1/rtc/recordings?room=${encodeURIComponent(room || '')}`); }
+  static async rtcRecord(data) { return await this.post('/api/v1/rtc/rooms/record', data); }
+  static async rtcRecordingLink(data) { return await this.post('/api/v1/rtc/recordings/link', data); }
+  static async rtcDeleteRecording(data) { return await this.post('/api/v1/rtc/recordings/delete', data); }
+  static async rtcListAPIKeys() { return await this.get('/api/v1/rtc/apikeys'); }
+  static async rtcCreateAPIKey(name) { return await this.post('/api/v1/rtc/apikeys', { name }); }
+  static async rtcDeleteAPIKey(id) { return await this.post('/api/v1/rtc/apikeys/delete', { id }); }
+
+  static async rtcStatus() {
+    return await this.get('/api/v1/rtc/status');
+  }
+
+  static async rtcGetConfig() {
+    return await this.get('/api/v1/rtc/config');
+  }
+
+  static async rtcUpdateConfig(data) {
+    return await this.post('/api/v1/rtc/config', data);
+  }
+
+  static async rtcStart() {
+    return await this.post('/api/v1/rtc/start', {});
+  }
+
+  static async rtcStop() {
+    return await this.post('/api/v1/rtc/stop', {});
+  }
+
   static async onionStatus() {
     return await this.get('/api/v1/onion/status');
   }

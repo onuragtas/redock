@@ -5,6 +5,9 @@ type MenuItem struct {
 	Path string `json:"path"`
 	Name string `json:"name"`
 	Icon string `json:"icon"`
+	// Hidden items are opt-in modules: nobody sees them — admins included —
+	// until they are granted to the user (Users → menus).
+	Hidden bool `json:"hidden,omitempty"`
 }
 
 // AllMenuItems tüm menü tanımları. Tek kaynak: backend.
@@ -23,6 +26,7 @@ var AllMenuItems = []MenuItem{
 	{Path: "/ip_alias", Name: "IP Alias", Icon: "mdiNetworkOutline"},
 	{Path: "/api-gateway", Name: "API Gateway", Icon: "mdiNetworkOutline"},
 	{Path: "/onion-services", Name: "Onion Services", Icon: "mdiIncognito"},
+	{Path: "/rtc", Name: "WebRTC", Icon: "mdiVideo", Hidden: true}, // SFU + TURN/STUN tabs; opt-in
 	{Path: "/dns-server", Name: "DNS Server", Icon: "mdiDns"},
 	{Path: "/vpn-server", Name: "VPN Server", Icon: "mdiServerNetwork"},
 	{Path: "/email-server", Name: "Email Server", Icon: "mdiEmail"},
@@ -56,23 +60,27 @@ var DefaultUserMenuPaths = []string{
 }
 
 // GetMenuItemsForUser kullanıcının görebileceği menü öğelerini döner.
+// Admin gizli olmayan her şeyi, gizli (opt-in) menüleri ise yalnızca
+// kendisine verilmişse görür; user rolü yalnızca verilen menüleri görür.
 func GetMenuItemsForUser(role string, allowedPaths []string) []MenuItem {
-	var paths []string
-	if role == AdminRoleName {
-		paths = AllMenuPaths
-	} else {
-		paths = allowedPaths
-		if len(paths) == 0 {
-			paths = DefaultUserMenuPaths
-		}
+	granted := make(map[string]bool, len(allowedPaths))
+	for _, p := range allowedPaths {
+		granted[p] = true
 	}
-	pathSet := make(map[string]bool)
-	for _, p := range paths {
-		pathSet[p] = true
+	var visible func(MenuItem) bool
+	if role == AdminRoleName {
+		visible = func(item MenuItem) bool { return !item.Hidden || granted[item.Path] }
+	} else {
+		if len(allowedPaths) == 0 {
+			for _, p := range DefaultUserMenuPaths {
+				granted[p] = true
+			}
+		}
+		visible = func(item MenuItem) bool { return granted[item.Path] }
 	}
 	var out []MenuItem
 	for _, item := range AllMenuItems {
-		if pathSet[item.Path] {
+		if visible(item) {
 			out = append(out, item)
 		}
 	}

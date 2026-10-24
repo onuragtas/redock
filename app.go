@@ -15,7 +15,9 @@ import (
 	"redock/dns_server"
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
+	"redock/rtc_server"
 	"redock/ssh_server"
+	"redock/turn_server"
 	"runtime/debug"
 	"strings"
 
@@ -87,6 +89,7 @@ func app() {
 
 	// API routes first so /api/v1/* is not 404 from static filesystem.
 	routes.PublicRoutes(app)
+	routes.RTCExternalRoutes(app) // API-key auth; must precede PrivateRoutes' JWT
 	routes.TunnelServerRoutes(app)
 	routes.TunnelClientRoutes(app)
 	routes.TunnelApiRoutes(app)
@@ -99,6 +102,8 @@ func app() {
 	routes.UsageRoutes(app)
 	routes.APIGatewayRoutes(app)
 	routes.OnionProxyRoutes(app)
+	routes.RTCRoutes(app)
+	routes.TURNRoutes(app)
 	routes.DNSRoutes(app)
 	routes.SetupVPNRoutes(app)
 	routes.CloudflareRoutes(app)
@@ -154,6 +159,12 @@ func stopAllServers() {
 	}
 	_ = api_gateway.GetGateway().Stop()
 	localproxy.GetLocalProxyManager().StopAll()
+	if m := rtc_server.GetManager(); m != nil {
+		_ = m.Stop()
+	}
+	if m := turn_server.GetManager(); m != nil {
+		_ = m.Stop()
+	}
 	if a := php_debug_adapter.GetPHPDebugAdapter(); a != nil {
 		a.Stop()
 	}

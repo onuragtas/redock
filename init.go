@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/fs"
 	"log"
 	"os"
 	"path/filepath"
@@ -24,9 +25,11 @@ import (
 	"redock/platform/memguard"
 	"redock/platform/memory"
 	"redock/platform/migrations"
+	"redock/rtc_server"
 	"redock/saved_commands"
 	"redock/traffic_inspector"
 	"redock/tunnel_server"
+	"redock/turn_server"
 	"redock/vpn_server"
 	"time"
 
@@ -107,6 +110,11 @@ func initialize() {
 	deployment.Init(dockerEnvironmentManager)
 	api_gateway.Init(dockerEnvironmentManager)
 	onion_proxy.Init(dockerEnvironmentManager)
+	turn_server.Init() // after api_gateway: TURNS uses its certificate
+	if joinUI, err := fs.Sub(embedDirStatic, "web/dist/rtc-join"); err == nil {
+		rtc_server.SetJoinUI(joinUI) // Redock's room-join page, served by the SFU
+	}
+	rtc_server.Init(dockerEnvironmentManager) // after api_gateway: it may own a gateway route
 	dns_server.Init(dockerEnvironmentManager)
 	vpn_server.Init()
 	traffic_inspector.Init(db)
@@ -259,6 +267,12 @@ func registerEntities(db *memory.Database) error {
 		{"onion_services", func() error {
 			return memory.Register[*onion_proxy.OnionServiceEntity](db, onion_proxy.TableOnionServices)
 		}},
+		{"turn_config", func() error { return memory.Register[*turn_server.TURNConfigEntity](db, turn_server.TableTURNConfig) }},
+		{"turn_apps", func() error { return memory.Register[*turn_server.TURNAppEntity](db, turn_server.TableTURNApps) }},
+		{"rtc_rooms", func() error { return memory.Register[*rtc_server.RTCRoomEntity](db, rtc_server.TableRTCRooms) }},
+		{"rtc_audit", func() error { return memory.Register[*rtc_server.RTCAuditEntity](db, rtc_server.TableRTCAudit) }},
+		{"rtc_api_keys", func() error { return memory.Register[*rtc_server.RTCAPIKeyEntity](db, rtc_server.TableRTCAPIKeys) }},
+		{"rtc_config", func() error { return memory.Register[*rtc_server.RTCConfigEntity](db, rtc_server.TableRTCConfig) }},
 		{"jwt_secrets", func() error { return memory.Register[*jwtsecrets.JWTSecretsEntity](db, jwtsecrets.TableName) }},
 		{"memguard_config", func() error { return memory.Register[*memguard.ConfigEntity](db, memguard.TableName) }},
 		{"notify_settings", func() error { return memory.Register[*notify.Settings](db, notify.TableName) }},
