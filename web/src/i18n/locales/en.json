@@ -46,7 +46,7 @@
   "layout": {
     "logout": "Logout",
     "customizeMenu": "Customize Menu",
-    "customizeMenuDesc": "Turn menu items on or off. New items are shown by default.",
+    "customizeMenuDesc": "Turn menu items on or off. Some modules (DNS, VPN, Email, Cloudflare, WebRTC) are off by default; other new items are shown by default.",
     "expandMenu": "Expand menu",
     "collapseMenu": "Collapse menu",
     "menu": "Menu",

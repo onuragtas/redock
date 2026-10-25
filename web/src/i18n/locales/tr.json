@@ -46,7 +46,7 @@
   "layout": {
     "logout": "Çıkış Yap",
     "customizeMenu": "Menüyü Özelleştir",
-    "customizeMenuDesc": "Menü öğelerini açıp kapatın. Yeni öğeler varsayılan olarak gösterilir.",
+    "customizeMenuDesc": "Menü öğelerini açıp kapatın. Bazı modüller (DNS, VPN, E-posta, Cloudflare, WebRTC) varsayılan olarak kapalıdır; diğer yeni öğeler varsayılan olarak gösterilir.",
     "expandMenu": "Menüyü genişlet",
     "collapseMenu": "Menüyü daralt",
     "menu": "Menü",

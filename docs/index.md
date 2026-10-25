@@ -20,6 +20,7 @@ description: All-in-one local development environment manager
 | **Networking Toolkit** | Local HTTP proxy, tunnel proxy, embedded SSH server, and secure remote access helpers for on-prem or cloud workloads |
 | **Developer Productivity** | Saved commands, script launcher, PHP Xdebug adapter, local proxy controller, and WebSocket tooling to streamline daily workflows |
 | **Operations & Automation** | Service install/start/stop/uninstall commands, self-update hooks, deployment helpers, and systemd-friendly logging |
+| **WebRTC (Redock Meet)** | Embedded SFU with token-only rooms, invite links, an external platform API, panel moderation and consent-based recording; standalone TURN/STUN with short-lived credentials and internal-network protection — see the [integration guide](webrtc.md) (Turkish) |
 | **Observability** | Built-in stats dashboard, telemetry exporters (Loki, InfluxDB, Graylog, OTLP, ClickHouse), and configurable batch/flush policies |
 | **Modern Web UI** | Vue 3 + Tailwind dashboard with route/service editors, certificate manager, client insights, and modal-driven workflows |
 
