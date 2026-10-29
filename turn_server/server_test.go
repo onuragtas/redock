@@ -164,6 +164,9 @@ func TestRelayWorksAndSessionCanBeKilled(t *testing.T) {
 	if sessions[0].BytesOut == 0 || sessions[0].BytesIn == 0 {
 		t.Fatalf("bytes not counted: %+v", sessions[0])
 	}
+	if tr := m.Traffic(); tr.LiveIn != sessions[0].BytesIn || tr.TotalOut != sessions[0].BytesOut {
+		t.Fatalf("live traffic = %+v, session = %+v", tr, sessions[0])
+	}
 
 	if err := m.KillSession(sessions[0].ID, false); err != nil {
 		t.Fatal(err)
@@ -171,6 +174,10 @@ func TestRelayWorksAndSessionCanBeKilled(t *testing.T) {
 	waitFor(t, "session removal", func() bool { return len(m.Sessions()) == 0 })
 	// "session-ended" is logged right after the registry drops the session.
 	waitFor(t, "session-ended event", func() bool { return hasEvent(m, "session-ended") })
+	// The closed session's bytes stay in the totals.
+	if tr := m.Traffic(); tr.LiveIn != 0 || tr.TotalIn != sessions[0].BytesIn || tr.TotalOut != sessions[0].BytesOut {
+		t.Fatalf("traffic after close = %+v, session = %+v", tr, sessions[0])
+	}
 	if !hasEvent(m, "session-killed") {
 		t.Fatal("kill not recorded in the event log")
 	}

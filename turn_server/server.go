@@ -50,6 +50,8 @@ type Manager struct {
 
 	deniedMu sync.Mutex
 	denied   map[string]time.Time // client|peer -> last logged (dedupe)
+
+	traffic trafficStats // relayed bytes beyond single sessions, rates
 }
 
 var manager *Manager
@@ -546,6 +548,7 @@ func (m *Manager) startLocked(cfg TURNConfigEntity) error {
 	m.server = server
 	m.running = true
 	m.startedAt = time.Now()
+	m.startTraffic()
 	m.events.add(Event{Kind: "server-started", Detail: fmt.Sprintf("port %d, TLS %v", cfg.Port, m.tlsActive)})
 	log.Printf("turn_server: listening on %s (UDP/TCP), TLS %v, relay %s:%d-%d",
 		addr, m.tlsActive, cfg.RelayIP, cfg.RelayMin, cfg.RelayMax)
@@ -609,6 +612,7 @@ func (m *Manager) Stop() error {
 	if !m.running {
 		return nil
 	}
+	m.stopTraffic() // before teardown, so open sessions' bytes are kept
 	m.registry.closeAll()
 	err := m.server.Close()
 	m.server = nil
@@ -724,6 +728,8 @@ func (m *Manager) onAllocationDeleted(src, dst net.Addr, protocol, _, _ string) 
 	if s.conn != nil {
 		in, out = s.conn.in.Load(), s.conn.out.Load()
 	}
+	m.traffic.endedIn.Add(in) // keep the session's bytes in the totals
+	m.traffic.endedOut.Add(out)
 	m.events.add(Event{
 		Kind: "session-ended", App: s.App, User: s.User, Client: s.ClientAddr,
 		Detail: fmt.Sprintf("%s, in %d B, out %d B, %d peers", time.Since(s.StartedAt).Round(time.Second), in, out, len(s.peers)),
@@ -787,6 +793,7 @@ type Status struct {
 	TLS       bool       `json:"tls"`
 	Sessions  int        `json:"sessions"`
 	URLs      []string   `json:"urls"`
+	Traffic   Traffic    `json:"traffic"`
 }
 
 func (m *Manager) Status() Status {
@@ -799,5 +806,6 @@ func (m *Manager) Status() Status {
 	m.mu.Unlock()
 	st.Sessions = len(m.registry.list())
 	st.URLs = m.ICEServerURLs()
+	st.Traffic = m.Traffic()
 	return st
 }

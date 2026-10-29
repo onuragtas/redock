@@ -177,6 +177,17 @@ const fmtBytes = (n) => {
   while (n >= 1024 && i < u.length - 1) { n /= 1024; i++ }
   return `${n.toFixed(i ? 1 : 0)} ${u[i]}`
 }
+// Rates are shown in bits per second, like link speeds.
+const fmtRate = (bps) => {
+  let n = (bps || 0) * 8
+  const u = ['bit/s', 'kbit/s', 'Mbit/s', 'Gbit/s']
+  let i = 0
+  while (n >= 1000 && i < u.length - 1) { n /= 1000; i++ }
+  return `${n.toFixed(i ? 1 : 0)} ${u[i]}`
+}
+const traffic = computed(() => status.value?.traffic || {})
+const sessionTotals = computed(() => sessions.value.reduce(
+  (a, s) => ({ in: a.in + (s.bytes_in || 0), out: a.out + (s.bytes_out || 0) }), { in: 0, out: 0 }))
 const fmtTime = (v) => (v ? new Date(v).toLocaleString() : '—')
 const since = (v) => {
   const s = Math.max(0, Math.floor((Date.now() - new Date(v)) / 1000))
@@ -232,6 +243,26 @@ onUnmounted(() => clearInterval(timer))
         <p class="text-sm font-mono">{{ status.last_error }}</p>
       </div>
     </CardBox>
+
+    <!-- Relayed traffic. ↓ is what clients receive, ↑ what they send. -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <CardBox>
+        <p class="text-sm text-slate-500 mb-2">{{ t('turn.traffic.rate') }}</p>
+        <p class="text-xl font-semibold whitespace-nowrap">↓ {{ fmtRate(traffic.rate_in) }}</p>
+        <p class="text-xl font-semibold whitespace-nowrap">↑ {{ fmtRate(traffic.rate_out) }}</p>
+      </CardBox>
+      <CardBox>
+        <p class="text-sm text-slate-500 mb-2">{{ t('turn.traffic.sinceStart') }}</p>
+        <p class="text-xl font-semibold whitespace-nowrap">↓ {{ fmtBytes(traffic.total_in) }}</p>
+        <p class="text-xl font-semibold whitespace-nowrap">↑ {{ fmtBytes(traffic.total_out) }}</p>
+      </CardBox>
+      <CardBox>
+        <p class="text-sm text-slate-500 mb-2">{{ t('turn.traffic.lifetime') }}</p>
+        <p class="text-xl font-semibold whitespace-nowrap">↓ {{ fmtBytes(traffic.lifetime_in) }}</p>
+        <p class="text-xl font-semibold whitespace-nowrap">↑ {{ fmtBytes(traffic.lifetime_out) }}</p>
+      </CardBox>
+    </div>
+    <p class="-mt-5 text-xs text-slate-400">{{ t('turn.traffic.help') }}</p>
 
     <CardBox v-if="status?.urls?.length">
       <h3 class="font-semibold mb-2">{{ t('turn.iceUrls') }}</h3>
@@ -318,6 +349,13 @@ onUnmounted(() => clearInterval(timer))
               </td>
             </tr>
           </tbody>
+          <tfoot>
+            <tr class="border-t-2 border-slate-300 dark:border-slate-600 font-semibold">
+              <td class="py-2" colspan="4">{{ t('turn.traffic.sessionsTotal') }}</td>
+              <td class="py-2 whitespace-nowrap">{{ fmtBytes(sessionTotals.in) }} / {{ fmtBytes(sessionTotals.out) }}</td>
+              <td></td>
+            </tr>
+          </tfoot>
         </table>
       </div>
     </CardBox>

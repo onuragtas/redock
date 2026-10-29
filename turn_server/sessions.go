@@ -200,6 +200,19 @@ func (r *sessionRegistry) peerAdded(relay net.Addr, peer net.IP) {
 	r.mu.Unlock()
 }
 
+// totals sums the bytes of the open sessions.
+func (r *sessionRegistry) totals() (in, out int64) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, s := range r.sessions {
+		if s.conn != nil {
+			in += s.conn.in.Load()
+			out += s.conn.out.Load()
+		}
+	}
+	return in, out
+}
+
 func (r *sessionRegistry) counts(ip, app string) (int, int) {
 	r.mu.Lock()
 	defer r.mu.Unlock()

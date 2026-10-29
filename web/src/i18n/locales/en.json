@@ -2506,6 +2506,13 @@
     "copyIceJson": "Copy iceServers JSON",
     "sessions": "Live sessions",
     "noSessions": "No active sessions.",
+    "traffic": {
+      "rate": "Current rate",
+      "sinceStart": "Since start",
+      "lifetime": "All-time total",
+      "sessionsTotal": "Total (open sessions)",
+      "help": "Relayed traffic: ↓ what clients download (from peers), ↑ what they upload (to peers). The all-time total survives restarts."
+    },
     "appUser": "App:user",
     "client": "Client",
     "peers": "Peers",

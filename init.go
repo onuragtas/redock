@@ -268,6 +268,7 @@ func registerEntities(db *memory.Database) error {
 			return memory.Register[*onion_proxy.OnionServiceEntity](db, onion_proxy.TableOnionServices)
 		}},
 		{"turn_config", func() error { return memory.Register[*turn_server.TURNConfigEntity](db, turn_server.TableTURNConfig) }},
+		{"turn_stats", func() error { return memory.Register[*turn_server.TURNStatsEntity](db, turn_server.TableTURNStats) }},
 		{"turn_apps", func() error { return memory.Register[*turn_server.TURNAppEntity](db, turn_server.TableTURNApps) }},
 		{"rtc_rooms", func() error { return memory.Register[*rtc_server.RTCRoomEntity](db, rtc_server.TableRTCRooms) }},
 		{"rtc_audit", func() error { return memory.Register[*rtc_server.RTCAuditEntity](db, rtc_server.TableRTCAudit) }},

@@ -2506,6 +2506,13 @@
     "copyIceJson": "iceServers JSON'unu kopyala",
     "sessions": "Canlı oturumlar",
     "noSessions": "Aktif oturum yok.",
+    "traffic": {
+      "rate": "Anlık hız",
+      "sinceStart": "Başlatıldığından beri",
+      "lifetime": "Genel toplam",
+      "sessionsTotal": "Toplam (açık oturumlar)",
+      "help": "↓ istemcilerin indirdiği (karşı taraftan gelen), ↑ yüklediği (karşı tarafa giden) relay trafiği. Genel toplam yeniden başlatmalarda korunur."
+    },
     "appUser": "Uygulama:kullanıcı",
     "client": "İstemci",
     "peers": "Hedefler",
