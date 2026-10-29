@@ -77,7 +77,10 @@ func RTCStart(c *fiber.Ctx) error {
 	if m == nil {
 		return err
 	}
-	return rtcResult(c, m.Status(), m.Start())
+	// Start first: arguments are evaluated left to right, so passing
+	// m.Status() alongside m.Start() would report the state from before.
+	err = m.Start()
+	return rtcResult(c, m.Status(), err)
 }
 
 // RTCStop stops the SFU (all calls end).
@@ -86,7 +89,10 @@ func RTCStop(c *fiber.Ctx) error {
 	if m == nil {
 		return err
 	}
-	return rtcResult(c, m.Status(), m.Stop())
+	// Stop first: arguments are evaluated left to right, so passing
+	// m.Status() alongside m.Stop() would report the state from before.
+	err = m.Stop()
+	return rtcResult(c, m.Status(), err)
 }
 
 // rtcHandler resolves the manager and wraps the result envelope.
