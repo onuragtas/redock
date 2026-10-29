@@ -4,6 +4,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -276,5 +277,74 @@ func TestRelayPolicyAndUsernames(t *testing.T) {
 	}
 	if !strings.HasPrefix(c.Username, strconv.FormatInt(c.ExpiresAt.Unix(), 10)+":") {
 		t.Error("username must start with the expiry")
+	}
+}
+
+// Two relay-only clients relay through two allocations on the same server.
+// The advertised relay IP (TEST-NET) isn't on this host, so the packets can
+// only arrive through the local relay-to-relay path — in both directions,
+// whichever side writes first.
+func TestRelayToRelayOnSameServer(t *testing.T) {
+	for _, bFirst := range []bool{false, true} {
+		name := "A first"
+		if bFirst {
+			name = "B first"
+		}
+		t.Run(name, func(t *testing.T) {
+			m, server := newTestManager(t, func(c *TURNConfigEntity) { c.RelayIP = "192.0.2.1" })
+			alloc := func(user string) net.PacketConn {
+				creds := GenerateCredentials("app1", testSecret, user, time.Hour)
+				r, err := newClient(t, server, creds.Username, creds.Password).Allocate()
+				if err != nil {
+					t.Fatalf("allocate %s: %v", user, err)
+				}
+				t.Cleanup(func() { r.Close() })
+				return r
+			}
+			ra, rb := alloc("a"), alloc("b")
+			if !strings.HasPrefix(ra.LocalAddr().String(), "192.0.2.1:") {
+				t.Fatalf("relay address = %s", ra.LocalAddr())
+			}
+			var gotA, gotB atomic.Int64
+			count := func(r net.PacketConn, n *atomic.Int64) {
+				buf := make([]byte, 100)
+				for {
+					if _, _, err := r.ReadFrom(buf); err != nil {
+						return
+					}
+					n.Add(1)
+				}
+			}
+			go count(ra, &gotA)
+			go count(rb, &gotB)
+
+			first, second := ra, rb
+			if bFirst {
+				first, second = rb, ra
+			}
+			for i := 0; i < 5; i++ {
+				_, _ = first.WriteTo([]byte("ping"), second.LocalAddr())
+				_, _ = second.WriteTo([]byte("pong"), first.LocalAddr())
+				time.Sleep(100 * time.Millisecond)
+			}
+			waitFor(t, "relayed packets", func() bool { return gotA.Load() >= 4 && gotB.Load() >= 4 })
+
+			// The shortcut traffic is counted like any other.
+			_, out := m.registry.totals()
+			if out == 0 {
+				t.Fatal("relay-to-relay bytes not counted")
+			}
+
+			// Writing to a relay whose session was killed is harmless.
+			sessions := m.Sessions()
+			if err := m.KillSession(sessions[0].ID, false); err != nil {
+				t.Fatal(err)
+			}
+			waitFor(t, "session removal", func() bool { return len(m.Sessions()) == 1 })
+			for i := 0; i < 3; i++ {
+				_, _ = ra.WriteTo([]byte("late"), rb.LocalAddr())
+				_, _ = rb.WriteTo([]byte("late"), ra.LocalAddr())
+			}
+		})
 	}
 }

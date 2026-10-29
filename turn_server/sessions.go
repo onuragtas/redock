@@ -21,6 +21,7 @@ type relayGenerator struct {
 	inner    *turn.RelayAddressGeneratorPortRange
 	registry *sessionRegistry
 	kbps     int
+	local    localRelays
 }
 
 func (r *relayGenerator) Validate() error { return r.inner.Validate() }
@@ -31,6 +32,12 @@ func (r *relayGenerator) AllocatePacketConn(conf turn.AllocateListenerConfig) (n
 		return nil, nil, err
 	}
 	rc := newRelayConn(conn, r.kbps)
+	if pub, ok := addr.(*net.UDPAddr); ok {
+		if lp, ok := conn.LocalAddr().(*net.UDPAddr); ok {
+			rc.local, rc.port = &r.local, lp.Port
+			r.local.add(pub, lp.Port)
+		}
+	}
 	r.registry.addRelay(conn.LocalAddr().String(), rc)
 	return rc, addr, nil
 }
@@ -47,6 +54,68 @@ func (r *relayGenerator) AllocateConn(turn.AllocateConnConfig) (net.Conn, error)
 	return nil, errTCPRelayDisabled
 }
 
+// localRelays maps the advertised addresses of this server's relays to
+// their sockets' ports. Two clients that both force relay-only ICE send
+// media from one relay to another on the same server; sent to the public
+// address, those packets leave the host and, behind NAT, come back (if at
+// all) from an internal source the peer's permission doesn't match. So
+// relay-to-relay packets take the loopback instead, and the receiving relay
+// reports them as coming from the sender's public address.
+type localRelays struct {
+	mu       sync.RWMutex
+	byPublic map[string]int       // advertised "ip:port" -> socket port
+	byPort   map[int]*net.UDPAddr // socket port -> advertised address
+}
+
+var loopback = net.IPv4(127, 0, 0, 1)
+
+func (l *localRelays) add(public *net.UDPAddr, port int) {
+	l.mu.Lock()
+	if l.byPublic == nil {
+		l.byPublic, l.byPort = map[string]int{}, map[int]*net.UDPAddr{}
+	}
+	l.byPublic[public.String()] = port
+	l.byPort[port] = public
+	l.mu.Unlock()
+}
+
+func (l *localRelays) remove(port int) {
+	l.mu.Lock()
+	if pub := l.byPort[port]; pub != nil {
+		delete(l.byPublic, pub.String())
+		delete(l.byPort, port)
+	}
+	l.mu.Unlock()
+}
+
+// toLocal returns the loopback address of the relay advertised as addr.
+func (l *localRelays) toLocal(addr net.Addr) (net.Addr, bool) {
+	l.mu.RLock()
+	port, ok := l.byPublic[addr.String()]
+	l.mu.RUnlock()
+	if !ok {
+		return addr, false
+	}
+	return &net.UDPAddr{IP: loopback, Port: port}, true
+}
+
+// fromLocal maps a loopback source that is one of our relays to that
+// relay's public address. Only our own relay sockets hold those ports, so
+// nothing else on the host can pose as a relay.
+func (l *localRelays) fromLocal(addr net.Addr) net.Addr {
+	u, ok := addr.(*net.UDPAddr)
+	if !ok || !u.IP.IsLoopback() {
+		return addr
+	}
+	l.mu.RLock()
+	pub := l.byPort[u.Port]
+	l.mu.RUnlock()
+	if pub == nil {
+		return addr
+	}
+	return pub
+}
+
 // relayConn is a relay socket with byte counters and an optional rate cap
 // applied to each direction.
 type relayConn struct {
@@ -55,6 +124,9 @@ type relayConn struct {
 	inLimit  *rate.Limiter
 	outLimit *rate.Limiter
 	closed   atomic.Bool
+
+	local *localRelays // this server's relays, for relay-to-relay traffic
+	port  int          // this socket's port in local
 }
 
 func newRelayConn(c net.PacketConn, kbps int) *relayConn {
@@ -70,6 +142,9 @@ func newRelayConn(c net.PacketConn, kbps int) *relayConn {
 
 func (c *relayConn) ReadFrom(p []byte) (int, net.Addr, error) {
 	n, addr, err := c.PacketConn.ReadFrom(p)
+	if addr != nil && c.local != nil {
+		addr = c.local.fromLocal(addr)
+	}
 	if n > 0 {
 		c.in.Add(int64(n))
 		if c.inLimit != nil {
@@ -83,6 +158,9 @@ func (c *relayConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 	if c.outLimit != nil && !c.outLimit.AllowN(time.Now(), len(p)) {
 		return len(p), nil // over the cap: drop, as a congested link would
 	}
+	if c.local != nil {
+		addr, _ = c.local.toLocal(addr)
+	}
 	n, err := c.PacketConn.WriteTo(p, addr)
 	c.out.Add(int64(n))
 	return n, err
@@ -90,6 +168,9 @@ func (c *relayConn) WriteTo(p []byte, addr net.Addr) (int, error) {
 
 func (c *relayConn) Close() error {
 	c.closed.Store(true)
+	if c.local != nil {
+		c.local.remove(c.port)
+	}
 	return c.PacketConn.Close()
 }
 
