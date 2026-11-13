@@ -11,6 +11,9 @@ on:
         required: false
         default: ''
 
+permissions:
+  contents: write
+
 jobs:
   beta-release:
     runs-on: ubuntu-latest
@@ -19,7 +22,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v3
         with:
-          token: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Determine beta version
@@ -123,11 +126,11 @@ jobs:
           version: latest
           args: release --clean
         env:
-          GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Mark as pre-release
         env:
-          GITHUB_TOKEN: ${{ secrets.GO_RELEASER_GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           BETA_TAG: ${{ steps.version.outputs.BETA_TAG }}
         run: |
           PREV_TAG=$(git tag --sort=-version:refname | grep -v "^$BETA_TAG$" | head -n 1)
