@@ -8,7 +8,7 @@ import (
 )
 
 func UpdateRoutes(app *fiber.App) {
-	updates := app.Group("/api/updates", middleware.JWTProtected())
+	updates := app.Group("/api/updates", middleware.JWTProtected(), middleware.AdminOnly())
 
 	// Get current version
 	updates.Get("/version", controllers.GetCurrentVersion)

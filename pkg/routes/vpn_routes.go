@@ -9,7 +9,7 @@ import (
 
 // SetupVPNRoutes sets up VPN server routes (JWT protected)
 func SetupVPNRoutes(app *fiber.App) {
-	vpn := app.Group("/v1/vpn", middleware.JWTProtected())
+	vpn := app.Group("/v1/vpn", middleware.JWTProtected(), middleware.AdminOnly())
 
 	// Server management
 	vpn.Get("/servers", controllers.GetVPNServers)

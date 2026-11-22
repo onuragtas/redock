@@ -10,7 +10,7 @@ import (
 // SystemRoutes registers the process-level system routes: the memory guard and
 // the alerts that tell the operator when something needs attention.
 func SystemRoutes(a *fiber.App) {
-	route := a.Group("/api/v1/system", middleware.JWTProtected())
+	route := a.Group("/api/v1/system", middleware.JWTProtected(), middleware.AdminOnly())
 
 	route.Get("/memory", controllers.MemoryStatus)
 	route.Get("/memory/history", controllers.MemoryHistory)

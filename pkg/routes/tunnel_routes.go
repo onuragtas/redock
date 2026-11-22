@@ -11,7 +11,7 @@ import (
 // Prefix: /api/v1/tunnel/server
 func TunnelServerRoutes(a *fiber.App) {
 	api := a.Group("/api/v1")
-	server := api.Group("/tunnel/server", middleware.JWTProtected())
+	server := api.Group("/tunnel/server", middleware.JWTProtected(), middleware.AdminOnly())
 	server.Get("/config", controllers.TunnelServerGetConfig)
 	server.Patch("/config", controllers.TunnelServerUpdateConfig)
 }
@@ -20,7 +20,7 @@ func TunnelServerRoutes(a *fiber.App) {
 // Prefix: /api/v1/tunnel/client
 func TunnelClientRoutes(a *fiber.App) {
 	api := a.Group("/api/v1")
-	client := api.Group("/tunnel/client", middleware.JWTProtected())
+	client := api.Group("/tunnel/client", middleware.JWTProtected(), middleware.AdminOnly())
 	client.Get("/check-login", controllers.CheckUser)
 	client.Get("/logout", controllers.TunnelLogout)
 	client.Get("/user-info", controllers.TunnelUserInfo)

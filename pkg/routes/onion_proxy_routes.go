@@ -9,7 +9,7 @@ import (
 
 // OnionProxyRoutes registers /api/v1/onion CRUD endpoints (JWT-protected).
 func OnionProxyRoutes(a *fiber.App) {
-	route := a.Group("/api/v1/onion", middleware.JWTProtected())
+	route := a.Group("/api/v1/onion", middleware.JWTProtected(), middleware.AdminOnly())
 
 	route.Get("/status", controllers.OnionStatus)
 	route.Get("/list", controllers.OnionList)

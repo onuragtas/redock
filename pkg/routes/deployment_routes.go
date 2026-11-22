@@ -9,7 +9,7 @@ import (
 
 // DeploymentRoutes func for describe group of deployment routes (JWT protected).
 func DeploymentRoutes(a *fiber.App) {
-	route := a.Group("/api/v1/deployment", middleware.JWTProtected())
+	route := a.Group("/api/v1/deployment", middleware.JWTProtected(), middleware.AdminOnly())
 	route.Get("/list", controllers.DeploymentList)
 	route.Post("/add", controllers.DeploymentAdd)
 	route.Post("/update", controllers.DeploymentUpdate)

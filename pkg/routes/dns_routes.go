@@ -9,7 +9,7 @@ import (
 
 // DNSRoutes returns DNS server routes (JWT protected)
 func DNSRoutes(app *fiber.App) {
-	route := app.Group("/v1/dns", middleware.JWTProtected())
+	route := app.Group("/v1/dns", middleware.JWTProtected(), middleware.AdminOnly())
 
 	// Config routes
 	route.Get("/config", controllers.GetDNSConfig)

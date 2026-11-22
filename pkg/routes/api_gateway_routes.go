@@ -10,6 +10,9 @@ import (
 // APIGatewayRoutes func for describe group of API Gateway routes (JWT protected).
 func APIGatewayRoutes(a *fiber.App) {
 	route := a.Group("/api/v1", middleware.JWTProtected())
+	// Admin only, scoped to this file's own prefix: a middleware on the "/api/v1" group itself would run for
+	// every /api/v1 route registered after it.
+	route.Use("/api_gateway", middleware.AdminOnly())
 
 	// Gateway control
 	route.Get("/api_gateway/config", controllers.APIGatewayGetConfig)

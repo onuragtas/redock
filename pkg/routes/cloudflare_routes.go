@@ -8,7 +8,7 @@ import (
 )
 
 func CloudflareRoutes(app *fiber.App) {
-	cloudflare := app.Group("/api/cloudflare", middleware.JWTProtected())
+	cloudflare := app.Group("/api/cloudflare", middleware.JWTProtected(), middleware.AdminOnly())
 
 	// Account management
 	cloudflare.Post("/accounts", controllers.AddCloudflareAccount)
