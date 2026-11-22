@@ -55,6 +55,7 @@ const config = ref({
   dot_enabled: false,
   dot_port: 853,
   upstream_dns: '["1.1.1.1:53","8.8.8.8:53"]',
+  allowed_clients: '',
   blocking_enabled: true,
   query_logging: true,
   log_retention_days: 7,
@@ -151,6 +152,22 @@ const formattedUpstreamDNS = computed({
   set: (value) => {
     const lines = value.split('\n').map(l => l.trim()).filter(l => l)
     config.value.upstream_dns = JSON.stringify(lines)
+  }
+})
+
+// Networks allowed to query (one CIDR or IP per line). Empty = private networks only (server default).
+const formattedAllowedClients = computed({
+  get: () => {
+    try {
+      const parsed = JSON.parse(config.value.allowed_clients || '[]')
+      return parsed.join('\n')
+    } catch {
+      return ''
+    }
+  },
+  set: (value) => {
+    const lines = value.split('\n').map(l => l.trim()).filter(l => l)
+    config.value.allowed_clients = lines.length ? JSON.stringify(lines) : ''
   }
 })
 
@@ -1869,6 +1886,17 @@ const deleteClientBan = async (clientIP) => {
         <p class="text-xs text-gray-500 mt-1">
           Upstream DNS servers to forward queries to. 
           Default: Cloudflare (1.1.1.1), Google (8.8.8.8), Quad9 (9.9.9.9)
+        </p>
+      </FormField>
+
+      <FormField :label="t('dns.allowedClients')">
+        <FormControl
+          v-model="formattedAllowedClients"
+          type="textarea"
+          placeholder="10.0.0.0/8&#10;192.168.0.0/16"
+        />
+        <p class="text-xs text-gray-500 mt-1">
+          {{ t('dns.allowedClientsHint') }}
         </p>
       </FormField>
 

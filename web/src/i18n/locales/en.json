@@ -276,6 +276,8 @@
     "dot": "DNS-over-TLS (DoT)",
     "enableDot": "Enable DoT",
     "upstreamServers": "Upstream DNS Servers (one per line)",
+    "allowedClients": "Allowed clients (CIDR or IP, one per line)",
+    "allowedClientsHint": "Only these networks get answers; everyone else is refused. Empty = private networks only (127/8, 10/8, 172.16/12, 192.168/16, 100.64/10 and IPv6 equivalents). Add 0.0.0.0/0 and ::/0 only if the server must answer the whole internet (open resolver).",
     "enableBlocking": "Enable domain blocking",
     "queryLogging": "Query Logging",
     "enableQueryLogging": "Enable query logging",
