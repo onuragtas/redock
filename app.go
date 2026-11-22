@@ -16,6 +16,7 @@ import (
 	localproxy "redock/local_proxy"
 	"redock/php_debug_adapter"
 	"redock/ssh_server"
+	"redock/tunnel_server"
 	"runtime/debug"
 	"strings"
 
@@ -87,9 +88,11 @@ func app() {
 
 	// API routes first so /api/v1/* is not 404 from static filesystem.
 	routes.PublicRoutes(app)
-	routes.TunnelServerRoutes(app)
-	routes.TunnelClientRoutes(app)
-	routes.TunnelApiRoutes(app)
+	if tunnel_server.FeatureEnabled {
+		routes.TunnelServerRoutes(app)
+		routes.TunnelClientRoutes(app)
+		routes.TunnelApiRoutes(app)
+	}
 	routes.PrivateRoutes(app)
 	routes.LocalProxyRoutes(app)
 	routes.PHPXDebugAdapterRoutes(app)

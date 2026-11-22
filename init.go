@@ -167,6 +167,9 @@ func initialize() {
 	// Auto-start persisted tunnel clients flagged AutoStart, once the tunnel
 	// daemon and gateway routes are up. Backgrounded so boot is not blocked.
 	go func() {
+		if !tunnel_server.FeatureEnabled {
+			return
+		}
 		time.Sleep(3 * time.Second)
 		controllers.StartPersistedAutoTunnels()
 		// Remote-managed agents: register with their servers and open assigned
