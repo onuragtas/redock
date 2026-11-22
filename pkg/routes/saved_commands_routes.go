@@ -9,7 +9,7 @@ import (
 
 // SavedCommandRoutes func for describe group of private routes (JWT protected).
 func SavedCommandRoutes(a *fiber.App) {
-	route := a.Group("/api/v1/saved_commands", middleware.JWTProtected())
+	route := a.Group("/api/v1/saved_commands", middleware.JWTProtected(), middleware.AdminOnly())
 	route.Get("/", controllers.GetSavedCommands)
 	route.Post("/", controllers.AddCommand)
 	route.Get("/:id", controllers.GetCommandByID)

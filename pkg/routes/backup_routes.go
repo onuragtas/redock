@@ -10,6 +10,9 @@ import (
 // BackupRoutes registers backup management endpoints (JWT-protected).
 func BackupRoutes(a *fiber.App) {
 	route := a.Group("/api/v1", middleware.JWTProtected())
+	// Admin only, scoped to this file's own prefix: a middleware on the "/api/v1" group itself would run for
+	// every /api/v1 route registered after it.
+	route.Use("/backups", middleware.AdminOnly())
 
 	route.Get("/backups", controllers.BackupList)
 	route.Post("/backups", controllers.BackupCreate)

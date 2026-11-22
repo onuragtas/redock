@@ -9,6 +9,20 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
+// PanelIssuer is the "iss" of every token the panel issues (GenerateNewTokens). Tokens signed by other
+// parts of redock (e.g. the tunnel server, "iss": "tunnel") are not panel tokens and must never open
+// panel routes, even if they were ever signed with the same key.
+const PanelIssuer = "redock"
+
+// IsPanelToken reports whether a parsed token was issued by the panel.
+func IsPanelToken(claims jwt.MapClaims) bool {
+	iss, _ := claims["iss"].(string)
+	return iss == PanelIssuer
+}
+
+// ClaimUserID is the panel user id carried in the "id" claim.
+func ClaimUserID(claims jwt.MapClaims) (int, bool) { return getClaimUserID(claims) }
+
 // TokenMetadata struct to describe metadata in JWT.
 type TokenMetadata struct {
 	UserID      int
@@ -106,9 +120,12 @@ func extractToken(c *fiber.Ctx) string {
 func verifyToken(c *fiber.Ctx) (*jwt.Token, error) {
 	tokenString := extractToken(c)
 
-	token, err := jwt.Parse(tokenString, jwtKeyFunc)
+	token, err := jwt.Parse(tokenString, jwtKeyFunc, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return nil, err
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); !ok || !IsPanelToken(claims) {
+		return nil, fmt.Errorf("not a panel token")
 	}
 
 	return token, nil
@@ -124,12 +141,15 @@ func VerifyAccessTokenString(tokenString string) (*jwt.Token, error) {
 	if tokenString == "" {
 		return nil, fmt.Errorf("empty token")
 	}
-	token, err := jwt.Parse(tokenString, jwtKeyFunc)
+	token, err := jwt.Parse(tokenString, jwtKeyFunc, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return nil, err
 	}
 	if !token.Valid {
 		return nil, fmt.Errorf("invalid token")
+	}
+	if claims, ok := token.Claims.(jwt.MapClaims); !ok || !IsPanelToken(claims) {
+		return nil, fmt.Errorf("not a panel token")
 	}
 	return token, nil
 }

@@ -1,6 +1,8 @@
 package tunnel_server
 
 import (
+	"crypto/hmac"
+	"crypto/sha256"
 	"fmt"
 	"strconv"
 	"time"
@@ -10,9 +12,16 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// getTunnelJWTSecret returns the general JWT secret (pkg/utils/jwt_generator); tunnel token imzası aynı secret ile.
+// tunnelIssuer is the "iss" of tunnel tokens; anything else is not one.
+const tunnelIssuer = "tunnel"
+
+// getTunnelJWTSecret is a key of its own for tunnel tokens, derived one-way from the panel's JWT secret.
+// Tunnel tokens used to be signed with the panel key itself, so a tunnel account's token passed the panel's
+// JWT check (2026-11-21); with separate keys neither kind of token verifies as the other.
 func getTunnelJWTSecret() []byte {
-	return utils.GetJWTSecretKey()
+	m := hmac.New(sha256.New, utils.GetJWTSecretKey())
+	m.Write([]byte("redock/tunnel-jwt/v1"))
+	return m.Sum(nil)
 }
 
 const accessTokenExpire = 24 * time.Hour
@@ -20,7 +29,7 @@ const accessTokenExpire = 24 * time.Hour
 // GenerateTunnelToken generates a JWT access token for a tunnel user (ID).
 func GenerateTunnelToken(tunnelUserID uint) (string, error) {
 	claims := jwt.MapClaims{
-		"iss": "tunnel",
+		"iss": tunnelIssuer,
 		"id":  strconv.FormatUint(uint64(tunnelUserID), 10),
 		"exp": time.Now().Add(accessTokenExpire).Unix(),
 	}
@@ -33,7 +42,7 @@ func GenerateTunnelToken(tunnelUserID uint) (string, error) {
 func ValidateTunnelToken(accessToken string) (tunnelUserID uint, err error) {
 	token, err := jwt.Parse(accessToken, func(t *jwt.Token) (interface{}, error) {
 		return getTunnelJWTSecret(), nil
-	})
+	}, jwt.WithValidMethods([]string{"HS256"}))
 	if err != nil {
 		return 0, fmt.Errorf("invalid token: %w", err)
 	}
@@ -41,8 +50,8 @@ func ValidateTunnelToken(accessToken string) (tunnelUserID uint, err error) {
 	if !ok || !token.Valid {
 		return 0, fmt.Errorf("invalid token claims")
 	}
-	// Redock JWT uses same secret and has "id"; reject so API can treat as admin.
-	if iss, _ := claims["iss"].(string); iss == "redock" {
+	// Only tunnel tokens: a panel token ("iss": "redock") is rejected here, so the API can treat it as admin.
+	if iss, _ := claims["iss"].(string); iss != tunnelIssuer {
 		return 0, fmt.Errorf("not a tunnel token")
 	}
 	idStr, ok := claims["id"].(string)

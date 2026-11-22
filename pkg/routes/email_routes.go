@@ -9,7 +9,7 @@ import (
 
 // EmailRoutes sets up email server routes (JWT protected)
 func EmailRoutes(app *fiber.App) {
-	email := app.Group("/api/email", middleware.JWTProtected())
+	email := app.Group("/api/email", middleware.JWTProtected(), middleware.AdminOnly())
 
 	// Server management
 	email.Get("/server/status", controllers.GetEmailServerStatus)
