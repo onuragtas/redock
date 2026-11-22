@@ -276,6 +276,8 @@
     "dot": "DNS-over-TLS (DoT)",
     "enableDot": "DoT'ı Etkinleştir",
     "upstreamServers": "Upstream DNS Sunucuları (her satıra bir tane)",
+    "allowedClients": "İzin verilen istemciler (CIDR ya da IP, her satıra bir tane)",
+    "allowedClientsHint": "Yalnızca bu ağlar cevap alır, diğerleri reddedilir. Boş = yalnızca özel ağlar (127/8, 10/8, 172.16/12, 192.168/16, 100.64/10 ve IPv6 karşılıkları). Tüm internete cevap vermesi gerekiyorsa 0.0.0.0/0 ve ::/0 ekle (açık çözümleyici olur).",
     "enableBlocking": "Alan adı engellemeyi etkinleştir",
     "queryLogging": "Sorgu Loglama",
     "enableQueryLogging": "Sorgu loglamayı etkinleştir",

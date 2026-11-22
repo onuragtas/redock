@@ -63,6 +63,13 @@ func UpdateDNSConfig(c *fiber.Ctx) error {
 		})
 	}
 
+	if err := dns_server.ValidateAllowedClients(config.GetAllowedClientsList()); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": true,
+			"msg":   err.Error(),
+		})
+	}
+
 	if err := server.UpdateConfig(&config); err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": true,

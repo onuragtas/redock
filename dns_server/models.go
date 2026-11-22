@@ -26,6 +26,10 @@ type DNSConfig struct {
 	CacheTTL               int    `json:"cache_ttl"` // seconds
 	SafeBrowsingEnabled    bool   `json:"safe_browsing_enabled"`
 	ParentalControlEnabled bool   `json:"parental_control_enabled"`
+	// AllowedClients: JSON array of the networks (CIDR or single IP) that may query this server. Empty means
+	// private networks only (DefaultAllowedClients) — a resolver that answers anyone is an open resolver
+	// (DDoS amplification). Put "0.0.0.0/0" and "::/0" in the list to really serve everyone.
+	AllowedClients string `json:"allowed_clients"`
 }
 
 // DNSBlocklist represents a blocklist source
@@ -138,6 +142,39 @@ func (c *DNSConfig) SetUpstreamDNSList(upstreams []string) error {
 		return err
 	}
 	c.UpstreamDNS = string(data)
+	return nil
+}
+
+// DefaultAllowedClients are the networks allowed to query when AllowedClients is empty: loopback, the
+// private ranges, CGNAT (VPN pools) and their IPv6 counterparts.
+var DefaultAllowedClients = []string{
+	"127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "100.64.0.0/10",
+	"::1/128", "fc00::/7", "fe80::/10",
+}
+
+// GetAllowedClientsList returns the configured client networks, or DefaultAllowedClients when none are set.
+func (c *DNSConfig) GetAllowedClientsList() []string {
+	var list []string
+	if c.AllowedClients != "" {
+		json.Unmarshal([]byte(c.AllowedClients), &list)
+	}
+	if len(list) == 0 {
+		return append([]string(nil), DefaultAllowedClients...)
+	}
+	return list
+}
+
+// SetAllowedClientsList stores the client networks (an empty list means the private-network default).
+func (c *DNSConfig) SetAllowedClientsList(list []string) error {
+	if len(list) == 0 {
+		c.AllowedClients = ""
+		return nil
+	}
+	data, err := json.Marshal(list)
+	if err != nil {
+		return err
+	}
+	c.AllowedClients = string(data)
 	return nil
 }
 

@@ -36,6 +36,7 @@ type DNSServer struct {
 	cache           *DNSCache
 	stats           *StatsCollector
 	mutex           sync.RWMutex
+	acl             clientACL // who may query; rebuilt from config.AllowedClients
 	running         bool
 	ctx             context.Context
 	cancel          context.CancelFunc
@@ -147,8 +148,32 @@ func (s *DNSServer) loadConfig() error {
 	} else {
 		s.config = configs[0]
 	}
+	s.rebuildACL()
 
 	return nil
+}
+
+// rebuildACL refreshes the client allow-list from the current config. Caller holds s.mutex (or is in setup).
+func (s *DNSServer) rebuildACL() {
+	acl, errs := parseClientACL(s.config.GetAllowedClientsList())
+	for _, err := range errs {
+		log.Printf("DNS allowed clients: %v (ignored)", err)
+	}
+	s.acl = acl
+}
+
+// clientAllowed reports whether the request's source may use this server.
+func (s *DNSServer) clientAllowed(w dns.ResponseWriter) bool {
+	var ip net.IP
+	switch a := w.RemoteAddr().(type) {
+	case *net.UDPAddr:
+		ip = a.IP
+	case *net.TCPAddr:
+		ip = a.IP
+	}
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.acl.allows(ip)
 }
 
 // loadDefaultBlocklists loads default blocklists if none exist
@@ -396,6 +421,13 @@ func (s *DNSServer) handleDNSRequest(w dns.ResponseWriter, r *dns.Msg) {
 	msg := new(dns.Msg)
 	msg.SetReply(r)
 	msg.Authoritative = false
+
+	// Only allowed networks get answers; everyone else is refused without recursion (no open resolver).
+	if !s.clientAllowed(w) {
+		msg.Rcode = dns.RcodeRefused
+		w.WriteMsg(msg)
+		return
+	}
 	msg.RecursionAvailable = true
 
 	if len(r.Question) == 0 {
@@ -673,6 +705,7 @@ func (s *DNSServer) UpdateConfig(config *DNSConfig) error {
 	}
 
 	s.config = config
+	s.rebuildACL()
 
 	// Update components
 	s.upstreamManager.UpdateUpstreams(config.GetUpstreamDNSList())
