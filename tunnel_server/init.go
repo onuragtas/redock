@@ -11,6 +11,10 @@ import (
 // If tunnel server is enabled, starts the daemon listener on TunnelListenAddr and the unused-domain cleanup loop.
 func Init(dm *dockermanager.DockerEnvironmentManager) {
 	_ = dm
+	if !FeatureEnabled {
+		log.Printf("Tunnel server: feature disabled, daemon not started")
+		return
+	}
 	cfg := GetConfig()
 	log.Printf("Tunnel server: config loaded (enabled=%v)", cfg.Enabled)
 	if cfg.Enabled {

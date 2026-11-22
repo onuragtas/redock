@@ -6,6 +6,8 @@ import (
 	"sort"
 	"testing"
 
+	"redock/tunnel_server"
+
 	"github.com/gofiber/fiber/v2"
 )
 
@@ -18,12 +20,17 @@ func TestPublicRoutesAreOnlyTheExpectedOnes(t *testing.T) {
 
 	want := []string{
 		"GET /api/v1/auth/setup",
-		"GET /api/v1/tunnel/auth/callback",
 		"POST /api/v1/token/renew",
-		"POST /api/v1/tunnel/auth/login",
-		"POST /api/v1/tunnel/auth/register",
 		"POST /api/v1/user/sign/in",
 		"POST /api/v1/user/sign/up",
+	}
+	if tunnel_server.FeatureEnabled {
+		want = append(want,
+			"GET /api/v1/tunnel/auth/callback",
+			"POST /api/v1/tunnel/auth/login",
+			"POST /api/v1/tunnel/auth/register",
+		)
+		sort.Strings(want)
 	}
 
 	seen := make(map[string]bool)
@@ -66,5 +73,19 @@ func TestUnknownPublicPathIsNotFound(t *testing.T) {
 
 	if resp.StatusCode != fiber.StatusNotFound {
 		t.Errorf("status = %d, want %d", resp.StatusCode, fiber.StatusNotFound)
+	}
+}
+
+// While the tunnel kill switch is off, no tunnel endpoint may be reachable.
+func TestTunnelEndpointsOffWhenFeatureDisabled(t *testing.T) {
+	if tunnel_server.FeatureEnabled {
+		t.Skip("tunnel feature enabled")
+	}
+	app := fiber.New()
+	PublicRoutes(app)
+	for _, r := range app.GetRoutes() {
+		if len(r.Path) >= len("/api/v1/tunnel") && r.Path[:len("/api/v1/tunnel")] == "/api/v1/tunnel" {
+			t.Errorf("tunnel route registered while disabled: %s %s", r.Method, r.Path)
+		}
 	}
 }

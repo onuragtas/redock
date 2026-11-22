@@ -17,6 +17,7 @@ import (
 	"redock/php_debug_adapter"
 	"redock/rtc_server"
 	"redock/ssh_server"
+	"redock/tunnel_server"
 	"redock/turn_server"
 	"runtime/debug"
 	"strings"
@@ -90,9 +91,11 @@ func app() {
 	// API routes first so /api/v1/* is not 404 from static filesystem.
 	routes.PublicRoutes(app)
 	routes.RTCExternalRoutes(app) // API-key auth; must precede PrivateRoutes' JWT
-	routes.TunnelServerRoutes(app)
-	routes.TunnelClientRoutes(app)
-	routes.TunnelApiRoutes(app)
+	if tunnel_server.FeatureEnabled {
+		routes.TunnelServerRoutes(app)
+		routes.TunnelClientRoutes(app)
+		routes.TunnelApiRoutes(app)
+	}
 	routes.PrivateRoutes(app)
 	routes.LocalProxyRoutes(app)
 	routes.PHPXDebugAdapterRoutes(app)

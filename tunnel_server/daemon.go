@@ -108,7 +108,7 @@ func init() {
 func StartDaemon() {
 	daemonMu.Lock()
 	defer daemonMu.Unlock()
-	if daemonRunning {
+	if daemonRunning || !FeatureEnabled {
 		return
 	}
 	cfg := GetConfig()
