@@ -10,6 +10,7 @@ import { useLayoutToggle } from "@/composables/useLayoutToggle";
 import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
+import { useAuthStore } from "@/stores/authStore";
 import {
     mdiAlert,
     mdiCheck,
@@ -334,6 +335,10 @@ const extractDomain = (path) => {
 }
 
 // Open terminal with PHP_IDE_CONFIG export command
+// The web terminal is off unless the backend lists its page (/exec).
+const authStore = useAuthStore()
+const terminalEnabled = computed(() => authStore.canSeeMenu("/exec"))
+
 const openTerminal = async (vhostPath) => {
   try {
     const response = await ApiService.getVHostTerminalInfo(vhostPath)
@@ -581,6 +586,7 @@ onMounted(async () => {
                 :icon="mdiConsole" 
                 color="success"
                 small
+                v-if="terminalEnabled"
                 :title="t('vh.openTerminal')"
                 @click="openTerminal(vhost[0])"
               />
