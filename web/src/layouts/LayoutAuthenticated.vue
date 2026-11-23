@@ -120,6 +120,11 @@ const closeMenus = () => {
 // Terminal Functions
 let isCreatingTerminal = false
 const createNewTerminal = async (containerId, name = null, initialCommand = null) => {
+  // The web terminal is off unless the backend lists its page (/exec).
+  if (!authStore.canSeeMenu('/exec')) {
+    return
+  }
+
   // Prevent duplicate creation
   if (isCreatingTerminal) {
     return

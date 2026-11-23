@@ -32,6 +32,7 @@ jobs:
         if: github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && github.ref == 'refs/heads/master')
         env:
           AUTO_INCREMENT: ${{ github.event_name == 'workflow_dispatch' && github.event.inputs.auto_increment || 'true' }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [ "$AUTO_INCREMENT" = "true" ]; then
             git fetch --tags
@@ -50,6 +51,14 @@ jobs:
               PATCH=${BASH_REMATCH[3]}
               PATCH=$((PATCH + 1))
               RELEASE_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+              # Skip numbers that already have a release. Releases whose tag was
+              # deleted keep their old binaries; reusing such a number made the
+              # build fail to upload and left the old binaries as "Latest".
+              while gh release view "$RELEASE_TAG" >/dev/null 2>&1; do
+                echo "Release $RELEASE_TAG already exists, skipping"
+                PATCH=$((PATCH + 1))
+                RELEASE_TAG="v${MAJOR}.${MINOR}.${PATCH}"
+              done
             else
               echo "Unsupported tag format: $LAST_TAG. Please enter a valid version."
               exit 1

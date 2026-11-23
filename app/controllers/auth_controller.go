@@ -244,6 +244,7 @@ func AuthMe(c *fiber.Ctx) error {
 	} else if len(allowedMenus) == 0 {
 		allowedMenus = repository.DefaultUserMenuPaths
 	}
+	allowedMenus = repository.WithoutDisabledPaths(allowedMenus)
 
 	return c.JSON(fiber.Map{
 		"error": false,

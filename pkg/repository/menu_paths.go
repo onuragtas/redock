@@ -1,5 +1,7 @@
 package repository
 
+import "redock/ssh_server"
+
 // MenuItem menü öğesi (path, name, icon key frontend'de @mdi/js ile eşleşir).
 type MenuItem struct {
 	Path string `json:"path"`
@@ -7,8 +9,8 @@ type MenuItem struct {
 	Icon string `json:"icon"`
 }
 
-// AllMenuItems tüm menü tanımları. Tek kaynak: backend.
-var AllMenuItems = []MenuItem{
+// allMenuItems tüm menü tanımları. Tek kaynak: backend.
+var allMenuItems = []MenuItem{
 	{Path: "/", Name: "Dashboard", Icon: "mdiHome"},
 	{Path: "/deployment", Name: "Deployment", Icon: "mdiRocket"},
 	{Path: "/exec", Name: "Terminal", Icon: "mdiConsole"},
@@ -36,6 +38,9 @@ var AllMenuItems = []MenuItem{
 	{Path: "/updates", Name: "Updates", Icon: "mdiDownload"},
 }
 
+// AllMenuItems kapalı özellikler (web terminali) çıkarılmış menü.
+var AllMenuItems = withoutDisabledItems(allMenuItems)
+
 // AllMenuPaths, AllMenuItems'ten türetilir. İki listeyi elle paralel tutmak,
 // menüye eklenen bir sayfanın hiç görünmemesine yol açıyordu: öğe eklenip yol
 // eklenmeyince filtre onu eliyordu ve ortada hata da yoktu.
@@ -51,9 +56,38 @@ func menuPaths(items []MenuItem) []string {
 }
 
 // DefaultUserMenuPaths user rolü için varsayılan menüler (AllowedMenus boşsa).
-var DefaultUserMenuPaths = []string{
+var DefaultUserMenuPaths = WithoutDisabledPaths([]string{
 	"/", "/deployment", "/devenv", "/container_settings", "/exec",
 	"/saved-commands", "/virtual-hosts", "/updates",
+})
+
+// terminalPath web terminali sayfası; kill switch kapalıyken hiçbir menüde yer almaz.
+const terminalPath = "/exec"
+
+func disabledPath(path string) bool {
+	return path == terminalPath && !ssh_server.WebTerminalEnabled
+}
+
+func withoutDisabledItems(items []MenuItem) []MenuItem {
+	out := make([]MenuItem, 0, len(items))
+	for _, item := range items {
+		if !disabledPath(item.Path) {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+// WithoutDisabledPaths kapalı özelliklerin yollarını çıkarır (kullanıcıya kayıtlı
+// eski izinler dahil: kayıtta "/exec" kalmış olsa da menüde görünmez).
+func WithoutDisabledPaths(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !disabledPath(p) {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // GetMenuItemsForUser kullanıcının görebileceği menü öğelerini döner.

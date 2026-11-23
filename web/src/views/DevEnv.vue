@@ -10,6 +10,7 @@ import { useLayoutToggle } from "@/composables/useLayoutToggle";
 import { usePaginationFilter } from "@/composables/usePaginationFilter";
 
 import ApiService from "@/services/ApiService";
+import { useAuthStore } from "@/stores/authStore";
 import {
   mdiAccountBox,
   mdiChevronLeft,
@@ -253,6 +254,10 @@ const resetCreateForm = () => {
   }
 }
 
+// The web terminal is off unless the backend lists its page (/exec).
+const authStore = useAuthStore()
+const terminalEnabled = computed(() => authStore.canSeeMenu("/exec"))
+
 const openTerminal = (container) => {
   // Terminal sayfasına exec/name formatında router push
   router.push(`/exec/${container.username}`)
@@ -432,6 +437,7 @@ onMounted(() => {
                 :icon="mdiConsole" 
                 color="info"
                 small
+                v-if="terminalEnabled"
                 :title="t('de.sshAccess')"
                 @click="openTerminal(container)"
               />
