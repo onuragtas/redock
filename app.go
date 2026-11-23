@@ -134,7 +134,9 @@ func app() {
 		return fiber.ErrUpgradeRequired
 	})
 
-	go ssh_server.NewSSHClient().Start()
+	if ssh_server.WebTerminalEnabled {
+		go ssh_server.NewSSHClient().Start()
+	}
 
 	// Shutdown callback: tüm portları kapatan stop fonksiyonları + DB flush
 	utils.ShutdownCallback = func() {
